@@ -54,24 +54,42 @@ pub struct DisplayList {
 }
 
 /// Build the display list for a document. Tree order defines paint order
-/// (ancestors painted before descendants).
+/// (ancestors painted before descendants). `scroll_y` shifts document
+/// content up (compositor scroll); `position: fixed` subtrees stay put.
 pub fn build_display_list(
     doc: &Document,
     styles: &brows12_css::StyleMap,
     layout: &brows12_layout::LayoutResult,
     viewport: (f32, f32),
     images: &HashMap<NodeId, Arc<DecodedImage>>,
+    scroll_y: f32,
 ) -> DisplayList {
     let mut list = DisplayList { items: Vec::new(), viewport };
 
+    // Subtrees rooted at fixed nodes ignore the scroll offset.
+    let mut fixed_subtrees: std::collections::HashSet<NodeId> = Default::default();
+    for &root in &layout.fixed_nodes {
+        fn collect_fixed(doc: &Document, node: NodeId, out: &mut std::collections::HashSet<NodeId>) {
+            out.insert(node);
+            for &c in &doc.node(node).children {
+                collect_fixed(doc, c, out);
+            }
+        }
+        collect_fixed(doc, root, &mut fixed_subtrees);
+    }
+
     let start = doc.body().or_else(|| doc.document_element()).unwrap_or(doc.root());
 
+    #[allow(clippy::too_many_arguments)]
     fn emit(
         doc: &Document,
         styles: &brows12_css::StyleMap,
         layout: &brows12_layout::LayoutResult,
         list: &mut DisplayList,
         images: &HashMap<NodeId, Arc<DecodedImage>>,
+        scroll_y: f32,
+        fixed_subtrees: &std::collections::HashSet<NodeId>,
+        is_fixed: bool,
         node: NodeId,
     ) {
         let Some(style) = styles.get(node) else {
@@ -80,12 +98,17 @@ pub fn build_display_list(
         if style.display == brows12_css::values::Display::None {
             return;
         }
-        let Some(rect) = layout.rect(node) else {
+        let Some(mut rect) = layout.rect(node) else {
             return;
         };
+        // Compositor scroll: content moves up; fixed layers stay anchored.
+        if !is_fixed && scroll_y != 0.0 {
+            rect.y -= scroll_y;
+        }
 
         match &doc.node(node).data {
-            NodeData::Element { name, .. } => {
+            NodeData::Element { .. } => {
+                let child_fixed = is_fixed || fixed_subtrees.contains(&node);
                 // Background
                 if style.background_color[3] > 0 {
                     list.items.push(DisplayItem::Rect {
@@ -121,9 +144,10 @@ pub fn build_display_list(
                         radius: style.border_radius,
                     });
                 }
-                let _ = name;
                 for &c in &doc.node(node).children {
-                    emit(doc, styles, layout, list, images, c);
+                    emit(
+                        doc, styles, layout, list, images, scroll_y, fixed_subtrees, child_fixed, c,
+                    );
                 }
             }
             NodeData::Text(_) => {
@@ -151,13 +175,13 @@ pub fn build_display_list(
             }
             _ => {
                 for &c in &doc.node(node).children {
-                    emit(doc, styles, layout, list, images, c);
+                    emit(doc, styles, layout, list, images, scroll_y, fixed_subtrees, is_fixed, c);
                 }
             }
         }
     }
 
-    emit(doc, styles, layout, &mut list, images, start);
+    emit(doc, styles, layout, &mut list, images, scroll_y, &fixed_subtrees, false, start);
     list
 }
 

@@ -35,7 +35,7 @@ pub use atr::{
     cubic_bezier, DeviceEnv, EasingKeyword, KeyframesMap, LayerRegistry, OwnedFontFace,
     OwnedKeyframe, OwnedKeyframes,
 };
-pub use cascade::{compute_styles, StyleMap};
+pub use cascade::{compute_styles, compute_styles_with_containers, StyleMap};
 pub use computed::ComputedStyle;
 pub use stylesheet::{Origin, StyleEngine, Stylesheet};
 pub use values::{

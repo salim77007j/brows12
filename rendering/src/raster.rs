@@ -461,7 +461,7 @@ mod tests {
             &measurer,
             &HashMap::new(),
         );
-        let list = build_display_list(&doc, &styles, &layout, (1280.0, 720.0), &HashMap::new());
+        let list = build_display_list(&doc, &styles, &layout, (1280.0, 720.0), &HashMap::new(), 0.0);
         assert!(list.items.iter().any(|i| matches!(i, DisplayItem::Text { .. })));
         let mut r = Rasterizer::new(measurer.font_system.clone());
         let (pixmap, _stats) = r.paint(&list, 1280, 720).unwrap();

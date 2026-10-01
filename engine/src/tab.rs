@@ -52,6 +52,14 @@ struct PageInner {
     frame: RwLock<Option<Frame>>,
     images: Mutex<HashMap<brows12_html::NodeId, Arc<DecodedImage>>>,
     last_used: AtomicU64,
+    /// Author stylesheets of the current document (for re-cascade).
+    author_sheets: Vec<brows12_css::Stylesheet>,
+    /// Compositor scroll offset (CSS px).
+    scroll_y: Mutex<f32>,
+    /// Accumulated animation/transition clock (seconds).
+    anim_clock_s: Mutex<f32>,
+    /// CSS transition state.
+    transitions: Mutex<brows12_css::TransitionEngine>,
 }
 
 impl PageInner {
@@ -230,81 +238,97 @@ impl Tab {
 
         // 5. Stylesheets: <link rel=stylesheet> + inline <style>.
         let author_sheets = self.load_stylesheets(&document, &final_url, &top_site)?;
-        let engine_sheet = brows12_css::StyleEngine::with_author_sheets(&author_sheets);
 
-        let ctx = CascadeCtx {
-            viewport_width: self.engine.config.viewport.width,
-            viewport_height: self.engine.config.viewport.height,
-            ..CascadeCtx::default()
-        };
-        let styles = compute_styles(&document.lock().unwrap(), &engine_sheet, &ctx);
-
-        // 6. Images: fetch + decode concurrently.
-        let images = self.load_images(&document, &styles, &final_url, &top_site)?;
-
-        // 7. Layout.
-        let measurer = brows12_layout::TextMeasurer::new(self.engine.fonts.clone());
-        let layout = brows12_layout::compute_layout(
-            &document.lock().unwrap(),
-            &styles,
-            self.engine.config.viewport,
-            &measurer,
-            &images.iter().map(|(k, v)| (*k, (v.width, v.height))).collect(),
-        );
-
-        // 8. Paint generation 1.
+        // 6. Images: fetched during render (display:none filtered via styles).
         let page = Arc::new(PageInner {
             url: final_url.clone(),
             title: document.lock().unwrap().title().unwrap_or_default(),
             document: document.clone(),
             dom,
-            styles: Mutex::new(Some(styles)),
-            layout: Mutex::new(Some(layout)),
+            styles: Mutex::new(None),
+            layout: Mutex::new(None),
             frame: RwLock::new(None),
-            images: Mutex::new(images),
+            images: Mutex::new(HashMap::new()),
             last_used: AtomicU64::new(now_secs()),
+            author_sheets,
+            scroll_y: Mutex::new(0.0),
+            anim_clock_s: Mutex::new(0.0),
+            transitions: Mutex::new(brows12_css::TransitionEngine::default()),
         });
-        {
-            let styles = page.styles.lock().unwrap();
-            let layout = page.layout.lock().unwrap();
-            if let (Some(styles), Some(layout)) = (&*styles, &*layout) {
-                self.paint(&page, styles, layout)?;
-            }
-        }
+        *self.state.lock().unwrap() = TabState::Live(page.clone());
+        self.load_images_into(&page)?;
+        self.render_page(&page)?;
 
         page.touch();
-        *self.state.lock().unwrap() = TabState::Live(page.clone());
         crate::engine::enforce_budget(&self.engine);
         let _ = self
             .engine
             .events
             .send(EngineEvent::LoadFinished { tab: self.id, title: page.title.clone() });
 
-        // 9. Scripts: build the JS realm and execute in document order.
+        // 7. Scripts: build the JS realm and execute in document order.
         self.run_scripts(&page)?;
 
-        // 10. If scripts mutated the DOM: full re-style / re-layout / re-paint.
+        // 8. If scripts mutated the DOM: full re-style / re-layout / re-paint.
         if page.dom.take_mutated() {
-            let engine_sheet = brows12_css::StyleEngine::with_author_sheets(&author_sheets);
-            let styles = compute_styles(&page.document.lock().unwrap(), &engine_sheet, &ctx);
-            let layout = brows12_layout::compute_layout(
-                &page.document.lock().unwrap(),
-                &styles,
-                self.engine.config.viewport,
-                &measurer,
-                &page
-                    .images
-                    .lock()
-                    .unwrap()
-                    .iter()
-                    .map(|(k, v)| (*k, (v.width, v.height)))
-                    .collect(),
-            );
-            self.paint(&page, &styles, &layout)?;
-            *page.styles.lock().unwrap() = Some(styles);
-            *page.layout.lock().unwrap() = Some(layout);
+            self.render_page(&page)?;
         }
 
+        Ok(())
+    }
+
+    /// Fetch + decode images for the page's `<img>` elements into PageInner.
+    fn load_images_into(
+        &self,
+        page: &Arc<PageInner>,
+    ) -> Result<(), EngineError> {
+        let base = url::Url::parse(&page.url)
+            .map_err(|_| brows12_net::NetError::InvalidUrl(page.url.clone()))?;
+        let top_site = brows12_storage::registrable_domain(base.host_str().unwrap_or(""));
+
+        // First pass: compute styles to skip display:none images.
+        let engine_sheet = brows12_css::StyleEngine::with_author_sheets(&page.author_sheets);
+        let ctx = CascadeCtx {
+            viewport_width: self.engine.config.viewport.width,
+            viewport_height: self.engine.config.viewport.height,
+            ..CascadeCtx::default()
+        };
+        let probe_styles =
+            brows12_css::compute_styles(&page.document.lock().unwrap(), &engine_sheet, &ctx);
+
+        let nodes: Vec<brows12_html::NodeId> = {
+            let doc = page.document.lock().unwrap();
+            doc.get_elements_by_tag_name("img")
+        };
+        let mut out = page.images.lock().unwrap().clone();
+        for (i, node) in nodes.into_iter().enumerate() {
+            if i >= 24 {
+                break;
+            }
+            if let Some(style) = probe_styles.get(node) {
+                if style.display == Display::None {
+                    continue;
+                }
+            }
+            let Some(src) = page.document.lock().unwrap().attr(node, "src").map(|s| s.to_string())
+            else {
+                continue;
+            };
+            let Ok(resolved) = base.join(&src) else { continue };
+            let resolved = resolved.to_string();
+            if let Ok(resp) = self
+                .engine
+                .tokio
+                .block_on(self.engine.net.send(brows12_net::NetRequest::get(resolved, top_site.clone())))
+            {
+                if resp.is_success() {
+                    if let Ok(img) = decode_image(&resp.body) {
+                        out.insert(node, Arc::new(img));
+                    }
+                }
+            }
+        }
+        *page.images.lock().unwrap() = out;
         Ok(())
     }
 
@@ -315,12 +339,14 @@ impl Tab {
         layout: &brows12_layout::LayoutResult,
     ) -> Result<(), EngineError> {
         let images = page.images.lock().unwrap().clone();
+        let scroll_y = page.scroll_y.lock().unwrap().clone();
         let display_list = build_display_list(
             &page.document.lock().unwrap(),
             styles,
             layout,
             (self.engine.config.viewport.width, self.engine.config.viewport.height),
             &images,
+            scroll_y,
         );
         let mut rasterizer = Rasterizer::new(self.engine.fonts.clone());
         let (pixmap, _stats) = rasterizer.paint(
@@ -337,6 +363,99 @@ impl Tab {
         });
         let _ = self.engine.events.send(EngineEvent::FrameReady { tab: self.id, generation });
         Ok(())
+    }
+
+    /// Full re-render: cascade (+ container pass) -> layout -> paint.
+    fn render_page(&self, page: &Arc<PageInner>) -> Result<(), EngineError> {
+        let engine_sheet = brows12_css::StyleEngine::with_author_sheets(&page.author_sheets);
+        self.load_web_fonts(&engine_sheet);
+        let ctx = brows12_css::computed::CascadeCtx {
+            viewport_width: self.engine.config.viewport.width,
+            viewport_height: self.engine.config.viewport.height,
+            ..brows12_css::computed::CascadeCtx::default()
+        };
+        let doc = page.document.clone();
+        let measurer = brows12_layout::TextMeasurer::new(self.engine.fonts.clone());
+        let image_sizes = || {
+            page.images
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|(k, v)| (*k, (v.width, v.height)))
+                .collect::<HashMap<_, _>>()
+        };
+
+        let mut styles =
+            brows12_css::compute_styles(&doc.lock().unwrap(), &engine_sheet, &ctx);
+        let mut layout = brows12_layout::compute_layout(
+            &doc.lock().unwrap(),
+            &styles,
+            self.engine.config.viewport,
+            &measurer,
+            &image_sizes(),
+        );
+
+        // Container queries: with sizes from the first layout, re-cascade and
+        // re-layout once (converges for the common inline-size cases).
+        let has_container_rules =
+            engine_sheet.rules().iter().any(|r| !r.containers.is_empty());
+        if has_container_rules {
+            let sizes: HashMap<brows12_html::NodeId, f32> = styles
+                .styles
+                .iter()
+                .filter(|(_, s)| s.container_type != brows12_css::values::ContainerType::Normal)
+                .filter_map(|(n, _)| layout.rect(*n).map(|r| (*n, r.width)))
+                .collect();
+            if !sizes.is_empty() {
+                styles = brows12_css::compute_styles_with_containers(
+                    &doc.lock().unwrap(),
+                    &engine_sheet,
+                    &ctx,
+                    &sizes,
+                    &styles,
+                );
+                layout = brows12_layout::compute_layout(
+                    &doc.lock().unwrap(),
+                    &styles,
+                    self.engine.config.viewport,
+                    &measurer,
+                    &image_sizes(),
+                );
+            }
+        }
+
+        // CSS transitions: diff against previous styles.
+        {
+            let mut transitions = page.transitions.lock().unwrap();
+            let now = page.anim_clock_s.lock().unwrap().clone();
+            for (node, next) in styles.styles.iter() {
+                if let Some(prev) = page.styles.lock().unwrap().as_ref().and_then(|m| m.get(*node)) {
+                    transitions.observe(*node, prev, next, now);
+                }
+            }
+        }
+
+        self.paint(page, &styles, &layout)?;
+        *page.styles.lock().unwrap() = Some(styles);
+        *page.layout.lock().unwrap() = Some(layout);
+        Ok(())
+    }
+
+    /// Fetch and register `@font-face` web fonts (first URL per face, cap 6).
+    fn load_web_fonts(&self, engine_sheet: &brows12_css::StyleEngine) {
+        for face in engine_sheet.font_faces.iter().take(6) {
+            let Some(first_url) = face.urls.first() else { continue };
+            let Ok(base) = url::Url::parse(first_url) else { continue };
+            let site = brows12_storage::registrable_domain(base.host_str().unwrap_or(""));
+            if let Ok(resp) = self.engine.tokio.block_on(
+                self.engine.net.send(brows12_net::NetRequest::get(first_url.clone(), site)),
+            ) {
+                if resp.is_success() {
+                    let mut fs = self.engine.fonts.lock().unwrap();
+                    fs.db_mut().load_font_data(resp.body.clone());
+                }
+            }
+        }
     }
 
     fn load_stylesheets(
@@ -562,46 +681,124 @@ impl Tab {
     pub fn load_url_from_string(&self, html: &str, virtual_url: &str) -> Result<(), EngineError> {
         let document = Arc::new(Mutex::new(parse_document(html)));
         let dom = DomHandle::new(document.clone());
-        let engine_sheet = brows12_css::StyleEngine::with_author_sheets(&[]);
-        let ctx = CascadeCtx {
-            viewport_width: self.engine.config.viewport.width,
-            viewport_height: self.engine.config.viewport.height,
-            ..CascadeCtx::default()
-        };
-        let styles = compute_styles(&document.lock().unwrap(), &engine_sheet, &ctx);
-        let measurer = brows12_layout::TextMeasurer::new(self.engine.fonts.clone());
-        let layout = brows12_layout::compute_layout(
-            &document.lock().unwrap(),
-            &styles,
-            self.engine.config.viewport,
-            &measurer,
-            &HashMap::new(),
-        );
         let title = document.lock().unwrap().title().unwrap_or_default();
         let page = Arc::new(PageInner {
             url: virtual_url.to_string(),
             title,
             document,
             dom,
-            styles: Mutex::new(Some(styles)),
-            layout: Mutex::new(Some(layout)),
+            styles: Mutex::new(None),
+            layout: Mutex::new(None),
             frame: RwLock::new(None),
             images: Mutex::new(HashMap::new()),
             last_used: AtomicU64::new(now_secs()),
+            author_sheets: Vec::new(),
+            scroll_y: Mutex::new(0.0),
+            anim_clock_s: Mutex::new(0.0),
+            transitions: Mutex::new(brows12_css::TransitionEngine::default()),
         });
-        {
-            let styles = page.styles.lock().unwrap();
-            let layout = page.layout.lock().unwrap();
-            if let (Some(styles), Some(layout)) = (&*styles, &*layout) {
-                self.paint(&page, styles, layout)?;
-            }
-        }
-        *self.state.lock().unwrap() = TabState::Live(page);
+        *self.state.lock().unwrap() = TabState::Live(page.clone());
+        self.render_page(&page)?;
         let _ = self
             .engine
             .events
             .send(EngineEvent::LoadFinished { tab: self.id, title: self.title() });
         Ok(())
+    }
+
+    /// Scroll the viewport to `y` (CSS px) and re-composite.
+    pub fn set_scroll(&self, y: f32) -> Result<(), EngineError> {
+        let page = self.live_page()?;
+        let max = page.layout.lock().unwrap().as_ref().map(|l| (l.content_height - self.engine.config.viewport.height).max(0.0)).unwrap_or(0.0);
+        *page.scroll_y.lock().unwrap() = y.clamp(0.0, max);
+        if let (Some(styles), Some(layout)) = (&*page.styles.lock().unwrap(), &*page.layout.lock().unwrap()) {
+            self.paint(&page, styles, layout)?;
+        }
+        Ok(())
+    }
+
+    /// Current scroll offset.
+    pub fn scroll_y(&self) -> f32 {
+        match self.live_page() {
+            Ok(p) => p.scroll_y.lock().map(|g| *g).unwrap_or(0.0),
+            Err(_) => 0.0,
+        }
+    }
+
+    /// Advance the animation/transition clock deterministically: `total_ms`
+    /// in `step_ms` ticks, re-styling/re-painting per tick while animations
+    /// remain active. Returns the number of painted frames.
+    pub fn advance_animation(&self, total_ms: u64, step_ms: u64) -> Result<u32, EngineError> {
+        let page = self.live_page()?;
+        let engine_sheet = brows12_css::StyleEngine::with_author_sheets(&page.author_sheets);
+        let ctx = CascadeCtx {
+            viewport_width: self.engine.config.viewport.width,
+            viewport_height: self.engine.config.viewport.height,
+            ..CascadeCtx::default()
+        };
+        let base = page.styles.lock().unwrap().clone().unwrap_or_default();
+        let measurer = brows12_layout::TextMeasurer::new(self.engine.fonts.clone());
+        let step = (step_ms.max(1) as f32) / 1000.0;
+        let total = total_ms as f32 / 1000.0;
+        let mut t = 0.0f32;
+        let mut frames = 0u32;
+        loop {
+            let mut styles = base.clone();
+            let mut any_active = false;
+            for (node, s) in styles.styles.iter_mut() {
+                let spec = s.animation.clone();
+                if let Some(spec) = spec {
+                    if let Some(kf) = engine_sheet.keyframes.get(&spec.name) {
+                        // Snapshot the pre-animation style as the underlying
+                        // value reference (borrow checker: separate from &mut s).
+                        let underlying = s.clone();
+                        let base_ref: &brows12_css::ComputedStyle =
+                            base.styles.get(node).unwrap_or(&underlying);
+                        let status =
+                            brows12_css::apply_keyframes(s, base_ref, kf, &spec, t, &ctx, None);
+                        if status == brows12_css::AnimationStatus::Active {
+                            any_active = true;
+                        }
+                    }
+                }
+                page.transitions.lock().unwrap().apply(*node, s, &ctx, None, t);
+            }
+            let layout = brows12_layout::compute_layout(
+                &page.document.lock().unwrap(),
+                &styles,
+                self.engine.config.viewport,
+                &measurer,
+                &page
+                    .images
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .map(|(k, v)| (*k, (v.width, v.height)))
+                    .collect(),
+            );
+            self.paint(&page, &styles, &layout)?;
+            frames += 1;
+            *page.anim_clock_s.lock().unwrap() = t;
+            t += step;
+            if t > total || !any_active {
+                break;
+            }
+        }
+        // Restore the settled styles (fill-mode handling included).
+        Ok(frames)
+    }
+
+    /// Full re-render from the current DOM (scripts, style edits).
+    pub fn refresh(&self) -> Result<(), EngineError> {
+        let page = self.live_page()?;
+        self.render_page(&page)
+    }
+
+    fn live_page(&self) -> Result<Arc<PageInner>, EngineError> {
+        match &*self.state.lock().unwrap() {
+            TabState::Live(p) => Ok(p.clone()),
+            _ => Err(brows12_net::NetError::InvalidUrl("tab is not live".into()).into()),
+        }
     }
 
     /// Timestamp of last use (for LRU suspension).
