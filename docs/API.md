@@ -72,6 +72,27 @@ match events.blocking_recv()? {
 The channel is a tokio broadcast: multiple subscribers (compositor, UI,
 history recorder) each get every event.
 
+## JavaScript surface (exposed to page scripts)
+
+Every page realm (QuickJS-ng, hard 256 MiB heap + 1 MiB stack caps) exposes:
+
+| Global | Scope | Notes |
+|---|---|---|
+| `document`, `window`, DOM classes | page | getElementById, querySelector(All), appendChild/insertBefore, innerHTML/textContent, attributes, classList, inline `styleSet` |
+| `fetch(input, init)` | both | text/json/arrayBuffer bodies; request bodies; relative URLs resolve against `location`; **subject to the network blocker** |
+| `XMLHttpRequest` | both | async subset: readyState 0-4, status/headers/responseText/responseType |
+| `WebSocket` | both | ws/wss, sub-protocols, onopen/message/error/close; subject to the blocker |
+| `Worker(url)` / DedicatedWorkerGlobalScope | page | own realm+thread per worker, JSON structured clone, no DOM in workers (spec) |
+| `setTimeout` / `setInterval` (+clear) | both | OS timers; background tabs are clamped by the scheduler |
+| `console.*` | both | captured to `EngineEvent::Console` + tracing |
+| `localStorage` | page | persisted per origin through the storage engine |
+| `crypto.getRandomValues`, `btoa/atob` | both | |
+| `location`, `navigator` | both | navigator values come from the anti-fingerprint shield |
+| `requestAnimationFrame` | page | mapped onto the frame scheduler |
+
+Out of scope for this release (tracked in docs/ROADMAP.md): full event
+propagation/bubbling, Canvas2D, WebAssembly, ES modules in pages.
+
 ## C ABI (feature `capi`)
 
 `cargo build -p brows12-api --release --features capi` produces
