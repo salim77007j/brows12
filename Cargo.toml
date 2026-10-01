@@ -5,6 +5,7 @@ members = [
     "parsing/css",
     "layout",
     "rendering",
+    "compositor",
     "networking",
     "storage",
     "privacy",

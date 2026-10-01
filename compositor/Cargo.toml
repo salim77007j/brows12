@@ -1,0 +1,26 @@
+[package]
+name = "brows12-compositor"
+description = "Brows12 GPU-accelerated layer compositor (wgpu) with deterministic CPU fallback"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[features]
+default = ["gpu"]
+# wgpu backend. Disabling keeps the crate CPU-only (minimal builds).
+gpu = ["dep:wgpu", "dep:pollster", "dep:bytemuck"]
+
+[dependencies]
+brows12-render = { path = "../rendering" }
+tiny-skia = { version = "0.12", features = ["png-format"] }
+thiserror = "2"
+tracing = "0.1"
+
+# GPU backend (feature-gated)
+wgpu = { version = "30", optional = true, default-features = true }
+pollster = { version = "0.4", optional = true }
+bytemuck = { version = "1", optional = true, features = ["derive"] }

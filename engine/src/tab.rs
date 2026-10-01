@@ -60,6 +60,8 @@ struct PageInner {
     anim_clock_s: Mutex<f32>,
     /// CSS transition state.
     transitions: Mutex<brows12_css::TransitionEngine>,
+    /// Last compositor statistics (backend, frame time, texture bytes).
+    compositor_stats: Mutex<Option<brows12_compositor::CompositeStats>>,
 }
 
 impl PageInner {
@@ -87,15 +89,27 @@ pub struct Tab {
     engine: Arc<EngineInner>,
     state: Mutex<TabState>,
     frame_gen: AtomicU64,
+    /// Shared compositor backend (GPU when available, else CPU).
+    compositor: std::sync::Mutex<Box<dyn brows12_compositor::Compositor>>,
 }
 
 fn now_secs() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }
 
+fn not_live() -> EngineError {
+    brows12_net::NetError::InvalidUrl("tab is not live".into()).into()
+}
+
 impl Tab {
     pub(crate) fn new(id: u64, engine: Arc<EngineInner>) -> Self {
-        Tab { id, engine, state: Mutex::new(TabState::Empty), frame_gen: AtomicU64::new(0) }
+        Tab {
+            id,
+            engine,
+            state: Mutex::new(TabState::Empty),
+            frame_gen: AtomicU64::new(0),
+            compositor: std::sync::Mutex::new(brows12_compositor::auto_compositor()),
+        }
     }
 
     pub fn id(&self) -> u64 {
@@ -254,6 +268,7 @@ impl Tab {
             scroll_y: Mutex::new(0.0),
             anim_clock_s: Mutex::new(0.0),
             transitions: Mutex::new(brows12_css::TransitionEngine::default()),
+            compositor_stats: Mutex::new(None),
         });
         *self.state.lock().unwrap() = TabState::Live(page.clone());
         self.load_images_into(&page)?;
@@ -347,6 +362,7 @@ impl Tab {
             (self.engine.config.viewport.width, self.engine.config.viewport.height),
             &images,
             scroll_y,
+            Default::default(),
         );
         let mut rasterizer = Rasterizer::new(self.engine.fonts.clone());
         let (pixmap, _stats) = rasterizer.paint(
@@ -696,6 +712,7 @@ impl Tab {
             scroll_y: Mutex::new(0.0),
             anim_clock_s: Mutex::new(0.0),
             transitions: Mutex::new(brows12_css::TransitionEngine::default()),
+            compositor_stats: Mutex::new(None),
         });
         *self.state.lock().unwrap() = TabState::Live(page.clone());
         self.render_page(&page)?;
@@ -792,6 +809,84 @@ impl Tab {
     pub fn refresh(&self) -> Result<(), EngineError> {
         let page = self.live_page()?;
         self.render_page(&page)
+    }
+
+    /// Composite through the compositor: content layer + fixed overlay
+    /// layer(s), scroll applied by the backend (GPU moves textures; CPU
+    /// blits). Produces the same visual result as `paint` but exercises the
+    /// GPU path and reports backend/frame statistics.
+    pub fn composite_frame(&self) -> Result<Frame, EngineError> {
+        use brows12_compositor::{Compositor as _, Layer};
+        use brows12_render::display_list::ListScope;
+
+        let page = self.live_page()?;
+        let styles = page.styles.lock().unwrap().clone().ok_or_else(not_live)?;
+        let layout = page.layout.lock().unwrap().clone().ok_or_else(not_live)?;
+        let scroll_y = *page.scroll_y.lock().unwrap();
+        let images = page.images.lock().unwrap().clone();
+        let vw = self.engine.config.viewport.width as u32;
+        let vh = self.engine.config.viewport.height as u32;
+        let doc = page.document.lock().unwrap();
+
+        // Content layer: whole document raster (capped), scroll not baked in.
+        let content_h = (layout.content_height as u32).clamp(vh, 16384);
+        let content_list = build_display_list(
+            &doc,
+            &styles,
+            &layout,
+            (content_h as f32, content_h as f32),
+            &images,
+            0.0,
+            ListScope::Content,
+        );
+        let mut rasterizer = Rasterizer::new(self.engine.fonts.clone());
+        let (content_pm, _) =
+            rasterizer.paint(&content_list, vw, content_h.max(vh))?;
+
+        let mut layers = vec![
+            Layer::from_pixmap(content_pm).with_scroll(0.0, -scroll_y),
+        ];
+
+        // Fixed overlay layer: viewport-aligned, ignores scroll.
+        let fixed_list = build_display_list(
+            &doc,
+            &styles,
+            &layout,
+            (self.engine.config.viewport.width, self.engine.config.viewport.height),
+            &images,
+            0.0,
+            ListScope::Fixed,
+        );
+        if !fixed_list.items.is_empty() {
+            let (fixed_pm, _) = rasterizer.paint(&fixed_list, vw, vh)?;
+            layers.push(Layer::from_pixmap(fixed_pm).as_fixed());
+        }
+        drop(doc);
+
+        let compositor = self.compositor.lock().unwrap();
+        let out = compositor
+            .composite(vw, vh, &layers)
+            .map_err(|e| EngineError::Compositor(e.to_string()))?;
+        let stats = out.stats.clone();
+        let pixmap = out.to_pixmap().ok_or_else(not_live)?;
+        *page.compositor_stats.lock().unwrap() = Some(stats);
+        let generation = self.frame_gen.fetch_add(1, Ordering::Relaxed) + 1;
+        let frame = Frame {
+            width: pixmap.width(),
+            height: pixmap.height(),
+            generation,
+            pixmap: Arc::new(pixmap),
+        };
+        *page.frame.write().unwrap() = Some(frame.clone());
+        let _ = self.engine.events.send(EngineEvent::FrameReady { tab: self.id, generation });
+        Ok(frame)
+    }
+
+    /// Backend + timing stats of the most recent `composite_frame`.
+    pub fn compositor_stats(&self) -> Option<brows12_compositor::CompositeStats> {
+        self.live_page()
+            .ok()
+            .and_then(|p| p.compositor_stats.lock().ok().and_then(|g| g.clone()))
     }
 
     fn live_page(&self) -> Result<Arc<PageInner>, EngineError> {

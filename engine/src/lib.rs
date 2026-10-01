@@ -43,4 +43,6 @@ pub enum EngineError {
     NoPage,
     #[error("navigation cancelled: {0}")]
     Cancelled(String),
+    #[error("compositor: {0}")]
+    Compositor(String),
 }

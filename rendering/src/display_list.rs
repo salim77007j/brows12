@@ -53,6 +53,18 @@ pub struct DisplayList {
     pub viewport: (f32, f32),
 }
 
+/// Which part of the tree a display list covers (compositor layer split).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ListScope {
+    /// Everything (legacy single-layer path).
+    #[default]
+    All,
+    /// Only content that scrolls (fixed subtrees excluded).
+    Content,
+    /// Only `position: fixed` subtrees (compositor overlay layers).
+    Fixed,
+}
+
 /// Build the display list for a document. Tree order defines paint order
 /// (ancestors painted before descendants). `scroll_y` shifts document
 /// content up (compositor scroll); `position: fixed` subtrees stay put.
@@ -63,6 +75,7 @@ pub fn build_display_list(
     viewport: (f32, f32),
     images: &HashMap<NodeId, Arc<DecodedImage>>,
     scroll_y: f32,
+    scope: ListScope,
 ) -> DisplayList {
     let mut list = DisplayList { items: Vec::new(), viewport };
 
@@ -91,10 +104,25 @@ pub fn build_display_list(
         fixed_subtrees: &std::collections::HashSet<NodeId>,
         is_fixed: bool,
         node: NodeId,
+        scope: ListScope,
     ) {
         let Some(style) = styles.get(node) else {
             return;
         };
+        let in_fixed_subtree = is_fixed || fixed_subtrees.contains(&node);
+        match scope {
+            ListScope::All => {}
+            ListScope::Content => {
+                if in_fixed_subtree {
+                    return;
+                }
+            }
+            ListScope::Fixed => {
+                if !in_fixed_subtree {
+                    return;
+                }
+            }
+        }
         if style.display == brows12_css::values::Display::None {
             return;
         }
@@ -108,7 +136,7 @@ pub fn build_display_list(
 
         match &doc.node(node).data {
             NodeData::Element { .. } => {
-                let child_fixed = is_fixed || fixed_subtrees.contains(&node);
+                let child_fixed = in_fixed_subtree;
                 // Background
                 if style.background_color[3] > 0 {
                     list.items.push(DisplayItem::Rect {
@@ -147,6 +175,7 @@ pub fn build_display_list(
                 for &c in &doc.node(node).children {
                     emit(
                         doc, styles, layout, list, images, scroll_y, fixed_subtrees, child_fixed, c,
+                        scope,
                     );
                 }
             }
@@ -175,13 +204,18 @@ pub fn build_display_list(
             }
             _ => {
                 for &c in &doc.node(node).children {
-                    emit(doc, styles, layout, list, images, scroll_y, fixed_subtrees, is_fixed, c);
+                    emit(
+                        doc, styles, layout, list, images, scroll_y, fixed_subtrees, is_fixed, c,
+                        scope,
+                    );
                 }
             }
         }
     }
 
-    emit(doc, styles, layout, &mut list, images, scroll_y, &fixed_subtrees, false, start);
+    emit(
+        doc, styles, layout, &mut list, images, scroll_y, &fixed_subtrees, false, start, scope,
+    );
     list
 }
 
