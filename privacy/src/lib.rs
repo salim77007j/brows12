@@ -16,7 +16,7 @@ pub mod upgrade;
 
 pub use blocker::{BlockReason, PrivacyBlocker};
 pub use fingerprint::{FingerprintConfig, NavigatorSpoof, SpoofLevel};
-pub use policy::{CookiePolicy, CnameVerdict, PolicyEngine, WebRtcPolicy};
+pub use policy::{CnameVerdict, CookiePolicy, PolicyEngine, WebRtcPolicy};
 pub use upgrade::HttpsUpgrader;
 
 use thiserror::Error;

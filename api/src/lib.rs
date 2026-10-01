@@ -12,7 +12,10 @@
 //! # fn main() -> Result<(), brows12_api::ApiError> {
 //! let browser = Browser::builder()
 //!     .viewport(1280, 800)
-//!     .privacy(|p| p.block_ads(true).https_upgrade(true))
+//!     .privacy(|p| {
+//!         p.block_ads = true;
+//!         p.https_upgrade = true;
+//!     })
 //!     .build();
 //!
 //! let events = browser.subscribe();
@@ -29,7 +32,7 @@
 //! ```
 //!
 //! 2. **C ABI (feature `capi`)** — for UIs in other languages; see
-//! `api/include/brows12.h` and docs/API.md.
+//!    `api/include/brows12.h` and docs/API.md.
 
 #[cfg(feature = "capi")]
 pub mod ffi;
@@ -40,7 +43,7 @@ pub use brows12_engine::{
 
 /// The prelude collects the types a UI layer needs daily.
 pub mod prelude {
-    pub use crate::{Browser, BrowserBuilder, ApiError};
+    pub use crate::{ApiError, Browser, BrowserBuilder};
     pub use brows12_engine::{Engine, EngineConfig, EngineEvent, Frame, PrivacySettings, Tab};
 }
 
@@ -116,10 +119,8 @@ impl BrowserBuilder {
     pub fn build(self) -> Browser {
         let mut config = self.config;
         (self.privacy_fn)(&mut config.privacy);
-        config.viewport = layout_shim::Viewport {
-            width: self.viewport.0 as f32,
-            height: self.viewport.1 as f32,
-        };
+        config.viewport =
+            layout_shim::Viewport { width: self.viewport.0 as f32, height: self.viewport.1 as f32 };
         Browser { engine: Engine::new(config) }
     }
 }

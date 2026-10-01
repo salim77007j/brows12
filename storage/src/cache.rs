@@ -98,10 +98,7 @@ impl HttpCache {
 
     /// Drop entries older than `max_age_secs` (used by the budgeter).
     pub fn prune(&self, max_age_secs: u64) {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
         let Ok(keys) = self.memory.keys("http") else {
             return;
         };
@@ -125,10 +122,7 @@ impl HttpCache {
 /// otherwise treat responses as fresh for a short heuristic window.
 pub fn is_fresh(resp: &CachedResponse, now: u64) -> bool {
     let header = |name: &str| {
-        resp.headers
-            .iter()
-            .find(|(k, _)| k.eq_ignore_ascii_case(name))
-            .map(|(_, v)| v.clone())
+        resp.headers.iter().find(|(k, _)| k.eq_ignore_ascii_case(name)).map(|(_, v)| v.clone())
     };
     if let Some(cc) = header("cache-control") {
         let cc = cc.to_ascii_lowercase();

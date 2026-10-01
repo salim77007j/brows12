@@ -41,7 +41,15 @@ fn main() -> Result<()> {
     drop(handle);
 
     // JSON output.
-    println!("{}", serde_json::to_string_pretty(&results.iter().map(|(k, v)| (k.to_string(), *v)).collect::<std::collections::BTreeMap<_, _>>())?);
+    println!(
+        "{}",
+        serde_json::to_string_pretty(
+            &results
+                .iter()
+                .map(|(k, v)| (k.to_string(), *v))
+                .collect::<std::collections::BTreeMap<_, _>>()
+        )?
+    );
 
     // Markdown table.
     println!("\n| metric | ms |\n|---|---|");
@@ -64,7 +72,10 @@ fn spawn_server() -> (std::net::SocketAddr, std::thread::JoinHandle<()>) {
             let mut buf = [0u8; 4096];
             let _ = sock.read(&mut buf);
             let body = "<html><head><title>Bench</title></head><body><h1>hello</h1><p>world</p></body></html>";
-            let _ = sock.write_all(format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", body.len(), body).as_bytes());
+            let _ = sock.write_all(
+                format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", body.len(), body)
+                    .as_bytes(),
+            );
         }
     });
     (addr, handle)

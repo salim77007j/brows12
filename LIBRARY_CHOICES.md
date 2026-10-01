@@ -23,6 +23,7 @@ of writing; `Cargo.lock` pins exact builds.
 | HTTP/1.1 + 2 | **hyper 1.x + hyper-util 0.1** | reqwest (full client but opinionated, hides the connection layer we need for cookies/DoH/alt-svc), ureq (blocking only) |
 | TLS | **rustls 0.23 (ring provider)** | native-tls/OpenSSL (C, CVE surface, platform variance), aws-lc-rs (cmake/NASM build burden for marginal gain) |
 | HTTP/3 | **quinn 0.11 + h3 0.0.8 + h3-quinn 0.0.10** (feature `http3`) | s2n-quic (AWS-centric, heavier), msquic (C) |
+| WebSockets | **tokio-tungstenite 0.29** (rustls-tls-webpki-roots) | hand-rolled RFC 6455 (a weekend of edge cases we don't need to own), ws-rs (unmaintained) |
 | DNS | **Hand-rolled RFC 8484 DoH client** over our own HTTPS stack | hickory-resolver (excellent, but pulls a second async resolver stack + config surface for one API call; our wire-format code is ~200 lines, fuzzed, and gives us CNAME chains for cloaking detection) |
 | Async runtime | **tokio 1.x** (multi-thread) | smol (fine, smaller ecosystem), monoio/glommio (io_uring-only wins, Linux-only) |
 | Image decode | **image 0.25** (png/jpeg/webp/gif backends) | zune-* family directly (image already delegates to zune-jpeg internally), libpng/jpeg-turbo-sys (C) |
@@ -120,3 +121,8 @@ one thing: HTTP-date parsing).
 - No OpenSSL anywhere in the tree.
 - Feature-gated heavies: `http3` (quinn/h3), `persist` (redb).
 - `cargo tree -d` reviewed per release; workspace resolver v2.
+- Thread-safety seams: `adblock::Engine` is `!Send + !Sync` by design
+  (interior `Rc`/`RefCell`), so it lives on a dedicated blocker thread
+  behind a channel-based handle (`brows12-privacy::blocker`); the network
+  client calls it through a synchronous request/reply round-trip. The same
+  discipline keeps QuickJS realms pinned to one thread each.

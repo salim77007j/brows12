@@ -59,7 +59,10 @@ impl IdbDatabase {
     }
 
     /// Create an object store (idempotent).
-    pub fn create_object_store(&self, config: ObjectStoreConfig) -> Result<(), crate::StorageError> {
+    pub fn create_object_store(
+        &self,
+        config: ObjectStoreConfig,
+    ) -> Result<(), crate::StorageError> {
         let mut stores = self.stores.lock().unwrap();
         if !stores.iter().any(|s| s.name == config.name) {
             stores.push(config);
@@ -115,13 +118,17 @@ impl IdbDatabase {
         }
 
         let record = Record { key: key.clone(), value: value.clone(), indexes };
-        let encoded = serde_json::to_vec(&record)
-            .map_err(|e| crate::StorageError::Backend(e.to_string()))?;
+        let encoded =
+            serde_json::to_vec(&record).map_err(|e| crate::StorageError::Backend(e.to_string()))?;
         self.store.put(&self.table, &record.key.to_sort_string(), &encoded)?;
         Ok(key)
     }
 
-    pub fn get(&self, store_name: &str, key: &IdbKey) -> Result<Option<serde_json::Value>, crate::StorageError> {
+    pub fn get(
+        &self,
+        store_name: &str,
+        key: &IdbKey,
+    ) -> Result<Option<serde_json::Value>, crate::StorageError> {
         let raw = self.store.get(&self.table, &key.to_sort_string())?;
         match raw {
             Some(bytes) => {

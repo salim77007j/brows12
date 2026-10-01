@@ -24,12 +24,15 @@ pub mod environment;
 pub mod event_loop;
 pub mod glue;
 pub mod runtime;
+pub mod worker;
 
+pub use bindings::{WorkerRegistry, WsSenders};
 pub use dom_handle::DomHandle;
 pub use environment::JsEnvironment;
 pub use event_loop::JsTask;
 pub use runtime::Script;
 pub use runtime::{JsExecutionError, JsRuntime};
+pub use worker::WorkerHandle;
 
 use thiserror::Error;
 

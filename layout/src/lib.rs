@@ -9,8 +9,8 @@
 //! Inline flow (mixed inline boxes on one line), floats and tables are
 //! tracked in docs/ROADMAP.md.
 
-use brows12_css::ComputedStyle;
 use brows12_css::values::{AutoPx, Display, Len};
+use brows12_css::ComputedStyle;
 use brows12_html::{Document, NodeData, NodeId};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -95,7 +95,7 @@ impl TextMeasurer {
                 font_weight,
                 font_style_italic,
                 font_family,
-                white_space_pre,
+                white_space_pre: _,
             } => {
                 let mut fs = self.font_system.lock().unwrap();
                 let metrics = cosmic_text::Metrics::new(*font_size, *line_height_px);
@@ -194,7 +194,9 @@ fn build_taffy_style(style: &ComputedStyle) -> taffy::Style {
             brows12_css::values::FlexDirection::Row => taffy::FlexDirection::Row,
             brows12_css::values::FlexDirection::RowReverse => taffy::FlexDirection::RowReverse,
             brows12_css::values::FlexDirection::Column => taffy::FlexDirection::Column,
-            brows12_css::values::FlexDirection::ColumnReverse => taffy::FlexDirection::ColumnReverse,
+            brows12_css::values::FlexDirection::ColumnReverse => {
+                taffy::FlexDirection::ColumnReverse
+            }
         };
         taffy_style.flex_wrap = match style.flex_wrap {
             brows12_css::values::FlexWrap::NoWrap => taffy::FlexWrap::NoWrap,
@@ -271,9 +273,7 @@ pub fn compute_layout(
                     return None;
                 }
                 let ctx = leaf_context(style, text);
-                let tnode = tree
-                    .new_leaf_with_context(build_taffy_style(style), ctx)
-                    .ok()?;
+                let tnode = tree.new_leaf_with_context(build_taffy_style(style), ctx).ok()?;
                 node_ids.insert(node, tnode);
                 Some(tnode)
             }
@@ -289,13 +289,8 @@ pub fn compute_layout(
                 // Leaf elements with intrinsic size (img).
                 if children.is_empty() {
                     if let Some(&(w, h)) = image_sizes.get(&node) {
-                        let ctx = LeafContext::Image {
-                            intrinsic_width: w,
-                            intrinsic_height: h,
-                        };
-                        let tnode = tree
-                            .new_leaf_with_context(taffy_style, ctx)
-                            .ok()?;
+                        let ctx = LeafContext::Image { intrinsic_width: w, intrinsic_height: h };
+                        let tnode = tree.new_leaf_with_context(taffy_style, ctx).ok()?;
                         node_ids.insert(node, tnode);
                         return Some(tnode);
                     }
@@ -330,15 +325,16 @@ pub fn compute_layout(
     // Collapse a single html>body chain so body fills the viewport root.
     let layout_root = root_taffy;
     let measurer_ref = &measurer;
-    let measure_fn = |input: taffy::LayoutInput, _node: taffy::NodeId, ctx: Option<&mut LeafContext>, _style: &taffy::Style| -> taffy::LayoutOutput {
+    let measure_fn = |input: taffy::LayoutInput,
+                      _node: taffy::NodeId,
+                      ctx: Option<&mut LeafContext>,
+                      _style: &taffy::Style|
+     -> taffy::LayoutOutput {
         if let Some(leaf) = ctx {
-            let max_width = input
-                .known_dimensions
-                .width
-                .or(match input.available_space.width {
-                    taffy::AvailableSpace::Definite(w) => Some(w),
-                    _ => None,
-                });
+            let max_width = input.known_dimensions.width.or(match input.available_space.width {
+                taffy::AvailableSpace::Definite(w) => Some(w),
+                _ => None,
+            });
             let (w, h) = measurer_ref.measure(leaf, max_width);
             let size = taffy::Size { width: w, height: h };
             return taffy::LayoutOutput::from_sizes(
@@ -389,10 +385,7 @@ pub fn compute_layout(
     }
     extract(&taffy_to_dom, &tree, &mut result.rects, root_taffy, (0.0, 0.0));
 
-    if let Some(body_rect) = doc
-        .body()
-        .and_then(|b| result.rects.get(&b).copied())
-    {
+    if let Some(body_rect) = doc.body().and_then(|b| result.rects.get(&b).copied()) {
         result.content_height = body_rect.y + body_rect.height;
         result.content_width = viewport.width;
     } else {
@@ -405,8 +398,8 @@ pub fn compute_layout(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use brows12_css::computed::CascadeCtx;
     use brows12_css::{compute_styles, StyleEngine};
-use brows12_css::computed::CascadeCtx;
     use brows12_html::parse_document;
 
     fn test_measurer() -> TextMeasurer {
@@ -416,7 +409,11 @@ use brows12_css::computed::CascadeCtx;
     fn layout_html(html: &str, viewport: Viewport) -> (Document, LayoutResult) {
         let doc = parse_document(html);
         let engine = StyleEngine::with_author_sheets(&[]);
-        let ctx = CascadeCtx { viewport_width: viewport.width, viewport_height: viewport.height, ..CascadeCtx::default() };
+        let ctx = CascadeCtx {
+            viewport_width: viewport.width,
+            viewport_height: viewport.height,
+            ..CascadeCtx::default()
+        };
         let styles = compute_styles(&doc, &engine, &ctx);
         let measurer = test_measurer();
         let result = compute_layout(&doc, &styles, viewport, &measurer, &HashMap::new());

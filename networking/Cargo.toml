@@ -13,6 +13,7 @@ publish = false
 base64 = "0.22"
 brows12-storage = { path = "../storage" }
 bytes = "1"
+futures-util = "0.3"
 h3 = { version = "0.0.8", optional = true }
 h3-quinn = { version = "0.0.10", optional = true }
 http = "1"
@@ -25,6 +26,7 @@ quinn = { version = "0.11", default-features = false, features = ["log", "platfo
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 thiserror = "2"
 tokio = { version = "1", features = ["rt-multi-thread", "net", "time", "io-util", "sync", "macros"] }
+tokio-tungstenite = { version = "0.29.0", default-features = false, features = ["rustls-tls-webpki-roots", "connect"] }
 tracing = "0.1"
 url = "2.5"
 webpki-roots = "1"

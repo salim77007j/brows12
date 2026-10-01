@@ -18,7 +18,7 @@ URL ─▶ HTTPS upgrade ─▶ ad/tracker filter ─▶ HTTP/1.1·2·3 (rustls 
     ─▶ CSS parse (lightningcss) ─▶ selector match ─▶ cascade
     ─▶ layout (taffy + cosmic-text shaping)
     ─▶ display list ─▶ raster (tiny-skia) ─▶ framebuffer ─▶ your UI
-    ─▶ scripts (QuickJS-ng realm: fetch, timers, DOM, storage)
+    ─▶ scripts (QuickJS-ng realm: fetch, XHR, WebSocket, Workers, DOM, storage)
 ```
 
 ## Highlights
@@ -53,7 +53,10 @@ use brows12_api::prelude::*;
 
 let browser = Browser::builder()
     .viewport(1280, 800)
-    .privacy(|p| p.block_ads(true).https_upgrade(true))
+    .privacy(|p| {
+        p.block_ads = true;
+        p.https_upgrade = true;
+    })
     .build();
 
 let events = browser.subscribe();          // EngineEvent stream for the UI
@@ -89,7 +92,7 @@ Build the static lib: `cargo build -p brows12-api --release --features capi`.
 | Path | Crate | What lives here |
 |---|---|---|
 | `engine/` | `brows12-engine` | Orchestrator: tabs, navigation pipeline, suspension, event bus |
-| `js/` | `brows12-js` | QuickJS-ng runtime, event loop, DOM/fetch/storage bindings |
+| `js/` | `brows12-js` | QuickJS-ng runtime, event loop, DOM/fetch/XHR/WebSocket/Worker/storage bindings |
 | `networking/` | `brows12-net` | hyper + rustls HTTP client, DoH, HTTP/3 (feature) |
 | `parsing/html` | `brows12-html` | Arena DOM + html5ever HTML5 parsing |
 | `parsing/css` | `brows12-css` | lightningcss parsing, selector matcher, cascade |

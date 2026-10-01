@@ -16,12 +16,11 @@ pub extern "C" fn b12_engine_new(config_json: *const std::os::raw::c_char) -> *m
     let config_json = unsafe { cstr(config_json) };
     let mut builder = crate::Browser::builder();
     if let Ok(cfg) = serde_json::from_str::<serde_json::Value>(&config_json) {
-        if let Some((w, h)) = cfg.get("viewport").and_then(|v| v.as_array()).and_then(|a| {
-            Some((
-                a.first()?.as_u64()? as u32,
-                a.get(1)?.as_u64()? as u32,
-            ))
-        }) {
+        if let Some((w, h)) = cfg
+            .get("viewport")
+            .and_then(|v| v.as_array())
+            .and_then(|a| Some((a.first()?.as_u64()? as u32, a.get(1)?.as_u64()? as u32)))
+        {
             builder = builder.viewport(w, h);
         }
         if let Some(ua) = cfg.get("user_agent").and_then(|v| v.as_str()) {

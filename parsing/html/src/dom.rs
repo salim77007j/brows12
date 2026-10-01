@@ -88,12 +88,7 @@ impl Document {
 
     fn alloc(&mut self, data: NodeData) -> NodeId {
         let id = NodeId(self.nodes.len() as u32);
-        self.nodes.push(Node {
-            id,
-            parent: None,
-            children: Vec::new(),
-            data,
-        });
+        self.nodes.push(Node { id, parent: None, children: Vec::new(), data });
         id
     }
 
@@ -101,10 +96,7 @@ impl Document {
 
     /// Create a detached element node.
     pub fn create_element(&mut self, tag: &str) -> NodeId {
-        self.alloc(NodeData::Element {
-            name: tag.to_ascii_lowercase(),
-            attrs: Vec::new(),
-        })
+        self.alloc(NodeData::Element { name: tag.to_ascii_lowercase(), attrs: Vec::new() })
     }
 
     /// Create a detached text node.
@@ -141,7 +133,8 @@ impl Document {
             self.detach(old, child);
         }
         self.node_mut(child).parent = Some(parent);
-        let idx = self.node(parent)
+        let idx = self
+            .node(parent)
             .children
             .iter()
             .position(|&c| c == reference)
@@ -169,12 +162,7 @@ impl Document {
 
     /// Element children of `id` in document order.
     pub fn child_elements(&self, id: NodeId) -> Vec<NodeId> {
-        self.node(id)
-            .children
-            .iter()
-            .copied()
-            .filter(|&c| self.is_element(c))
-            .collect()
+        self.node(id).children.iter().copied().filter(|&c| self.is_element(c)).collect()
     }
 
     /// All children of `id`.
@@ -197,10 +185,7 @@ impl Document {
         let parent = self.node(id).parent?;
         let sibs = &self.node(parent).children;
         let idx = sibs.iter().position(|&c| c == id)?;
-        sibs[idx + 1..]
-            .iter()
-            .copied()
-            .find(|&c| self.is_element(c))
+        sibs[idx + 1..].iter().copied().find(|&c| self.is_element(c))
     }
 
     /// Previous element sibling of `id`.
@@ -267,25 +252,20 @@ impl Document {
     /// The `<body>` element, if present.
     pub fn body(&self) -> Option<NodeId> {
         let html = self.document_element()?;
-        self.child_elements(html)
-            .into_iter()
-            .find(|&c| self.local_name(c) == "body")
+        self.child_elements(html).into_iter().find(|&c| self.local_name(c) == "body")
     }
 
     /// The `<head>` element, if present.
     pub fn head(&self) -> Option<NodeId> {
         let html = self.document_element()?;
-        self.child_elements(html)
-            .into_iter()
-            .find(|&c| self.local_name(c) == "head")
+        self.child_elements(html).into_iter().find(|&c| self.local_name(c) == "head")
     }
 
     /// Text of the `<title>` element.
     pub fn title(&self) -> Option<String> {
         let head = self.head()?;
-        let title = self.child_elements(head)
-            .into_iter()
-            .find(|&c| self.local_name(c) == "title")?;
+        let title =
+            self.child_elements(head).into_iter().find(|&c| self.local_name(c) == "title")?;
         Some(self.text_content(title))
     }
 
@@ -294,10 +274,9 @@ impl Document {
     /// Value of attribute `name` on element `id` (case-insensitive).
     pub fn attr(&self, id: NodeId, name: &str) -> Option<&str> {
         match &self.node(id).data {
-            NodeData::Element { attrs, .. } => attrs
-                .iter()
-                .find(|(n, _)| n.eq_ignore_ascii_case(name))
-                .map(|(_, v)| v.as_str()),
+            NodeData::Element { attrs, .. } => {
+                attrs.iter().find(|(n, _)| n.eq_ignore_ascii_case(name)).map(|(_, v)| v.as_str())
+            }
             _ => None,
         }
     }
@@ -338,9 +317,7 @@ impl Document {
 
     /// Class list of element `id`.
     pub fn classes(&self, id: NodeId) -> impl Iterator<Item = &str> {
-        self.attr(id, "class")
-            .unwrap_or("")
-            .split_ascii_whitespace()
+        self.attr(id, "class").unwrap_or("").split_ascii_whitespace()
     }
 
     // -- text and lookup -----------------------------------------------------
@@ -375,9 +352,7 @@ impl Document {
 
     /// First element with attribute `id="..."` equal to `value`.
     pub fn get_element_by_id(&self, value: &str) -> Option<NodeId> {
-        self.walk(self.root(), &mut |n| {
-            self.is_element(n) && self.attr(n, "id") == Some(value)
-        })
+        self.walk(self.root(), &mut |n| self.is_element(n) && self.attr(n, "id") == Some(value))
     }
 
     /// All elements with the given lowercased tag name. `"*"` matches any.
@@ -470,8 +445,8 @@ impl Document {
 }
 
 const VOID_ELEMENTS: &[&str] = &[
-    "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param",
-    "source", "track", "wbr",
+    "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source",
+    "track", "wbr",
 ];
 
 fn escape_text(s: &str, out: &mut String) {
@@ -486,9 +461,7 @@ fn escape_text(s: &str, out: &mut String) {
 }
 
 fn escape_attr(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('"', "&quot;")
-        .replace('<', "&lt;")
+    s.replace('&', "&amp;").replace('"', "&quot;").replace('<', "&lt;")
 }
 
 #[cfg(test)]
@@ -515,7 +488,7 @@ mod tests {
         let mut doc = Document::new();
         let parent = doc.create_element("ul");
         let items: Vec<_> = (0..3)
-            .map(|i| {
+            .map(|_| {
                 let li = doc.create_element("li");
                 doc.append_child(parent, li);
                 li
@@ -531,7 +504,8 @@ mod tests {
 
     #[test]
     fn serialization_roundtrip() {
-        let doc = crate::parse::parse_document("<html><body><p class=\"x\">a&amp;b</p></body></html>");
+        let doc =
+            crate::parse::parse_document("<html><body><p class=\"x\">a&amp;b</p></body></html>");
         let p = doc.get_elements_by_tag_name("p")[0];
         assert_eq!(doc.outer_html(p), "<p class=\"x\">a&amp;b</p>");
     }

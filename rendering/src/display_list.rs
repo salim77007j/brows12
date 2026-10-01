@@ -96,7 +96,10 @@ pub fn build_display_list(
                 }
                 // Border
                 let bw = &style.border_width;
-                let total: f32 = bw.top.extract_px() + bw.right.extract_px() + bw.bottom.extract_px() + bw.left.extract_px();
+                let total: f32 = bw.top.extract_px()
+                    + bw.right.extract_px()
+                    + bw.bottom.extract_px()
+                    + bw.left.extract_px();
                 if total > 0.0 {
                     list.items.push(DisplayItem::Border {
                         rect,
@@ -170,4 +173,3 @@ impl ExtractPx for brows12_css::values::Len {
         }
     }
 }
-

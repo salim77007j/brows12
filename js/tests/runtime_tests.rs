@@ -8,12 +8,8 @@ use brows12_storage::{MemoryStore, WebStorage};
 use std::sync::{Arc, Mutex};
 
 fn test_env(base_url: &str) -> Arc<JsEnvironment> {
-    let tokio_rt = Arc::new(
-        tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .unwrap(),
-    );
+    let tokio_rt =
+        Arc::new(tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap());
     let net = Arc::new(HttpClient::new(ClientConfig::default(), None));
     Arc::new(JsEnvironment {
         net,
@@ -23,7 +19,7 @@ fn test_env(base_url: &str) -> Arc<JsEnvironment> {
         navigator: Default::default(),
         base_url: base_url.to_string(),
         top_level_site: brows12_storage::registrable_domain(
-            &url::Url::parse(base_url).unwrap().host_str().unwrap_or(""),
+            url::Url::parse(base_url).unwrap().host_str().unwrap_or(""),
         ),
         viewport: (1280, 720),
         console_log: Arc::new(Mutex::new(Vec::new())),
@@ -76,8 +72,7 @@ fn timers_fire_in_event_loop() {
 #[test]
 fn promises_resolve_via_microtasks() {
     let (rt, _env, _dom) = test_runtime();
-    rt.eval("var x = 0; Promise.resolve(21).then(function(v){ x = v * 2; });")
-        .unwrap();
+    rt.eval("var x = 0; Promise.resolve(21).then(function(v){ x = v * 2; });").unwrap();
     rt.run_event_loop(std::time::Duration::from_millis(100)).unwrap();
     assert_eq!(rt.eval("String(x)").unwrap(), "42");
 }
@@ -130,9 +125,7 @@ fn dom_manipulation_from_script() {
     )
     .unwrap();
     assert!(dom.take_mutated(), "DOM mutations must flag re-render");
-    let html = dom
-        .read(|doc| doc.inner_html(doc.get_element_by_id("app").unwrap()))
-        .unwrap();
+    let html = dom.read(|doc| doc.inner_html(doc.get_element_by_id("app").unwrap())).unwrap();
     assert!(html.contains("Injected by QuickJS-ng"), "got: {html}");
 }
 
@@ -141,7 +134,10 @@ fn query_selector_works() {
     let (rt, _env, _dom) = test_runtime();
     rt.eval("document.querySelector('#app').setAttribute('data-found', 'yes');").unwrap();
     rt.eval("var count = document.querySelectorAll('div').length;").unwrap();
-    assert_eq!(rt.eval("document.querySelector('#app').getAttribute('data-found')").unwrap(), "yes");
+    assert_eq!(
+        rt.eval("document.querySelector('#app').getAttribute('data-found')").unwrap(),
+        "yes"
+    );
     assert_eq!(rt.eval("String(count)").unwrap(), "1");
 }
 

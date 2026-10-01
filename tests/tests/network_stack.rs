@@ -10,7 +10,12 @@ use std::sync::{Arc, Mutex};
 struct JarAdapter(Arc<Mutex<CookieJar>>);
 
 impl CookieStore for JarAdapter {
-    fn header_for(&self, url: &url::Url, top_level_site: &str, is_third_party: bool) -> Option<String> {
+    fn header_for(
+        &self,
+        url: &url::Url,
+        top_level_site: &str,
+        is_third_party: bool,
+    ) -> Option<String> {
         self.0.lock().unwrap().header_for_url(url, top_level_site, is_third_party)
     }
     fn record(&self, url: &url::Url, set_cookies: &[String], top_level_site: &str) {
@@ -52,8 +57,7 @@ fn cookies_round_trip_over_http() {
 
     // 1. Obtain cookies.
     let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap();
-    rt.block_on(client.send(NetRequest::get(format!("{base}/login"), site.to_string())))
-        .unwrap();
+    rt.block_on(client.send(NetRequest::get(format!("{base}/login"), site.to_string()))).unwrap();
     assert_eq!(jar.lock().unwrap().len(), 2);
 
     // 2. Verify the next request carries the header (capture it raw).
@@ -76,7 +80,8 @@ fn cookies_round_trip_over_http() {
         }
         String::from_utf8_lossy(&collected).to_string()
     });
-    let _ = rt.block_on(client.send(NetRequest::get(format!("http://{addr2}/check"), site.to_string())));
+    let _ = rt
+        .block_on(client.send(NetRequest::get(format!("http://{addr2}/check"), site.to_string())));
     let captured = handle.join().unwrap();
     assert!(
         captured.to_ascii_lowercase().contains("cookie: session=abc"),
@@ -106,13 +111,10 @@ fn redirect_chain_completes() {
                 let path = req.split_whitespace().nth(1).unwrap_or("/").to_string();
                 let resp = if path == "/final" {
                     let body = "<html><body>final page</body></html>";
-                    format!(
-                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
-                        body.len(),
-                        body
-                    )
+                    format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", body.len(), body)
                 } else {
-                    "HTTP/1.1 302 Found\r\nLocation: /final\r\nContent-Length: 0\r\n\r\n".to_string()
+                    "HTTP/1.1 302 Found\r\nLocation: /final\r\nContent-Length: 0\r\n\r\n"
+                        .to_string()
                 };
                 let _ = sock.write_all(resp.as_bytes());
             }
@@ -166,7 +168,7 @@ fn doh_wire_format_end_to_end() {
     msg.push(0);
     msg.extend_from_slice(&1u16.to_be_bytes()); // QTYPE=A
     msg.extend_from_slice(&1u16.to_be_bytes()); // QCLASS=IN
-    // Answer section: owner name (7 = len of "example").
+                                                // Answer section: owner name (7 = len of "example").
     msg.extend_from_slice(&[7, b'e', b'x', b'a', b'm', b'p', b'l', b'e', 3, b'o', b'r', b'g', 0]);
     msg.extend_from_slice(&1u16.to_be_bytes()); // TYPE=A
     msg.extend_from_slice(&1u16.to_be_bytes()); // CLASS=IN

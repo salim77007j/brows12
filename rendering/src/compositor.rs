@@ -48,9 +48,7 @@ pub fn composite(width: u32, height: u32, layers: &[Layer]) -> Option<Pixmap> {
 
 /// Encode a framebuffer as PNG (tests, snapshots, benchmarks).
 pub fn encode_png(pixmap: &Pixmap) -> Result<Vec<u8>, crate::RenderError> {
-    let data = pixmap
-        .clone()
-        .encode_png()
-        .map_err(|e| crate::RenderError::Pixmap(e.to_string()))?;
+    let data =
+        pixmap.clone().encode_png().map_err(|e| crate::RenderError::Pixmap(e.to_string()))?;
     Ok(data)
 }

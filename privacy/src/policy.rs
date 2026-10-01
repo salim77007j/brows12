@@ -55,10 +55,7 @@ impl PolicyEngine {
         for target in chain {
             let target_site = registrable_domain(target);
             if !target_site.is_empty() && target_site != host_site {
-                return CnameVerdict::Cloaked {
-                    alias_target: target.clone(),
-                    target_site,
-                };
+                return CnameVerdict::Cloaked { alias_target: target.clone(), target_site };
             }
         }
         CnameVerdict::Clean
@@ -77,10 +74,7 @@ mod tests {
             block_cname_cloaking: true,
         };
         // site.com points at analytics.io (cloaking).
-        let v = engine.classify_cname(
-            "data.site.com",
-            &["analytics-tracker.io".to_string()],
-        );
+        let v = engine.classify_cname("data.site.com", &["analytics-tracker.io".to_string()]);
         assert_eq!(
             v,
             CnameVerdict::Cloaked {
@@ -92,23 +86,14 @@ mod tests {
 
     #[test]
     fn same_site_cname_is_clean() {
-        let engine = PolicyEngine {
-            block_cname_cloaking: true,
-            ..Default::default()
-        };
-        let v = engine.classify_cname(
-            "cdn.site.com",
-            &["assets.site.com".to_string()],
-        );
+        let engine = PolicyEngine { block_cname_cloaking: true, ..Default::default() };
+        let v = engine.classify_cname("cdn.site.com", &["assets.site.com".to_string()]);
         assert_eq!(v, CnameVerdict::Clean);
     }
 
     #[test]
     fn disabled_check_is_clean() {
-        let engine = PolicyEngine {
-            block_cname_cloaking: false,
-            ..Default::default()
-        };
+        let engine = PolicyEngine { block_cname_cloaking: false, ..Default::default() };
         let v = engine.classify_cname("a.com", &["evil.io".to_string()]);
         assert_eq!(v, CnameVerdict::Clean);
     }

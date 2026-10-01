@@ -24,14 +24,9 @@ pub fn parse_fragment(doc: &mut Document, context_element: NodeId, html: &str) -
         html5ever::Namespace::from(crate::HTML_NAMESPACE),
         html5ever::LocalName::from(doc.local_name(context_element)),
     );
-    let dom: RcDom = he_parse_fragment(
-        RcDom::default(),
-        ParseOpts::default(),
-        context_name,
-        Vec::new(),
-        true,
-    )
-    .one(html);
+    let dom: RcDom =
+        he_parse_fragment(RcDom::default(), ParseOpts::default(), context_name, Vec::new(), true)
+            .one(html);
 
     // html5ever wraps fragment output in a synthetic `<html>` root; unwrap it
     // so callers see exactly the nodes they parsed.
@@ -81,16 +76,12 @@ fn transplant_children(doc: &mut Document, handle: Handle, into: NodeId) {
 fn convert(doc: &mut Document, handle: Handle) -> NodeId {
     let data = match &handle.data {
         RcNodeData::Document => NodeData::Document,
-        RcNodeData::Doctype { name, .. } => NodeData::Doctype {
-            name: name.to_string(),
-        },
+        RcNodeData::Doctype { name, .. } => NodeData::Doctype { name: name.to_string() },
         RcNodeData::Text { contents } => NodeData::Text(contents.borrow().to_string()),
         RcNodeData::Comment { contents } => NodeData::Comment(contents.to_string()),
-        RcNodeData::ProcessingInstruction { target, contents } => NodeData::Comment(format!(
-            "<?{} {}?>",
-            target,
-            contents
-        )),
+        RcNodeData::ProcessingInstruction { target, contents } => {
+            NodeData::Comment(format!("<?{} {}?>", target, contents))
+        }
         RcNodeData::Element { name, attrs, .. } => {
             let tag = if &*name.ns == crate::HTML_NAMESPACE {
                 name.local.to_string()
@@ -106,7 +97,6 @@ fn convert(doc: &mut Document, handle: Handle) -> NodeId {
     };
     doc.create_node(data)
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -131,7 +121,9 @@ mod tests {
 
     #[test]
     fn head_and_title_extraction() {
-        let doc = parse_document("<html><head><meta charset=\"utf-8\"><title>Page</title></head><body></body></html>");
+        let doc = parse_document(
+            "<html><head><meta charset=\"utf-8\"><title>Page</title></head><body></body></html>",
+        );
         assert_eq!(doc.title().as_deref(), Some("Page"));
         assert!(doc.head().is_some());
     }

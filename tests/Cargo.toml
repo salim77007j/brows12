@@ -23,3 +23,6 @@ tempfile = "3"
 tokio = { version = "1", features = ["rt-multi-thread", "net", "time", "io-util", "macros"] }
 tracing = "0.1"
 url = "2.5"
+tokio-tungstenite = "0.29"
+futures-util = "0.3"
+brows12-js = { version = "0.1.0", path = "../js" }

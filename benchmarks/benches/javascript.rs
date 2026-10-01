@@ -8,9 +8,8 @@ use std::hint::black_box;
 use std::sync::{Arc, Mutex};
 
 fn realm() -> JsRuntime {
-    let tokio_rt = Arc::new(
-        tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap(),
-    );
+    let tokio_rt =
+        Arc::new(tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap());
     let env = Arc::new(JsEnvironment {
         net: Arc::new(HttpClient::new(ClientConfig::default(), None)),
         tokio: tokio_rt,
@@ -22,9 +21,9 @@ fn realm() -> JsRuntime {
         viewport: (1280, 720),
         console_log: Arc::new(Mutex::new(Vec::new())),
     });
-    let dom = DomHandle::new(Arc::new(Mutex::new(
-        brows12_html::parse_document("<html><body><div id=\"app\"></div></body></html>"),
-    )));
+    let dom = DomHandle::new(Arc::new(Mutex::new(brows12_html::parse_document(
+        "<html><body><div id=\"app\"></div></body></html>",
+    ))));
     let rt = JsRuntime::new(env, dom).unwrap();
     rt.load_glue().unwrap();
     rt
@@ -34,9 +33,7 @@ fn bench_javascript(c: &mut Criterion) {
     let rt = realm();
     let mut group = c.benchmark_group("javascript");
 
-    group.bench_function("eval_fib20", |b| {
-        b.iter(|| rt.eval(black_box(JS_FIB)).unwrap())
-    });
+    group.bench_function("eval_fib20", |b| b.iter(|| rt.eval(black_box(JS_FIB)).unwrap()));
 
     group.bench_function("dom_churn_100_nodes", |b| {
         b.iter(|| {

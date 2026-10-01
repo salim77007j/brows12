@@ -2,7 +2,7 @@
 
 use crate::{CookieStore, NetError};
 use bytes::Bytes;
-use http_body_util::{BodyExt, Empty};
+use http_body_util::{BodyExt, Full};
 
 use hyper::header::SET_COOKIE;
 use hyper::Request;
@@ -13,7 +13,14 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpStream;
 
-pub type HyperClient = Client<hyper_rustls::HttpsConnector<HttpConnector>, Empty<Bytes>>;
+pub type HyperClient = Client<hyper_rustls::HttpsConnector<HttpConnector>, Full<Bytes>>;
+
+/// Outbound request policy hook — the seam where network-layer ad/tracker
+/// blocking plugs in. Applies to every `send` and every JS-initiated fetch.
+pub trait PolicyFilter: Send + Sync {
+    /// Return `Err(reason)` to block the request.
+    fn allow(&self, url: &url::Url, resource_type: &str) -> Result<(), String>;
+}
 
 /// Tunable knobs for the HTTP stack.
 #[derive(Debug, Clone)]
@@ -77,10 +84,7 @@ pub struct NetResponse {
 
 impl NetResponse {
     pub fn header(&self, name: &str) -> Option<&str> {
-        self.headers
-            .iter()
-            .find(|(k, _)| k.eq_ignore_ascii_case(name))
-            .map(|(_, v)| v.as_str())
+        self.headers.iter().find(|(k, _)| k.eq_ignore_ascii_case(name)).map(|(_, v)| v.as_str())
     }
 
     pub fn set_cookie_headers(&self) -> Vec<String> {
@@ -101,6 +105,8 @@ pub struct HttpClient {
     inner: Arc<HyperClient>,
     pub config: ClientConfig,
     pub cookies: Option<Arc<dyn CookieStore>>,
+    /// Optional policy filter (ad/tracker blocking). `None` = allow all.
+    pub policy: std::sync::RwLock<Option<Arc<dyn PolicyFilter>>>,
 }
 
 impl HttpClient {
@@ -114,25 +120,53 @@ impl HttpClient {
             .enable_http2()
             .build();
         let inner = Client::builder(TokioExecutor::new()).build(https);
-        Self { inner: Arc::new(inner), config, cookies }
+        Self { inner: Arc::new(inner), config, cookies, policy: std::sync::RwLock::new(None) }
+    }
+
+    /// Install the network-layer blocking filter.
+    pub fn set_policy(&self, policy: Arc<dyn PolicyFilter>) {
+        if let Ok(mut slot) = self.policy.write() {
+            *slot = Some(policy);
+        }
+    }
+
+    /// Synchronous policy probe (also used by WebSocket connections).
+    pub fn is_blocked(&self, url: &str, resource_type: &str) -> bool {
+        let parsed = url::Url::parse(url);
+        match (&*self.policy.read().unwrap_or_else(|e| e.into_inner()), parsed) {
+            (Some(policy), Ok(u)) => policy.allow(&u, resource_type).is_err(),
+            _ => false,
+        }
     }
 
     /// Execute a request, following redirects and applying cookies.
     pub async fn send(&self, mut req: NetRequest) -> Result<NetResponse, NetError> {
         let mut redirects = 0usize;
         loop {
-            let url = url::Url::parse(&req.url).map_err(|_| NetError::InvalidUrl(req.url.clone()))?;
+            let url =
+                url::Url::parse(&req.url).map_err(|_| NetError::InvalidUrl(req.url.clone()))?;
             let is_third_party = !same_site(&url, &req.top_level_site);
+
+            // Network-layer blocking (ads / trackers) — see `PolicyFilter`.
+            if let Some(policy) = self.policy.read().unwrap_or_else(|e| e.into_inner()).clone() {
+                if let Err(reason) = policy.allow(&url, "request") {
+                    return Err(NetError::Blocked(reason));
+                }
+            }
 
             let mut builder = Request::builder()
                 .method(req.method.as_str())
                 .uri(url.as_str())
                 .header("user-agent", self.config.user_agent.clone())
                 .header("accept-language", self.config.accept_language.clone())
-                .header("accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+                .header(
+                    "accept",
+                    "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                );
 
             if let Some(cookies) = &self.cookies {
-                if let Some(header) = cookies.header_for(&url, &req.top_level_site, is_third_party) {
+                if let Some(header) = cookies.header_for(&url, &req.top_level_site, is_third_party)
+                {
                     builder = builder.header("cookie", header);
                 }
             }
@@ -140,17 +174,17 @@ impl HttpClient {
                 builder = builder.header(k.as_str(), v.as_str());
             }
 
-            let request = builder
-                .body(Empty::<Bytes>::new())
-                .map_err(|e| NetError::Http(e.to_string()))?;
+            let body: Full<Bytes> = match req.body.take() {
+                Some(bytes) => Full::new(Bytes::from(bytes)),
+                None => Full::new(Bytes::new()),
+            };
+            let request = builder.body(body).map_err(|e| NetError::Http(e.to_string()))?;
 
-            let response = tokio::time::timeout(
-                self.config.response_timeout,
-                self.inner.request(request),
-            )
-            .await
-            .map_err(|_| NetError::Http("response timeout".into()))?
-            .map_err(|e| NetError::Http(e.to_string()))?;
+            let response =
+                tokio::time::timeout(self.config.response_timeout, self.inner.request(request))
+                    .await
+                    .map_err(|_| NetError::Http("response timeout".into()))?
+                    .map_err(|e| NetError::Http(e.to_string()))?;
 
             let status = response.status().as_u16();
             let protocol = format!("{:?}", response.version());
@@ -187,15 +221,16 @@ impl HttpClient {
                     .find(|(k, _)| k.eq_ignore_ascii_case("location"))
                     .map(|(_, v)| v.clone())
                 {
-                    let next = url
-                        .join(&location)
-                        .map_err(|_| NetError::InvalidUrl(location.clone()))?;
+                    let next =
+                        url.join(&location).map_err(|_| NetError::InvalidUrl(location.clone()))?;
                     redirects += 1;
                     if redirects > self.config.max_redirects {
                         return Err(NetError::TooManyRedirects);
                     }
                     req.url = next.to_string();
-                    req.method = if status == 303 || ((status == 301 || status == 302) && req.method == "POST") {
+                    req.method = if status == 303
+                        || ((status == 301 || status == 302) && req.method == "POST")
+                    {
                         "GET".into()
                     } else {
                         req.method
@@ -205,25 +240,18 @@ impl HttpClient {
                 }
             }
 
-            return Ok(NetResponse {
-                url: req.url.clone(),
-                status,
-                headers,
-                body,
-                protocol,
-            });
+            return Ok(NetResponse { url: req.url.clone(), status, headers, body, protocol });
         }
     }
 
     /// Preconnect (TCP) to a host — used by the speculative connection pool.
     pub async fn preconnect(&self, host: &str, port: u16) -> std::io::Result<()> {
         let addr = format!("{host}:{port}");
-        let _stream = tokio::time::timeout(
-            self.config.connect_timeout,
-            TcpStream::connect(addr),
-        )
-        .await
-        .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "preconnect timeout"))??;
+        let _stream = tokio::time::timeout(self.config.connect_timeout, TcpStream::connect(addr))
+            .await
+            .map_err(|_| {
+                std::io::Error::new(std::io::ErrorKind::TimedOut, "preconnect timeout")
+            })??;
         Ok(())
     }
 }
@@ -271,15 +299,13 @@ mod tests {
             let (mut sock, _) = listener.accept().await.unwrap();
             let mut buf = vec![0u8; 4096];
             let _ = tokio::io::AsyncReadExt::read(&mut sock, &mut buf).await;
-            let resp = b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 5\r\n\r\nhello";
+            let resp =
+                b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 5\r\n\r\nhello";
             tokio::io::AsyncWriteExt::write_all(&mut sock, resp).await.unwrap();
         });
 
         let client = HttpClient::new(ClientConfig::default(), None);
-        let resp = client
-            .send(NetRequest::get(format!("http://{addr}/"), ""))
-            .await
-            .unwrap();
+        let resp = client.send(NetRequest::get(format!("http://{addr}/"), "")).await.unwrap();
         assert_eq!(resp.status, 200);
         assert_eq!(resp.body, b"hello".to_vec());
         assert_eq!(resp.header("content-type"), Some("text/html"));

@@ -2,7 +2,6 @@
 
 use crate::computed::*;
 use crate::values::*;
-use lightningcss::properties::Property;
 use lightningcss::properties::border::{BorderSideWidth, LineStyle};
 use lightningcss::properties::display::Display as LcDisplay;
 use lightningcss::properties::font::{
@@ -11,6 +10,7 @@ use lightningcss::properties::font::{
 use lightningcss::properties::position::{Position as LcPosition, ZIndex as LcZIndex};
 use lightningcss::properties::size::{MaxSize, Size};
 use lightningcss::properties::text::{TextAlign as LcTextAlign, WhiteSpace as LcWhiteSpace};
+use lightningcss::properties::Property;
 use lightningcss::values::color::CssColor;
 
 /// Apply one declaration onto `s`.
@@ -41,11 +41,12 @@ pub(crate) fn apply_property(
         Property::FontSize(fs) => {
             let parent_size = parent.map(|p| p.font_size).unwrap_or(ctx.root_font_size);
             let resolved = match fs {
-                FontSize::Length(lp) => crate::computed::length_percentage_to_len(lp, &lctx)
-                    .map(|len| match len {
+                FontSize::Length(lp) => {
+                    crate::computed::length_percentage_to_len(lp, &lctx).map(|len| match len {
                         Len::Px(px) => px,
                         Len::Percent(p) => parent_size * p / 100.0,
-                    }),
+                    })
+                }
                 FontSize::Absolute(kw) => Some(absolute_font_size(*kw)),
                 FontSize::Relative(r) => Some(match r {
                     RelativeFontSize::Larger => parent_size * 1.2,
@@ -88,14 +89,12 @@ pub(crate) fn apply_property(
             s.line_height = match lh {
                 LcLH::Normal => LineHeight::Normal,
                 LcLH::Number(n) => LineHeight::Number(*n),
-                LcLH::Length(lp) => {
-                    crate::computed::length_percentage_to_len(lp, &lctx)
-                        .map(|len| match len {
-                            Len::Px(px) => LineHeight::Px(px),
-                            Len::Percent(p) => LineHeight::Px(s.font_size * p / 100.0),
-                        })
-                        .unwrap_or(LineHeight::Normal)
-                }
+                LcLH::Length(lp) => crate::computed::length_percentage_to_len(lp, &lctx)
+                    .map(|len| match len {
+                        Len::Px(px) => LineHeight::Px(px),
+                        Len::Percent(p) => LineHeight::Px(s.font_size * p / 100.0),
+                    })
+                    .unwrap_or(LineHeight::Normal),
             };
         }
         Property::Margin(m) => {
@@ -202,7 +201,9 @@ pub(crate) fn apply_property(
         Property::BorderBottomWidth(v) => s.border_width.bottom = side_width(v, &lctx),
         Property::BorderLeftWidth(v) => s.border_width.left = side_width(v, &lctx),
         Property::BorderTopStyle(v) => s.border_width.top = style_width(s.border_width.top, v),
-        Property::BorderRightStyle(v) => s.border_width.right = style_width(s.border_width.right, v),
+        Property::BorderRightStyle(v) => {
+            s.border_width.right = style_width(s.border_width.right, v)
+        }
         Property::BorderBottomStyle(v) => {
             s.border_width.bottom = style_width(s.border_width.bottom, v)
         }
@@ -223,7 +224,11 @@ pub(crate) fn apply_property(
                     _ => 0.0,
                 }
             };
-            let r = (avg(&br.top_left) + avg(&br.top_right) + avg(&br.bottom_right) + avg(&br.bottom_left)) / 4.0;
+            let r = (avg(&br.top_left)
+                + avg(&br.top_right)
+                + avg(&br.bottom_right)
+                + avg(&br.bottom_left))
+                / 4.0;
             if r > 0.0 {
                 s.border_radius = r;
             }
@@ -250,19 +255,27 @@ pub(crate) fn apply_property(
             };
         }
         Property::TextDecoration(td, _) => {
-            s.text_underline = td.line.contains(lightningcss::properties::text::TextDecorationLine::Underline);
-            s.text_line_through = td.line.contains(lightningcss::properties::text::TextDecorationLine::LineThrough);
+            s.text_underline =
+                td.line.contains(lightningcss::properties::text::TextDecorationLine::Underline);
+            s.text_line_through =
+                td.line.contains(lightningcss::properties::text::TextDecorationLine::LineThrough);
         }
         Property::TextDecorationLine(line, _) => {
-            s.text_underline = line.contains(lightningcss::properties::text::TextDecorationLine::Underline);
-            s.text_line_through = line.contains(lightningcss::properties::text::TextDecorationLine::LineThrough);
+            s.text_underline =
+                line.contains(lightningcss::properties::text::TextDecorationLine::Underline);
+            s.text_line_through =
+                line.contains(lightningcss::properties::text::TextDecorationLine::LineThrough);
         }
         Property::FlexDirection(d, _) => {
             s.flex_direction = match d {
                 lightningcss::properties::flex::FlexDirection::Row => FlexDirection::Row,
-                lightningcss::properties::flex::FlexDirection::RowReverse => FlexDirection::RowReverse,
+                lightningcss::properties::flex::FlexDirection::RowReverse => {
+                    FlexDirection::RowReverse
+                }
                 lightningcss::properties::flex::FlexDirection::Column => FlexDirection::Column,
-                lightningcss::properties::flex::FlexDirection::ColumnReverse => FlexDirection::ColumnReverse,
+                lightningcss::properties::flex::FlexDirection::ColumnReverse => {
+                    FlexDirection::ColumnReverse
+                }
             };
         }
         Property::FlexWrap(w, _) => {
@@ -278,7 +291,9 @@ pub(crate) fn apply_property(
         }
         Property::FlexGrow(g, _) => s.flex.grow = *g,
         Property::JustifyContent(j, _) => {
-            use lightningcss::properties::align::{ContentDistribution, ContentPosition, JustifyContent as LcJ};
+            use lightningcss::properties::align::{
+                ContentDistribution, ContentPosition, JustifyContent as LcJ,
+            };
             s.justify_content = match j {
                 LcJ::ContentDistribution(d) => match d {
                     ContentDistribution::SpaceBetween => JustifyContent::SpaceBetween,
@@ -441,7 +456,11 @@ fn family_name_string(name: &lightningcss::properties::font::FamilyName) -> Opti
     let mut printer = Printer::new(&mut out, PrinterOptions { minify: true, ..Default::default() });
     name.to_css(&mut printer).ok()?;
     let trimmed = out.trim_matches('"').trim_matches('\'').to_string();
-    if trimmed.is_empty() { None } else { Some(trimmed) }
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed)
+    }
 }
 
 fn map_display(d: &LcDisplay) -> Display {

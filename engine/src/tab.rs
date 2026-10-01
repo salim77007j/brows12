@@ -2,8 +2,8 @@
 
 use crate::engine::{EngineEvent, EngineInner};
 use crate::EngineError;
-use brows12_css::values::Display;
 use brows12_css::computed::CascadeCtx;
+use brows12_css::values::Display;
 use brows12_css::{compute_styles, Stylesheet};
 use brows12_html::parse_document;
 use brows12_js::{DomHandle, JsEnvironment, JsRuntime, Script};
@@ -82,10 +82,7 @@ pub struct Tab {
 }
 
 fn now_secs() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }
 
 impl Tab {
@@ -155,7 +152,10 @@ impl Tab {
 
     /// Navigate to `url` and run the full load pipeline.
     pub fn load_url(&self, url: &str) -> Result<(), EngineError> {
-        let _ = self.engine.events.send(EngineEvent::NavigationStarted { tab: self.id, url: url.to_string() });
+        let _ = self
+            .engine
+            .events
+            .send(EngineEvent::NavigationStarted { tab: self.id, url: url.to_string() });
 
         // 1. HTTPS upgrade (localhost/loopback exempt, like real browsers).
         let parsed_probe = url::Url::parse(url).ok();
@@ -171,7 +171,8 @@ impl Tab {
         };
 
         // 2. Privacy check on the document request itself.
-        let parsed = url::Url::parse(&target).map_err(|_| brows12_net::NetError::InvalidUrl(target.clone()))?;
+        let parsed = url::Url::parse(&target)
+            .map_err(|_| brows12_net::NetError::InvalidUrl(target.clone()))?;
         let top_site = brows12_storage::registrable_domain(parsed.host_str().unwrap_or(""));
         let block_kind = brows12_privacy::blocker::RequestKind::Document;
         if let Some(reason) = self.engine.blocker.check(&target, &top_site, block_kind) {
@@ -184,7 +185,11 @@ impl Tab {
         }
 
         // 3. Fetch (with cache fallback).
-        let response = match self.engine.tokio.block_on(self.engine.net.send(NetRequest::get(target.clone(), top_site.clone()))) {
+        let response = match self
+            .engine
+            .tokio
+            .block_on(self.engine.net.send(NetRequest::get(target.clone(), top_site.clone())))
+        {
             Ok(resp) => {
                 self.engine.cache.put(CachedResponse {
                     url: target.clone(),
@@ -213,7 +218,10 @@ impl Tab {
         };
 
         let final_url = response.url.clone();
-        let _ = self.engine.events.send(EngineEvent::NavigationCommitted { tab: self.id, url: final_url.clone() });
+        let _ = self
+            .engine
+            .events
+            .send(EngineEvent::NavigationCommitted { tab: self.id, url: final_url.clone() });
 
         // 4. Parse HTML into the arena DOM.
         let html_text = String::from_utf8_lossy(&response.body).to_string();
@@ -267,7 +275,10 @@ impl Tab {
         page.touch();
         *self.state.lock().unwrap() = TabState::Live(page.clone());
         crate::engine::enforce_budget(&self.engine);
-        let _ = self.engine.events.send(EngineEvent::LoadFinished { tab: self.id, title: page.title.clone() });
+        let _ = self
+            .engine
+            .events
+            .send(EngineEvent::LoadFinished { tab: self.id, title: page.title.clone() });
 
         // 9. Scripts: build the JS realm and execute in document order.
         self.run_scripts(&page)?;
@@ -281,7 +292,13 @@ impl Tab {
                 &styles,
                 self.engine.config.viewport,
                 &measurer,
-                &page.images.lock().unwrap().iter().map(|(k, v)| (*k, (v.width, v.height))).collect(),
+                &page
+                    .images
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .map(|(k, v)| (*k, (v.width, v.height)))
+                    .collect(),
             );
             self.paint(&page, &styles, &layout)?;
             *page.styles.lock().unwrap() = Some(styles);
@@ -338,7 +355,11 @@ impl Tab {
                 }
                 match doc.local_name(node) {
                     "link" => {
-                        if doc.attr(node, "rel").map(|r| r.eq_ignore_ascii_case("stylesheet")).unwrap_or(false) {
+                        if doc
+                            .attr(node, "rel")
+                            .map(|r| r.eq_ignore_ascii_case("stylesheet"))
+                            .unwrap_or(false)
+                        {
                             if let Some(href) = doc.attr(node, "href") {
                                 links.push(href.to_string());
                             }
@@ -359,7 +380,8 @@ impl Tab {
             }
         }
         // External sheets, capped to keep hostile pages bounded.
-        let base = url::Url::parse(base_url).map_err(|_| brows12_net::NetError::InvalidUrl(base_url.to_string()))?;
+        let base = url::Url::parse(base_url)
+            .map_err(|_| brows12_net::NetError::InvalidUrl(base_url.to_string()))?;
         for (i, href) in links.iter().enumerate() {
             if i >= 12 {
                 break;
@@ -368,11 +390,9 @@ impl Tab {
                 Ok(u) => u.to_string(),
                 Err(_) => continue,
             };
-            if let Ok(resp) = self
-                .engine
-                .tokio
-                .block_on(self.engine.net.send(NetRequest::get(resolved.clone(), top_site.to_string())))
-            {
+            if let Ok(resp) = self.engine.tokio.block_on(
+                self.engine.net.send(NetRequest::get(resolved.clone(), top_site.to_string())),
+            ) {
                 if resp.is_success() {
                     let css = String::from_utf8_lossy(&resp.body).to_string();
                     if let Ok(sheet) = Stylesheet::parse(&css, brows12_css::Origin::Author) {
@@ -391,7 +411,8 @@ impl Tab {
         base_url: &str,
         top_site: &str,
     ) -> Result<HashMap<brows12_html::NodeId, Arc<DecodedImage>>, EngineError> {
-        let base = url::Url::parse(base_url).map_err(|_| brows12_net::NetError::InvalidUrl(base_url.to_string()))?;
+        let base = url::Url::parse(base_url)
+            .map_err(|_| brows12_net::NetError::InvalidUrl(base_url.to_string()))?;
         let mut out = HashMap::new();
         let nodes: Vec<brows12_html::NodeId> = {
             let doc = document.lock().unwrap();
@@ -407,7 +428,8 @@ impl Tab {
                     continue;
                 }
             }
-            let Some(src) = document.lock().unwrap().attr(node, "src").map(|s| s.to_string()) else {
+            let Some(src) = document.lock().unwrap().attr(node, "src").map(|s| s.to_string())
+            else {
                 continue;
             };
             let Ok(resolved) = base.join(&src) else { continue };
@@ -448,7 +470,8 @@ impl Tab {
             return Ok(());
         }
 
-        let base = url::Url::parse(&page.url).map_err(|_| brows12_net::NetError::InvalidUrl(page.url.clone()))?;
+        let base = url::Url::parse(&page.url)
+            .map_err(|_| brows12_net::NetError::InvalidUrl(page.url.clone()))?;
         let top_site = brows12_storage::registrable_domain(base.host_str().unwrap_or(""));
 
         let js_env = Arc::new(JsEnvironment {
@@ -466,11 +489,15 @@ impl Tab {
             },
             base_url: page.url.clone(),
             top_level_site: top_site,
-            viewport: (self.engine.config.viewport.width as u32, self.engine.config.viewport.height as u32),
+            viewport: (
+                self.engine.config.viewport.width as u32,
+                self.engine.config.viewport.height as u32,
+            ),
             console_log: Arc::new(Mutex::new(Vec::new())),
         });
 
-        let runtime = JsRuntime::new(js_env.clone(), page.dom.clone()).map_err(EngineError::from)?;
+        let runtime =
+            JsRuntime::new(js_env.clone(), page.dom.clone()).map_err(EngineError::from)?;
         runtime.load_glue().map_err(EngineError::from)?;
 
         let mut executed = 0;
@@ -480,11 +507,11 @@ impl Tab {
                     Ok(u) => u.to_string(),
                     Err(_) => continue,
                 };
-                match self
-                    .engine
-                    .tokio
-                    .block_on(self.engine.net.send(NetRequest::get(resolved, base.host_str().unwrap_or("").to_string())))
-                {
+                match self.engine.tokio.block_on(
+                    self.engine
+                        .net
+                        .send(NetRequest::get(resolved, base.host_str().unwrap_or("").to_string())),
+                ) {
                     Ok(resp) if resp.is_success() => Script::External {
                         content: String::from_utf8_lossy(&resp.body).to_string(),
                         name: source.clone(),
@@ -570,7 +597,10 @@ impl Tab {
             }
         }
         *self.state.lock().unwrap() = TabState::Live(page);
-        let _ = self.engine.events.send(EngineEvent::LoadFinished { tab: self.id, title: self.title() });
+        let _ = self
+            .engine
+            .events
+            .send(EngineEvent::LoadFinished { tab: self.id, title: self.title() });
         Ok(())
     }
 

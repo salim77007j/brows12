@@ -3,10 +3,10 @@ use brows12_css::computed::CascadeCtx;
 use brows12_css::{compute_styles, StyleEngine};
 use brows12_html::parse_document;
 use brows12_layout::{compute_layout, TextMeasurer, Viewport};
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
 use criterion::{criterion_group, criterion_main, Criterion};
+use std::collections::HashMap;
 use std::hint::black_box;
+use std::sync::{Arc, Mutex};
 
 fn bench_layout_render(c: &mut Criterion) {
     let doc = parse_document(&html_fixture(60));
@@ -26,7 +26,13 @@ fn bench_layout_render(c: &mut Criterion) {
 
     // Render
     let layout = compute_layout(&doc, &styles, viewport, &measurer, &HashMap::new());
-    let list = brows12_render::build_display_list(&doc, &styles, &layout, (1280.0, 720.0), &HashMap::new());
+    let list = brows12_render::build_display_list(
+        &doc,
+        &styles,
+        &layout,
+        (1280.0, 720.0),
+        &HashMap::new(),
+    );
     let mut group = c.benchmark_group("render");
     group.bench_function("60_sections_raster_1280x720", |b| {
         let mut rasterizer = brows12_render::Rasterizer::new(fonts.clone());

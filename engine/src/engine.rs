@@ -25,7 +25,12 @@ pub enum EngineEvent {
 pub(crate) struct JarAdapter(pub Arc<Mutex<CookieJar>>);
 
 impl CookieStore for JarAdapter {
-    fn header_for(&self, url: &url::Url, top_level_site: &str, is_third_party: bool) -> Option<String> {
+    fn header_for(
+        &self,
+        url: &url::Url,
+        top_level_site: &str,
+        is_third_party: bool,
+    ) -> Option<String> {
         let jar = self.0.lock().ok()?;
         jar.header_for_url(url, top_level_site, is_third_party)
     }
@@ -35,6 +40,21 @@ impl CookieStore for JarAdapter {
             for sc in set_cookies {
                 jar.set_from_header(url, sc, top_level_site);
             }
+        }
+    }
+}
+
+/// Adapts [`PrivacyBlocker`] to the network stack's `PolicyFilter` seam so
+/// that every outbound request — page subresources, JS `fetch`, WebSocket —
+/// passes the ad/tracker filter exactly once, inside the client.
+struct BlockerPolicy(Arc<PrivacyBlocker>);
+
+impl brows12_net::client::PolicyFilter for BlockerPolicy {
+    fn allow(&self, url: &url::Url, _resource_type: &str) -> Result<(), String> {
+        let host = url.host_str().unwrap_or_default();
+        match self.0.check(url.as_str(), host, brows12_privacy::blocker::RequestKind::Other) {
+            Some(reason) => Err(format!("{reason:?}")),
+            None => Ok(()),
         }
     }
 }
@@ -62,28 +82,27 @@ pub struct EngineInner {
 
 impl std::fmt::Debug for Engine {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Engine")
-            .field("version", &env!("CARGO_PKG_VERSION"))
-            .finish()
+        f.debug_struct("Engine").field("version", &env!("CARGO_PKG_VERSION")).finish()
     }
 }
 
 impl Engine {
     /// Build an engine from configuration.
     pub fn new(config: EngineConfig) -> Self {
-        let mut net_config = ClientConfig::default();
-        net_config.user_agent = config.user_agent.clone();
+        let net_config =
+            ClientConfig { user_agent: config.user_agent.clone(), ..ClientConfig::default() };
 
         let jar = Arc::new(Mutex::new(CookieJar::new()));
-        let net = Arc::new(HttpClient::new(
-            net_config,
-            Some(Arc::new(JarAdapter(jar.clone()))),
-        ));
+        let net = Arc::new(HttpClient::new(net_config, Some(Arc::new(JarAdapter(jar.clone())))));
 
         let blocker = Arc::new(PrivacyBlocker::new());
         let upgrader = Arc::new(HttpsUpgrader::default());
         let cache = Arc::new(HttpCache::new());
         let kv: Arc<dyn KeyValueStore> = Arc::new(MemoryStore::new());
+
+        // Install the ad/tracker filter at the network layer: it now covers
+        // pipeline fetches AND JS-initiated fetch/WebSocket connections.
+        net.set_policy(Arc::new(BlockerPolicy(blocker.clone())));
 
         let (events, _rx) = tokio::sync::broadcast::channel(256);
 
@@ -195,8 +214,6 @@ impl Engine {
             .count()
     }
 }
-
-
 
 fn tracing_subscriber_handle(filter: &str) -> Result<(), String> {
     use tracing_subscriber::EnvFilter;

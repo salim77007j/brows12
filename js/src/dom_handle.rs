@@ -15,9 +15,7 @@ pub struct DomHandle {
 
 impl std::fmt::Debug for DomHandle {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("DomHandle")
-            .field("mutated", &self.mutated.load(Ordering::Relaxed))
-            .finish()
+        f.debug_struct("DomHandle").field("mutated", &self.mutated.load(Ordering::Relaxed)).finish()
     }
 }
 

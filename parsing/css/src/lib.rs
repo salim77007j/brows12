@@ -30,8 +30,10 @@ pub mod values;
 pub use cascade::{compute_styles, StyleMap};
 pub use computed::ComputedStyle;
 pub use stylesheet::{Origin, StyleEngine, Stylesheet};
-pub use values::{AlignItems, AutoPx, Display, Edges, FlexDirection, FlexWrap, FontStyle,
-    JustifyContent, Len, LineHeight, OverflowKeyword, Position, TextAlign, WhiteSpace, ZIndex};
+pub use values::{
+    AlignItems, AutoPx, Display, Edges, FlexDirection, FlexWrap, FontStyle, JustifyContent, Len,
+    LineHeight, OverflowKeyword, Position, TextAlign, WhiteSpace, ZIndex,
+};
 
 use thiserror::Error;
 

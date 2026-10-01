@@ -43,8 +43,8 @@ mod tests {
     fn parser_error_correction() {
         // Mismatched tags are corrected per the HTML5 spec.
         let doc = parse_document("<html><body><b><i>x</b>y</i></body></html>");
-        assert!(doc.get_elements_by_tag_name("i").len() >= 1);
-        assert!(doc.get_elements_by_tag_name("b").len() >= 1);
+        assert!(!doc.get_elements_by_tag_name("i").is_empty());
+        assert!(!doc.get_elements_by_tag_name("b").is_empty());
         assert!(doc.text_content(doc.body().unwrap()).contains('y'));
     }
 

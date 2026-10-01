@@ -18,7 +18,7 @@ pub mod raster;
 
 pub use compositor::{composite, Layer};
 pub use display_list::{build_display_list, DisplayItem, DisplayList, TextStyle};
-pub use raster::{Rasterizer, RasterStats};
+pub use raster::{RasterStats, Rasterizer};
 
 use thiserror::Error;
 

@@ -4,7 +4,7 @@ use crate::apply::apply_property;
 use crate::computed::{CascadeCtx, ComputedStyle};
 use crate::matcher;
 use crate::stylesheet::{Origin, StyleEngine, Stylesheet};
-use brows12_html::{Document, NodeId, NodeData};
+use brows12_html::{Document, NodeData, NodeId};
 use std::collections::HashMap;
 
 /// Per-document style map: node id -> computed style.
@@ -44,10 +44,7 @@ pub fn compute_styles(doc: &Document, engine: &StyleEngine, ctx: &CascadeCtx) ->
                     .rules()
                     .iter()
                     .filter(|rule| {
-                        rule.selectors
-                            .0
-                            .iter()
-                            .any(|sel| matcher::matches_selector(doc, node, sel))
+                        rule.selectors.0.iter().any(|sel| matcher::matches_selector(doc, node, sel))
                     })
                     .collect();
                 // Cascade order: origin (UA < author), then specificity, then
@@ -147,7 +144,8 @@ mod tests {
     #[test]
     fn author_rules_override_ua() {
         let doc = parse_document("<html><body><p class=\"big\">x</p></body></html>");
-        let author = Stylesheet::parse("p.big { font-size: 32px; color: red; }", Origin::Author).unwrap();
+        let author =
+            Stylesheet::parse("p.big { font-size: 32px; color: red; }", Origin::Author).unwrap();
         let engine = StyleEngine::with_author_sheets(&[author]);
         let styles = compute_styles(&doc, &engine, &CascadeCtx::default());
         let p = doc.get_elements_by_tag_name("p")[0];
@@ -160,11 +158,9 @@ mod tests {
     #[test]
     fn specificity_beats_order() {
         let doc = parse_document("<html><body><div id=\"a\"><p>x</p></div></body></html>");
-        let author = Stylesheet::parse(
-            "p { color: blue; } div#a p { color: green; }",
-            Origin::Author,
-        )
-        .unwrap();
+        let author =
+            Stylesheet::parse("p { color: blue; } div#a p { color: green; }", Origin::Author)
+                .unwrap();
         let engine = StyleEngine::with_author_sheets(&[author]);
         let styles = compute_styles(&doc, &engine, &CascadeCtx::default());
         let p = doc.get_elements_by_tag_name("p")[0];

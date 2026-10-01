@@ -41,10 +41,7 @@ impl Cookie {
 }
 
 fn now_secs() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }
 
 /// In-memory cookie jar (persisted snapshots handled by the engine).
@@ -74,8 +71,7 @@ impl CookieJar {
         if let Some(domain) = pc.domain_attr.clone() {
             let domain = domain.trim_start_matches('.').to_ascii_lowercase();
             // Reject cross-domain cookies (public suffix protection).
-            if !host.ends_with(&domain)
-                || registrable_domain(&host) != registrable_domain(&domain)
+            if !host.ends_with(&domain) || registrable_domain(&host) != registrable_domain(&domain)
             {
                 return;
             }
@@ -102,11 +98,8 @@ impl CookieJar {
         }
 
         pc.secure |= url.scheme() == "https";
-        pc.partition_key = if pc.partitioned {
-            Some(registrable_domain(top_level_site))
-        } else {
-            None
-        };
+        pc.partition_key =
+            if pc.partitioned { Some(registrable_domain(top_level_site)) } else { None };
         pc.creation_time = now_secs();
 
         // Replace existing cookie with same identity, then append (RFC 6265 5.3.11)
@@ -117,7 +110,12 @@ impl CookieJar {
     /// Serialize the cookie header for a request URL.
     /// `top_level_site`: CHIPS partition of the embedding document.
     /// `is_third_party`: whether the request URL is cross-site.
-    pub fn header_for_url(&self, url: &url::Url, top_level_site: &str, is_third_party: bool) -> Option<String> {
+    pub fn header_for_url(
+        &self,
+        url: &url::Url,
+        top_level_site: &str,
+        is_third_party: bool,
+    ) -> Option<String> {
         let host = url.host_str()?.to_ascii_lowercase();
         let now = now_secs();
         let partition = registrable_domain(top_level_site);
@@ -134,7 +132,8 @@ impl CookieJar {
                 if is_third_party {
                     c.partition_key.as_deref() == Some(partition.as_str())
                 } else {
-                    c.partition_key.is_none() || c.partition_key.as_deref() == Some(partition.as_str())
+                    c.partition_key.is_none()
+                        || c.partition_key.as_deref() == Some(partition.as_str())
                 }
             })
             .collect();
@@ -174,7 +173,13 @@ impl CookieJar {
         if matched.is_empty() {
             None
         } else {
-            Some(matched.iter().map(|c| format!("{}={}", c.name, c.value)).collect::<Vec<_>>().join("; "))
+            Some(
+                matched
+                    .iter()
+                    .map(|c| format!("{}={}", c.name, c.value))
+                    .collect::<Vec<_>>()
+                    .join("; "),
+            )
         }
     }
 
@@ -182,10 +187,7 @@ impl CookieJar {
     pub fn remove(&mut self, name: &str, domain_contains: Option<&str>) -> usize {
         let before = self.cookies.len();
         self.cookies.retain(|c| {
-            !(c.name == name
-                && domain_contains
-                    .map(|d| c.domain.contains(d))
-                    .unwrap_or(true))
+            !(c.name == name && domain_contains.map(|d| c.domain.contains(d)).unwrap_or(true))
         });
         before - self.cookies.len()
     }
@@ -231,9 +233,7 @@ fn domain_match(request_host: &str, cookie: &Cookie) -> bool {
     } else {
         request_host == cookie.domain
             || (request_host.ends_with(&cookie.domain)
-                && request_host
-                    .strip_suffix(&cookie.domain)
-                    .and_then(|s| s.chars().last())
+                && request_host.strip_suffix(&cookie.domain).and_then(|s| s.chars().last())
                     == Some('.'))
     }
 }
@@ -247,9 +247,7 @@ fn path_match(request_path: &str, cookie_path: &str) -> bool {
         if cookie_path.ends_with('/') {
             return true;
         }
-        return request_path
-            .strip_prefix(cookie_path)
-            .is_some_and(|rest| rest.starts_with('/'));
+        return request_path.strip_prefix(cookie_path).is_some_and(|rest| rest.starts_with('/'));
     }
     false
 }
@@ -327,9 +325,8 @@ fn parse_set_cookie(header: &str) -> Option<ParsedCookie> {
             }
             "expires" => {
                 if let Ok(t) = httpdate::parse_http_date(&v) {
-                    pc.expires = Some(
-                        t.duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0),
-                    );
+                    pc.expires =
+                        Some(t.duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0));
                 }
             }
             _ => {}
@@ -396,7 +393,7 @@ mod tests {
         assert_eq!(jar.len(), 0);
         jar.set_from_header(&u, "y=1; Domain=example.com", "attacker.example.com");
         assert_eq!(jar.len(), 1);
-        assert!(jar.all()[0].host_only == false);
+        assert!(!jar.all()[0].host_only);
     }
 
     #[test]

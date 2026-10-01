@@ -9,7 +9,11 @@ use lightningcss::selector::{Combinator, Component, PseudoClass};
 use parcel_selectors::parser::{NthSelectorData, NthType};
 
 /// Does any selector of `list` match element `node`?
-pub fn matches_selector_list(doc: &Document, node: NodeId, list: &lightningcss::selector::SelectorList<'static>) -> bool {
+pub fn matches_selector_list(
+    doc: &Document,
+    node: NodeId,
+    list: &lightningcss::selector::SelectorList<'static>,
+) -> bool {
     list.0.iter().any(|sel| matches_selector(doc, node, sel))
 }
 
@@ -43,11 +47,10 @@ fn match_sequence<'i>(doc: &Document, node: NodeId, comps: &[&Component<'i>]) ->
         return true;
     }
     match comps[i] {
-        Component::Combinator(Combinator::Child) => {
-            doc.parent(node)
-                .filter(|&p| doc.is_element(p))
-                .is_some_and(|p| match_sequence(doc, p, &comps[i + 1..]))
-        }
+        Component::Combinator(Combinator::Child) => doc
+            .parent(node)
+            .filter(|&p| doc.is_element(p))
+            .is_some_and(|p| match_sequence(doc, p, &comps[i + 1..])),
         Component::Combinator(Combinator::Descendant) => {
             let mut ancestor = doc.parent(node).filter(|&p| doc.is_element(p));
             while let Some(a) = ancestor {
@@ -79,7 +82,9 @@ fn match_sequence<'i>(doc: &Document, node: NodeId, comps: &[&Component<'i>]) ->
 fn component_matches<'i>(doc: &Document, node: NodeId, comp: &Component<'i>) -> bool {
     match comp {
         Component::ExplicitUniversalType | Component::ExplicitAnyNamespace => true,
-        Component::ExplicitNoNamespace | Component::DefaultNamespace(_) | Component::Namespace(..) => true,
+        Component::ExplicitNoNamespace
+        | Component::DefaultNamespace(_)
+        | Component::Namespace(..) => true,
         Component::LocalName(ln) => {
             let tag = doc.local_name(node);
             if doc_is_html(doc, node) {
@@ -167,7 +172,6 @@ fn doc_is_html(_doc: &Document, _node: NodeId) -> bool {
     true
 }
 
-
 fn matches_nth(doc: &Document, node: NodeId, nth: NthSelectorData) -> bool {
     if nth.ty == NthType::Col || nth.ty == NthType::LastCol {
         return false;
@@ -177,7 +181,12 @@ fn matches_nth(doc: &Document, node: NodeId, nth: NthSelectorData) -> bool {
 
 /// Shared nth engine: indexes element `node` among its element siblings
 /// (optionally filtered) and evaluates an+b according to the nth type.
-fn count_nth(doc: &Document, node: NodeId, nth: NthSelectorData, matches_filter: impl Fn(NodeId) -> bool) -> bool {
+fn count_nth(
+    doc: &Document,
+    node: NodeId,
+    nth: NthSelectorData,
+    matches_filter: impl Fn(NodeId) -> bool,
+) -> bool {
     let parent = match doc.parent(node) {
         Some(p) => p,
         None => return false, // :nth-child never matches the root
@@ -227,7 +236,10 @@ fn pseudo_class_matches(doc: &Document, node: NodeId, pc: &PseudoClass) -> bool 
         P::Defined => true,
         P::Disabled | P::Enabled => {
             let tag = doc.local_name(node);
-            let form = matches!(tag, "input" | "select" | "textarea" | "button" | "optgroup" | "option" | "fieldset");
+            let form = matches!(
+                tag,
+                "input" | "select" | "textarea" | "button" | "optgroup" | "option" | "fieldset"
+            );
             if !form {
                 return false;
             }

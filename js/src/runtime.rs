@@ -2,12 +2,13 @@
 //! and the integrated event loop.
 
 use crate::bindings;
+use crate::bindings::RealmLinks;
 use crate::dom_handle::DomHandle;
 use crate::environment::JsEnvironment;
-use crate::event_loop::{self, JsTask, TimerQueue, TaskReceiver};
+use crate::event_loop::{self, JsTask, TaskReceiver, TimerQueue};
 use crate::glue::GLUE;
 use rquickjs::{Context, Ctx, Runtime};
-use std::sync::mpsc::Receiver;
+use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -45,9 +46,29 @@ pub struct JsRuntime {
 }
 
 impl JsRuntime {
-    /// Create a realm with memory limits, an interrupt hook, native bindings
-    /// and the glue layer.
+    /// Create a page realm with memory limits, an interrupt hook, native
+    /// bindings and the glue layer.
     pub fn new(env: Arc<JsEnvironment>, dom: DomHandle) -> Result<Self, crate::JsError> {
+        Self::build(env, dom, None, None)
+    }
+
+    /// Create a worker realm: no DOM bindings, messages flow upstream to the
+    /// creating realm's event loop via [`JsTask::WorkerMessage`].
+    pub fn new_worker(
+        env: Arc<JsEnvironment>,
+        worker_id: u32,
+        upstream: Sender<JsTask>,
+    ) -> Result<Self, crate::JsError> {
+        let dom = DomHandle::new(Arc::new(Mutex::new(brows12_html::Document::new())));
+        Self::build(env, dom, Some(worker_id), Some(upstream))
+    }
+
+    fn build(
+        env: Arc<JsEnvironment>,
+        dom: DomHandle,
+        worker_id: Option<u32>,
+        upstream: Option<Sender<JsTask>>,
+    ) -> Result<Self, crate::JsError> {
         let runtime = Runtime::new().map_err(|e| crate::JsError::Setup(e.to_string()))?;
         runtime.set_memory_limit(DEFAULT_MEMORY_LIMIT);
         runtime.set_max_stack_size(DEFAULT_STACK_LIMIT);
@@ -55,7 +76,7 @@ impl JsRuntime {
         // Cooperative interruption: the engine can abort a runaway script
         // through `event_loop::request_interrupt()`; the GC itself runs
         // incrementally inside QuickJS and never via this hook.
-        runtime.set_interrupt_handler(Some(Box::new(|| event_loop::interrupt_requested())));
+        runtime.set_interrupt_handler(Some(Box::new(event_loop::interrupt_requested)));
 
         let ctx = Context::full(&runtime).map_err(|e| crate::JsError::Setup(e.to_string()))?;
 
@@ -65,7 +86,14 @@ impl JsRuntime {
         {
             let sender = sender.clone();
             ctx.with(|ctx| {
-                bindings::install(&ctx, env, dom, sender, timers.clone())
+                let links = RealmLinks {
+                    sender,
+                    upstream,
+                    worker_id,
+                    ws_senders: Arc::new(Mutex::new(std::collections::HashMap::new())),
+                    workers: Arc::new(Mutex::new(std::collections::HashMap::new())),
+                };
+                bindings::install(&ctx, env, dom, links, timers.clone())
                     .map_err(|e| crate::JsError::Setup(e.to_string()))
             })?;
         }
@@ -85,9 +113,7 @@ impl JsRuntime {
     /// Called once by the engine after construction; kept separate so tests
     /// can bisect load failures precisely.
     pub fn load_glue(&self) -> Result<(), crate::JsError> {
-        self.eval_raw(GLUE)
-            .map(|_| ())
-            .map_err(|e| crate::JsError::Setup(format!("glue: {e}")))
+        self.eval_raw(GLUE).map(|_| ()).map_err(|e| crate::JsError::Setup(format!("glue: {e}")))
     }
 
     /// Evaluate a source string; returns the final value rendered as a
@@ -98,13 +124,12 @@ impl JsRuntime {
 
     fn eval_raw(&self, code: &str) -> Result<String, JsExecutionError> {
         event_loop::clear_interrupt();
-        self.ctx
-            .with(|ctx: Ctx<'_>| -> Result<String, JsExecutionError> {
-                match ctx.eval::<rquickjs::Value, _>(code) {
-                    Ok(value) => Ok(value_to_string(&ctx, value)),
-                    Err(e) => Err(to_script_error(&ctx, e)),
-                }
-            })
+        self.ctx.with(|ctx: Ctx<'_>| -> Result<String, JsExecutionError> {
+            match ctx.eval::<rquickjs::Value, _>(code) {
+                Ok(value) => Ok(value_to_string(&ctx, value)),
+                Err(e) => Err(to_script_error(&ctx, e)),
+            }
+        })
     }
 
     /// Execute a page script (inline source or engine-fetched external).
@@ -154,9 +179,7 @@ impl JsRuntime {
             let next_deadline = self.timers.lock().unwrap().next_deadline();
             let result = match next_deadline {
                 Some(deadline) => {
-                    let wait = deadline
-                        .saturating_duration_since(Instant::now())
-                        .min(idle_timeout);
+                    let wait = deadline.saturating_duration_since(Instant::now()).min(idle_timeout);
                     self.receiver.recv_timeout(wait)
                 }
                 None => self.receiver.recv_timeout(idle_timeout),
@@ -191,7 +214,11 @@ impl JsRuntime {
                         .collect::<std::collections::BTreeMap<String, String>>(),
                 )
                 .unwrap_or_else(|_| "{}".into());
-                let body_text = String::from_utf8_lossy(&body).replace('\\', "\\\\").replace('\n', "\\n").replace('\r', "\\r").replace('\'', "\\'");
+                let body_text = String::from_utf8_lossy(&body)
+                    .replace('\\', "\\\\")
+                    .replace('\n', "\\n")
+                    .replace('\r', "\\r")
+                    .replace('\'', "\\'");
                 let js = match err {
                     Some(e) => format!(
                         "__brows12FetchDone({}, \"{}\", 0, \"{{}}\", \"\");",
@@ -200,12 +227,36 @@ impl JsRuntime {
                     ),
                     None => format!(
                         "__brows12FetchDone({}, null, {}, '{}', '{}');",
-                        id, status, headers_json.replace('\'', "\\'"), body_text
+                        id,
+                        status,
+                        headers_json.replace('\'', "\\'"),
+                        body_text
                     ),
                 };
-                self.eval_raw(&js)
-                    .map(|_| ())
-                    .map_err(|e| crate::JsError::Script(e.to_string()))
+                self.eval_raw(&js).map(|_| ()).map_err(|e| crate::JsError::Script(e.to_string()))
+            }
+            JsTask::WsEvent { id, kind, data } => {
+                let data_json = serde_json::to_string(&data).unwrap_or_else(|_| "\"\"".into());
+                let js = format!(
+                    "__brows12WsEvent({}, '{}', '{}');",
+                    id,
+                    kind.replace('\'', "\\'"),
+                    data_json.replace('\'', "\\'")
+                );
+                self.eval_raw(&js).map(|_| ()).map_err(|e| crate::JsError::Script(e.to_string()))
+            }
+            JsTask::WorkerMessage { id, data } => {
+                // `data` is already a JSON string (the glue layer serializes
+                // postMessage payloads); embed it directly, not re-encoded.
+                let escaped = data.replace('\\', "\\\\").replace('\'', "\\'");
+                let js = format!("__brows12WorkerMessage({}, '{}');", id, escaped);
+                self.eval_raw(&js).map(|_| ()).map_err(|e| crate::JsError::Script(e.to_string()))
+            }
+            JsTask::WorkerError { id, err } => {
+                let err_json = serde_json::to_string(&err).unwrap_or_else(|_| "\"\"".into());
+                let js =
+                    format!("__brows12WorkerError({}, '{}');", id, err_json.replace('\'', "\\'"));
+                self.eval_raw(&js).map(|_| ()).map_err(|e| crate::JsError::Script(e.to_string()))
             }
         }
     }

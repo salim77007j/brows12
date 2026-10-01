@@ -19,7 +19,10 @@ fn server(pages: Vec<(&'static str, String)>) -> String {
             let req = String::from_utf8_lossy(&buf);
             let path = req.split_whitespace().nth(1).unwrap_or("/").to_string();
             let body = pages.get(&path).cloned().unwrap_or_else(|| "not found".into());
-            let _ = stream.write_all(format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", body.len(), body).as_bytes());
+            let _ = stream.write_all(
+                format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", body.len(), body)
+                    .as_bytes(),
+            );
         }
     });
     format!("http://{addr}")
@@ -90,10 +93,7 @@ fn privacy_blocks_tracker_script_but_not_page() {
 fn memory_budget_suspends_oldest() {
     let html = "<html><head><title>T</title></head><body><p>x</p></body></html>";
     let base = server(vec![("/", html.to_string())]);
-    let engine = Engine::new(EngineConfig {
-        max_live_pages: 2,
-        ..EngineConfig::default()
-    });
+    let engine = Engine::new(EngineConfig { max_live_pages: 2, ..EngineConfig::default() });
     let t1 = engine.tab();
     let t2 = engine.tab();
     let t3 = engine.tab();

@@ -57,8 +57,7 @@ impl HttpsUpgrader {
             if self.mode == UpgradeMode::Off {
                 return url.to_string();
             }
-            self.upgrades
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            self.upgrades.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             format!("https://{rest}")
         } else {
             url.to_string()
@@ -71,10 +70,7 @@ impl HttpsUpgrader {
 
     /// Record an HSTS header for `host` (max-age in seconds).
     pub fn record_hsts(&self, host: &str, max_age_secs: u64, include_subdomains: bool) {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
         self.hsts.write().unwrap().insert(
             host.to_ascii_lowercase(),
             HstsEntry { max_age_secs, include_subdomains, stored_at: now },
@@ -84,10 +80,7 @@ impl HttpsUpgrader {
     /// Is this host HSTS-known (https mandatory)?
     pub fn is_hsts(&self, host: &str) -> bool {
         let host = host.to_ascii_lowercase();
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
         let store = self.hsts.read().unwrap();
         if let Some(entry) = store.get(&host) {
             return now.saturating_sub(entry.stored_at) < entry.max_age_secs;

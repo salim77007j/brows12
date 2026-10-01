@@ -116,15 +116,10 @@ pub async fn h3_get(endpoint: &quinn::Endpoint, req: NetRequest) -> Result<NetRe
     }
     let request = builder.body(()).map_err(|e| NetError::Http(e.to_string()))?;
 
-    let mut stream = sender
-        .send_request(request)
-        .await
-        .map_err(|e| NetError::Http(e.to_string()))?;
+    let mut stream =
+        sender.send_request(request).await.map_err(|e| NetError::Http(e.to_string()))?;
 
-    let response = stream
-        .recv_response()
-        .await
-        .map_err(|e| NetError::Http(e.to_string()))?;
+    let response = stream.recv_response().await.map_err(|e| NetError::Http(e.to_string()))?;
 
     let status = response.status().as_u16();
     let headers: Vec<(String, String)> = response
@@ -135,20 +130,10 @@ pub async fn h3_get(endpoint: &quinn::Endpoint, req: NetRequest) -> Result<NetRe
 
     let mut body = Vec::new();
     use bytes::Buf;
-    while let Some(chunk) = stream
-        .recv_data()
-        .await
-        .map_err(|e| NetError::Http(e.to_string()))?
-    {
+    while let Some(chunk) = stream.recv_data().await.map_err(|e| NetError::Http(e.to_string()))? {
         body.extend_from_slice(chunk.chunk());
     }
 
     let _ = driver.abort();
-    Ok(NetResponse {
-        url: req.url.clone(),
-        status,
-        headers,
-        body,
-        protocol: "HTTP/3".into(),
-    })
+    Ok(NetResponse { url: req.url.clone(), status, headers, body, protocol: "HTTP/3".into() })
 }

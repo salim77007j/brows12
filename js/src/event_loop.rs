@@ -17,6 +17,16 @@ pub enum JsTask {
         headers: Vec<(String, String)>,
         body: Vec<u8>,
     },
+    /// WebSocket lifecycle/data event. `kind`: open | message | close | error.
+    WsEvent { id: u32, kind: String, data: String },
+    /// A message posted from a worker realm to its creating realm.
+    WorkerMessage {
+        id: u32,
+        /// JSON-encoded message payload.
+        data: String,
+    },
+    /// A worker failed to load or evaluate its script.
+    WorkerError { id: u32, err: String },
 }
 
 /// Create the task channel for one realm.
@@ -72,11 +82,7 @@ impl TimerQueue {
     pub fn start(&mut self, delay: Duration, interval: bool) -> u64 {
         self.next_id += 1;
         let id = self.next_id;
-        self.heap.push(Reverse(TimerEntry {
-            when: Instant::now() + delay,
-            id,
-            interval,
-        }));
+        self.heap.push(Reverse(TimerEntry { when: Instant::now() + delay, id, interval }));
         id
     }
 
@@ -85,11 +91,7 @@ impl TimerQueue {
     }
 
     pub fn reschedule(&mut self, id: u64, delay: Duration) {
-        self.heap.push(Reverse(TimerEntry {
-            when: Instant::now() + delay,
-            id,
-            interval: true,
-        }));
+        self.heap.push(Reverse(TimerEntry { when: Instant::now() + delay, id, interval: true }));
     }
 
     /// Pop ids whose deadline passed.
@@ -119,10 +121,10 @@ impl TimerQueue {
 pub struct TaskReceiver(pub Mutex<Receiver<JsTask>>);
 
 impl TaskReceiver {
-    pub fn recv_timeout(&self, timeout: Duration) -> std::result::Result<JsTask, std::sync::mpsc::RecvTimeoutError> {
-        self.0
-            .lock()
-            .expect("task receiver poisoned")
-            .recv_timeout(timeout)
+    pub fn recv_timeout(
+        &self,
+        timeout: Duration,
+    ) -> std::result::Result<JsTask, std::sync::mpsc::RecvTimeoutError> {
+        self.0.lock().expect("task receiver poisoned").recv_timeout(timeout)
     }
 }

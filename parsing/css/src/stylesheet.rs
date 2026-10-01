@@ -1,12 +1,12 @@
 //! Stylesheet parsing via lightningcss into fully-owned rule storage.
 
 use crate::values::Rgba;
+use lightningcss::properties::Property;
 use lightningcss::rules::style::StyleRule as LcStyleRule;
 use lightningcss::rules::CssRule;
 use lightningcss::selector::SelectorList;
 use lightningcss::stylesheet::{ParserOptions, StyleSheet as LcStyleSheet};
 use lightningcss::traits::IntoOwned;
-use lightningcss::properties::Property;
 
 /// Origin of a stylesheet, used for cascade ordering.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -50,9 +50,7 @@ pub struct StyleEngine {
 impl StyleEngine {
     /// Build an engine from ordered stylesheets (UA sheet first).
     pub fn new(sheets: &[Stylesheet]) -> Self {
-        StyleEngine {
-            rules: Stylesheet::combine(sheets).rules,
-        }
+        StyleEngine { rules: Stylesheet::combine(sheets).rules }
     }
 
     /// Read-only view of the merged rules.
@@ -127,13 +125,7 @@ fn push_style_rule(
     out: &mut Vec<StyleRule>,
     counter: &mut u32,
 ) {
-    let specificity = rule
-        .selectors
-        .0
-        .iter()
-        .map(|s| s.specificity())
-        .max()
-        .unwrap_or(0);
+    let specificity = rule.selectors.0.iter().map(|s| s.specificity()).max().unwrap_or(0);
     out.push(StyleRule {
         selectors: rule.selectors.clone(),
         important: rule.declarations.important_declarations.clone(),
@@ -154,7 +146,10 @@ pub fn specificity_tuple(packed: u32) -> (u32, u32, u32) {
 }
 
 /// Convert a lightningcss color into our RGBA, resolving `currentColor`.
-pub fn resolve_color(color: &lightningcss::values::color::CssColor, inherited: Rgba) -> Option<Rgba> {
+pub fn resolve_color(
+    color: &lightningcss::values::color::CssColor,
+    inherited: Rgba,
+) -> Option<Rgba> {
     use lightningcss::values::color::CssColor;
     match color {
         CssColor::CurrentColor => Some(inherited),

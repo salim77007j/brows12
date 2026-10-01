@@ -1,5 +1,5 @@
-use brows12_html::parse_document;
 use brows12_benchmarks::{html_fixture, CSS_FIXTURE};
+use brows12_html::parse_document;
 use criterion::{criterion_group, criterion_main, Criterion};
 use std::hint::black_box;
 

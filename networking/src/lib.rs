@@ -12,12 +12,14 @@
 
 pub mod client;
 pub mod dns;
+pub mod ws;
 
 #[cfg(feature = "http3")]
 pub mod http3;
 
 pub use client::{ClientConfig, HttpClient, NetRequest, NetResponse};
 pub use dns::{DohClient, DohResolver};
+pub use ws::{WsIncoming, WsTx};
 
 use thiserror::Error;
 
@@ -40,12 +42,12 @@ pub enum NetError {
 /// Cookie source hooked into every request (implemented by the cookie jar).
 pub trait CookieStore: Send + Sync {
     /// Cookie header to attach for this request URL (may be None).
-    fn header_for(&self, url: &url::Url, top_level_site: &str, is_third_party: bool) -> Option<String>;
-    /// Record Set-Cookie headers from a response.
-    fn record(
+    fn header_for(
         &self,
         url: &url::Url,
-        set_cookies: &[String],
         top_level_site: &str,
-    );
+        is_third_party: bool,
+    ) -> Option<String>;
+    /// Record Set-Cookie headers from a response.
+    fn record(&self, url: &url::Url, set_cookies: &[String], top_level_site: &str);
 }

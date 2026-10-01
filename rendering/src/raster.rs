@@ -22,14 +22,16 @@ pub struct Rasterizer {
 
 impl Rasterizer {
     pub fn new(font_system: Arc<Mutex<cosmic_text::FontSystem>>) -> Self {
-        Self {
-            font_system,
-            swash_cache: Mutex::new(cosmic_text::SwashCache::new()),
-        }
+        Self { font_system, swash_cache: Mutex::new(cosmic_text::SwashCache::new()) }
     }
 
     /// Rasterize a display list into a fresh framebuffer.
-    pub fn paint(&mut self, list: &DisplayList, width: u32, height: u32) -> Result<(Pixmap, RasterStats), RenderError> {
+    pub fn paint(
+        &mut self,
+        list: &DisplayList,
+        width: u32,
+        height: u32,
+    ) -> Result<(Pixmap, RasterStats), RenderError> {
         let mut pixmap = Pixmap::new(width, height)
             .ok_or_else(|| RenderError::Pixmap("invalid surface size".into()))?;
         let mut stats = RasterStats::default();
@@ -88,7 +90,8 @@ impl Rasterizer {
         buffer.set_text(text, &attrs, cosmic_text::Shaping::Advanced, None);
         buffer.shape_until_scroll(&mut fs, false);
 
-        let tint = tiny_skia::Color::from_rgba8(style.color[0], style.color[1], style.color[2], 255);
+        let tint =
+            tiny_skia::Color::from_rgba8(style.color[0], style.color[1], style.color[2], 255);
 
         for run in buffer.layout_runs() {
             // Align lines horizontally per text-align.
@@ -113,7 +116,14 @@ impl Rasterizer {
             let mut deco = |dy: f32| {
                 let y = (rect.y + run.line_y - dy) as i32;
                 let w = run.line_w.ceil() as u32;
-                fill_pixel_rect(pixmap, line_x as i32, y, w, 1.max((style.font_size / 16.0) as u32), tint);
+                fill_pixel_rect(
+                    pixmap,
+                    line_x as i32,
+                    y,
+                    w,
+                    1.max((style.font_size / 16.0) as u32),
+                    tint,
+                );
             };
             if underline {
                 deco(style.font_size * 0.12);
@@ -135,7 +145,9 @@ fn fill_rect(pixmap: &mut Pixmap, rect: &brows12_layout::Rect, color: [u8; 4], r
     paint.set_color(sk_color);
     paint.anti_alias = true;
 
-    let Some(sk_rect) = SkRect::from_xywh(rect.x, rect.y, rect.width.max(0.0), rect.height.max(0.0)) else {
+    let Some(sk_rect) =
+        SkRect::from_xywh(rect.x, rect.y, rect.width.max(0.0), rect.height.max(0.0))
+    else {
         return;
     };
     if radius > 0.0 {
@@ -147,14 +159,25 @@ fn fill_rect(pixmap: &mut Pixmap, rect: &brows12_layout::Rect, color: [u8; 4], r
         pb.line_to(rect.x + rect.width - r, rect.y);
         pb.quad_to(rect.x + rect.width, rect.y, rect.x + rect.width, rect.y + r);
         pb.line_to(rect.x + rect.width, rect.y + rect.height - r);
-        pb.quad_to(rect.x + rect.width, rect.y + rect.height, rect.x + rect.width - r, rect.y + rect.height);
+        pb.quad_to(
+            rect.x + rect.width,
+            rect.y + rect.height,
+            rect.x + rect.width - r,
+            rect.y + rect.height,
+        );
         pb.line_to(rect.x + r, rect.y + rect.height);
         pb.quad_to(rect.x, rect.y + rect.height, rect.x, rect.y + rect.height - r);
         pb.line_to(rect.x, rect.y + r);
         pb.quad_to(rect.x, rect.y, rect.x + r, rect.y);
         pb.close();
         if let Some(path) = pb.finish() {
-            pixmap.fill_path(&path, &paint, tiny_skia::FillRule::Winding, tiny_skia::Transform::identity(), None);
+            pixmap.fill_path(
+                &path,
+                &paint,
+                tiny_skia::FillRule::Winding,
+                tiny_skia::Transform::identity(),
+                None,
+            );
         }
     } else {
         pixmap.fill_rect(sk_rect, &paint, tiny_skia::Transform::identity(), None);
@@ -179,9 +202,20 @@ fn stroke_border(
         }
     };
     strip(brows12_layout::Rect { x: rect.x, y: rect.y, width: rect.width, height: t }); // top
-    strip(brows12_layout::Rect { x: rect.x + rect.width - r, y: rect.y, width: r, height: rect.height }); // right
-    strip(brows12_layout::Rect { x: rect.x, y: rect.y + rect.height - b, width: rect.width, height: b }); // bottom
-    strip(brows12_layout::Rect { x: rect.x, y: rect.y, width: l, height: rect.height }); // left
+    strip(brows12_layout::Rect {
+        x: rect.x + rect.width - r,
+        y: rect.y,
+        width: r,
+        height: rect.height,
+    }); // right
+    strip(brows12_layout::Rect {
+        x: rect.x,
+        y: rect.y + rect.height - b,
+        width: rect.width,
+        height: b,
+    }); // bottom
+    strip(brows12_layout::Rect { x: rect.x, y: rect.y, width: l, height: rect.height });
+    // left
 }
 
 fn fill_pixel_rect(pixmap: &mut Pixmap, x: i32, y: i32, w: u32, h: u32, color: tiny_skia::Color) {
@@ -203,8 +237,8 @@ fn blit_swash_image(
     tint: tiny_skia::Color,
 ) {
     use cosmic_text::SwashContent;
-    let w = image.placement.width as u32;
-    let h = image.placement.height as u32;
+    let w = image.placement.width;
+    let h = image.placement.height;
     if w == 0 || h == 0 {
         return;
     }
@@ -234,12 +268,7 @@ fn blit_swash_image(
         }
     } else {
         // Alpha mask: blend coverage with the tint color manually.
-        let (tr, tg, tb, ta) = (
-            tint.red(),
-            tint.green(),
-            tint.blue(),
-            tint.alpha(),
-        );
+        let (tr, tg, tb, ta) = (tint.red(), tint.green(), tint.blue(), tint.alpha());
         let pw = pixmap.width() as i32;
         let ph = pixmap.height() as i32;
         let pm = pixmap.pixels_mut();
@@ -265,7 +294,9 @@ fn blit_swash_image(
                 if out_a <= 0.0 {
                     continue;
                 }
-                let blend = |s: f32, d: f32| (s * sa + d * (dst.alpha() as f32 / 255.0) * (1.0 - sa)) / out_a;
+                let blend = |s: f32, d: f32| {
+                    (s * sa + d * (dst.alpha() as f32 / 255.0) * (1.0 - sa)) / out_a
+                };
                 let r = blend(tr, dst.red() as f32 / 255.0);
                 let g = blend(tg, dst.green() as f32 / 255.0);
                 let b = blend(tb, dst.blue() as f32 / 255.0);
@@ -282,7 +313,12 @@ fn blit_swash_image(
 }
 
 /// Decode + scale an image into the pixmap (box-filter nearest for v1).
-fn draw_image(pixmap: &mut Pixmap, rect: &brows12_layout::Rect, image: &crate::display_list::DecodedImage, _radius: f32) {
+fn draw_image(
+    pixmap: &mut Pixmap,
+    rect: &brows12_layout::Rect,
+    image: &crate::display_list::DecodedImage,
+    _radius: f32,
+) {
     let Some(mut img_pixmap) = Pixmap::new(image.width, image.height) else {
         return;
     };
@@ -336,9 +372,8 @@ fn scale_pixmap(src: &Pixmap, w: u32, h: u32) -> Option<Pixmap> {
 
 /// Decode raw image bytes (png/jpeg/webp/gif) into straight-alpha RGBA.
 pub fn decode_image(bytes: &[u8]) -> Result<crate::display_list::DecodedImage, RenderError> {
-    let img = image::load_from_memory(bytes)
-        .map_err(|e| RenderError::Image(e.to_string()))?
-        .to_rgba8();
+    let img =
+        image::load_from_memory(bytes).map_err(|e| RenderError::Image(e.to_string()))?.to_rgba8();
     Ok(crate::display_list::DecodedImage {
         width: img.width(),
         height: img.height(),
@@ -346,13 +381,11 @@ pub fn decode_image(bytes: &[u8]) -> Result<crate::display_list::DecodedImage, R
     })
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::compositor::encode_png;
     use crate::display_list::{build_display_list, DisplayItem, TextStyle};
-    use brows12_css::values::Rgba;
     use brows12_layout::Rect;
     use std::collections::HashMap;
 
@@ -418,9 +451,9 @@ mod tests {
         let engine = brows12_css::StyleEngine::with_author_sheets(&[]);
         let ctx = brows12_css::computed::CascadeCtx::default();
         let styles = brows12_css::compute_styles(&doc, &engine, &ctx);
-        let measurer = Arc::new(brows12_layout::TextMeasurer::new(
-            Arc::new(Mutex::new(cosmic_text::FontSystem::new())),
-        ));
+        let measurer = Arc::new(brows12_layout::TextMeasurer::new(Arc::new(Mutex::new(
+            cosmic_text::FontSystem::new(),
+        ))));
         let layout = brows12_layout::compute_layout(
             &doc,
             &styles,

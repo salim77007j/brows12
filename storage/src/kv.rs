@@ -28,27 +28,21 @@ impl MemoryStore {
 
 impl KeyValueStore for MemoryStore {
     fn get(&self, table: &str, key: &str) -> Result<Option<Vec<u8>>, StorageError> {
-        let guard = self
-            .tables
-            .read()
-            .map_err(|_| StorageError::Backend("lock poisoned".into()))?;
+        let guard =
+            self.tables.read().map_err(|_| StorageError::Backend("lock poisoned".into()))?;
         Ok(guard.get(table).and_then(|t| t.get(key).cloned()))
     }
 
     fn put(&self, table: &str, key: &str, value: &[u8]) -> Result<(), StorageError> {
-        let mut guard = self
-            .tables
-            .write()
-            .map_err(|_| StorageError::Backend("lock poisoned".into()))?;
+        let mut guard =
+            self.tables.write().map_err(|_| StorageError::Backend("lock poisoned".into()))?;
         guard.entry(table.to_string()).or_default().insert(key.to_string(), value.to_vec());
         Ok(())
     }
 
     fn delete(&self, table: &str, key: &str) -> Result<(), StorageError> {
-        let mut guard = self
-            .tables
-            .write()
-            .map_err(|_| StorageError::Backend("lock poisoned".into()))?;
+        let mut guard =
+            self.tables.write().map_err(|_| StorageError::Backend("lock poisoned".into()))?;
         if let Some(t) = guard.get_mut(table) {
             t.remove(key);
         }
@@ -56,23 +50,17 @@ impl KeyValueStore for MemoryStore {
     }
 
     fn keys(&self, table: &str) -> Result<Vec<String>, StorageError> {
-        let guard = self
-            .tables
-            .read()
-            .map_err(|_| StorageError::Backend("lock poisoned".into()))?;
-        let mut keys: Vec<String> = guard
-            .get(table)
-            .map(|t| t.keys().cloned().collect())
-            .unwrap_or_default();
+        let guard =
+            self.tables.read().map_err(|_| StorageError::Backend("lock poisoned".into()))?;
+        let mut keys: Vec<String> =
+            guard.get(table).map(|t| t.keys().cloned().collect()).unwrap_or_default();
         keys.sort();
         Ok(keys)
     }
 
     fn clear(&self, table: &str) -> Result<(), StorageError> {
-        let mut guard = self
-            .tables
-            .write()
-            .map_err(|_| StorageError::Backend("lock poisoned".into()))?;
+        let mut guard =
+            self.tables.write().map_err(|_| StorageError::Backend("lock poisoned".into()))?;
         guard.remove(table);
         Ok(())
     }
@@ -108,63 +96,40 @@ pub mod redb_store {
 
     impl KeyValueStore for RedbStore {
         fn get(&self, table: &str, key: &str) -> Result<Option<Vec<u8>>, StorageError> {
-            let read = self
-                .db
-                .begin_read()
-                .map_err(|e| StorageError::Backend(e.to_string()))?;
-            let t = read
-                .open_table(TABLE)
-                .map_err(|e| StorageError::Backend(e.to_string()))?;
+            let read = self.db.begin_read().map_err(|e| StorageError::Backend(e.to_string()))?;
+            let t = read.open_table(TABLE).map_err(|e| StorageError::Backend(e.to_string()))?;
             let full = Self::table_name(table);
             Ok(t.get((full.as_str(), key)).ok().flatten().map(|v| v.value().to_vec()))
         }
 
         fn put(&self, table: &str, key: &str, value: &[u8]) -> Result<(), StorageError> {
             let _g = self.write_lock.write().unwrap();
-            let write = self
-                .db
-                .begin_write()
-                .map_err(|e| StorageError::Backend(e.to_string()))?;
+            let write = self.db.begin_write().map_err(|e| StorageError::Backend(e.to_string()))?;
             {
-                let mut t = write
-                    .open_table(TABLE)
-                    .map_err(|e| StorageError::Backend(e.to_string()))?;
+                let mut t =
+                    write.open_table(TABLE).map_err(|e| StorageError::Backend(e.to_string()))?;
                 let full = Self::table_name(table);
                 t.insert((full.as_str(), key), value)
                     .map_err(|e| StorageError::Backend(e.to_string()))?;
             }
-            write
-                .commit()
-                .map_err(|e| StorageError::Backend(e.to_string()))
+            write.commit().map_err(|e| StorageError::Backend(e.to_string()))
         }
 
         fn delete(&self, table: &str, key: &str) -> Result<(), StorageError> {
             let _g = self.write_lock.write().unwrap();
-            let write = self
-                .db
-                .begin_write()
-                .map_err(|e| StorageError::Backend(e.to_string()))?;
+            let write = self.db.begin_write().map_err(|e| StorageError::Backend(e.to_string()))?;
             {
-                let mut t = write
-                    .open_table(TABLE)
-                    .map_err(|e| StorageError::Backend(e.to_string()))?;
+                let mut t =
+                    write.open_table(TABLE).map_err(|e| StorageError::Backend(e.to_string()))?;
                 let full = Self::table_name(table);
-                t.remove((full.as_str(), key))
-                    .map_err(|e| StorageError::Backend(e.to_string()))?;
+                t.remove((full.as_str(), key)).map_err(|e| StorageError::Backend(e.to_string()))?;
             }
-            write
-                .commit()
-                .map_err(|e| StorageError::Backend(e.to_string()))
+            write.commit().map_err(|e| StorageError::Backend(e.to_string()))
         }
 
         fn keys(&self, table: &str) -> Result<Vec<String>, StorageError> {
-            let read = self
-                .db
-                .begin_read()
-                .map_err(|e| StorageError::Backend(e.to_string()))?;
-            let t = read
-                .open_table(TABLE)
-                .map_err(|e| StorageError::Backend(e.to_string()))?;
+            let read = self.db.begin_read().map_err(|e| StorageError::Backend(e.to_string()))?;
+            let t = read.open_table(TABLE).map_err(|e| StorageError::Backend(e.to_string()))?;
             let full = Self::table_name(table);
             let mut out = Vec::new();
             for row in t.iter().map_err(|e| StorageError::Backend(e.to_string()))? {

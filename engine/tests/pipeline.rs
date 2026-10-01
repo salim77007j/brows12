@@ -3,10 +3,8 @@ use brows12_engine::{Engine, EngineConfig, EngineEvent};
 fn local_server(files: Vec<(&'static str, String)>) -> String {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
-    let files: std::collections::HashMap<String, String> = files
-        .into_iter()
-        .map(|(p, c)| (p.to_string(), c))
-        .collect();
+    let files: std::collections::HashMap<String, String> =
+        files.into_iter().map(|(p, c)| (p.to_string(), c)).collect();
     std::thread::spawn(move || {
         for stream in listener.incoming() {
             let mut stream = match stream {
@@ -18,7 +16,8 @@ fn local_server(files: Vec<(&'static str, String)>) -> String {
             let _ = stream.read(&mut buf);
             let req = String::from_utf8_lossy(&buf);
             let path = req.split_whitespace().nth(1).unwrap_or("/").to_string();
-            let body = files.get(&path).cloned().unwrap_or_else(|| "<html><body>404</body></html>".into());
+            let body =
+                files.get(&path).cloned().unwrap_or_else(|| "<html><body>404</body></html>".into());
             let resp = format!(
                 "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\n\r\n{}",
                 body.len(),

@@ -12,12 +12,13 @@ let browser = Browser::builder()
     .viewport(1280, 800)                       // CSS pixels
     .user_agent("MyShell/1.0 (Brows12)")       // identity
     .max_live_pages(6)                          // LRU suspension budget
-    .privacy(|p| p
-        .block_ads(true)                        // network filter list
-        .https_upgrade(true)                    // rewrite http→https
-        .strict_fingerprinting(false)           // hardened navigator spoofs
-        .block_cname_cloaking(true)             // DoH CNAME guard
-        .block_third_party_cookies(false))      // CHIPS instead of blocking
+    .privacy(|p| {
+        p.block_ads = true;                     // network filter list
+        p.https_upgrade = true;                 // rewrite http→https
+        p.strict_fingerprinting = false;        // hardened navigator spoofs
+        p.block_cname_cloaking = true;          // DoH CNAME guard
+        p.block_third_party_cookies = false;    // CHIPS instead of blocking
+    })
     .build();
 
 let mut events = browser.subscribe();           // tokio broadcast channel

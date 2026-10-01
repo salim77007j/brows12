@@ -31,7 +31,10 @@ pub struct Resolution {
 /// Async transport used to reach the DoH server (decouples from hyper).
 pub trait HttpTransport: Send + Sync {
     /// Perform a GET, return the response body on 200.
-    fn get(&self, url: String) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Vec<u8>, NetError>> + Send>>;
+    fn get(
+        &self,
+        url: String,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Vec<u8>, NetError>> + Send>>;
 }
 
 /// DNS-over-HTTPS resolver.
@@ -69,7 +72,9 @@ impl DohClient {
 /// Build a minimal DNS query message (one question, RD=1).
 pub fn build_query(name: &str, rtype: u16) -> Vec<u8> {
     let mut msg = Vec::with_capacity(17 + name.len());
-    msg.extend_from_slice(&[0xAB, 0xCD, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+    msg.extend_from_slice(&[
+        0xAB, 0xCD, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ]);
     for label in name.split('.') {
         if label.is_empty() {
             continue;

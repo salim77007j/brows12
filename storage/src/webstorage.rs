@@ -31,11 +31,7 @@ impl WebStorage {
 
     /// Session storage area (same API; engines may choose a memory store).
     pub fn session(origin: &str) -> Self {
-        Self {
-            store: Arc::new(MemoryStore::new()),
-            kind: "session",
-            origin: origin.to_string(),
-        }
+        Self { store: Arc::new(MemoryStore::new()), kind: "session", origin: origin.to_string() }
     }
 
     fn table(&self) -> String {
