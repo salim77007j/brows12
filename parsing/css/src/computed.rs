@@ -1,5 +1,6 @@
 //! Computed style: per-node resolved CSS values after cascade + inheritance.
 
+use crate::atr::DeviceEnv;
 use crate::values::*;
 
 /// Fully resolved style for one node, in the property subset the v1
@@ -38,6 +39,19 @@ pub struct ComputedStyle {
     pub row_gap: Len,
     pub column_gap: Len,
     pub white_space: WhiteSpace,
+    // ---- v0.2 additions -------------------------------------------------
+    /// `top/right/bottom/left` inset properties (positioning).
+    pub insets: Edges<AutoPx>,
+    /// `transform` (translate/rotate/scale) used by layout + compositor.
+    pub transform: Transform,
+    /// `animation` shorthand (first entry; multi-name lists documented).
+    pub animation: Option<AnimationSpec>,
+    /// `transition` shorthand entries.
+    pub transitions: Vec<TransitionSpec>,
+    /// `container-type` for container queries.
+    pub container_type: ContainerType,
+    /// CSS custom properties (`--*`) registered on this element.
+    pub custom: std::collections::HashMap<String, String>,
 }
 
 impl Default for ComputedStyle {
@@ -74,6 +88,12 @@ impl Default for ComputedStyle {
             row_gap: Len::Px(0.0),
             column_gap: Len::Px(0.0),
             white_space: WhiteSpace::Normal,
+            insets: Edges::splat(AutoPx::Auto),
+            transform: Transform::default(),
+            animation: None,
+            transitions: Vec::new(),
+            container_type: ContainerType::Normal,
+            custom: std::collections::HashMap::new(),
         }
     }
 }
@@ -89,6 +109,7 @@ impl ComputedStyle {
     }
 
     /// Inheritable properties flow from `parent` into a fresh style.
+    /// Custom properties are inherited wholesale (spec behaviour).
     pub fn inherit_from(parent: &ComputedStyle) -> Self {
         ComputedStyle {
             display: Display::Inline,
@@ -103,6 +124,7 @@ impl ComputedStyle {
             text_underline: false,
             text_line_through: false,
             opacity: 1.0,
+            custom: parent.custom.clone(),
             ..ComputedStyle::default()
         }
     }
@@ -114,11 +136,22 @@ pub struct CascadeCtx {
     pub root_font_size: f32,
     pub viewport_width: f32,
     pub viewport_height: f32,
+    /// Device environment for `@media` evaluation.
+    pub device: DeviceEnv,
 }
 
 impl Default for CascadeCtx {
     fn default() -> Self {
-        CascadeCtx { root_font_size: 16.0, viewport_width: 1280.0, viewport_height: 720.0 }
+        CascadeCtx {
+            root_font_size: 16.0,
+            viewport_width: 1280.0,
+            viewport_height: 720.0,
+            device: DeviceEnv {
+                viewport_width: 1280.0,
+                viewport_height: 720.0,
+                ..DeviceEnv::default()
+            },
+        }
     }
 }
 

@@ -27,6 +27,14 @@ authors = ["salim77007j"]
 keywords = ["browser", "engine", "quickjs", "privacy", "rendering"]
 categories = ["web-programming", "rendering"]
 
+[profile.dev]
+# 2-core / 3.9GB CI box: line-tables only, keep artifacts lean
+debug = 1
+
+# Realistic runtime performance for the headless harness without paying full opt cost
+[profile.dev.package."*"]
+opt-level = 1
+
 [profile.release]
 opt-level = 3
 lto = "thin"

@@ -9,7 +9,7 @@
 //! Inline flow (mixed inline boxes on one line), floats and tables are
 //! tracked in docs/ROADMAP.md.
 
-use brows12_css::values::{AutoPx, Display, Len};
+use brows12_css::values::{AutoPx, Display, Len, Position as CssPosition};
 use brows12_css::ComputedStyle;
 use brows12_html::{Document, NodeData, NodeId};
 use std::collections::HashMap;
@@ -62,6 +62,11 @@ pub struct LayoutResult {
     /// Total content height (for scrollbars / budgeting).
     pub content_height: f32,
     pub content_width: f32,
+    /// Nodes with `position: fixed` — compositor promotes these to
+    /// viewport-anchored layers (they do not scroll).
+    pub fixed_nodes: Vec<NodeId>,
+    /// Per-node transform (translate/rotate/scale) from CSS `transform`.
+    pub transforms: HashMap<NodeId, brows12_css::values::Transform>,
 }
 
 impl LayoutResult {
@@ -152,6 +157,32 @@ fn taffy_auto_len(v: AutoPx) -> taffy::LengthPercentageAuto {
     }
 }
 
+fn taffy_position(style: &ComputedStyle) -> taffy::Position {
+    match style.position {
+        CssPosition::Static => taffy::Position::Relative, // taffy default is Relative
+        CssPosition::Relative => taffy::Position::Relative,
+        // taffy positions absolute children against their parent box; the
+        // post-pass below re-anchors `fixed` to the viewport.
+        CssPosition::Absolute | CssPosition::Fixed | CssPosition::Sticky => {
+            taffy::Position::Absolute
+        }
+    }
+}
+
+fn taffy_inset(style: &ComputedStyle) -> taffy::Rect<taffy::LengthPercentageAuto> {
+    let f = |v: &AutoPx| match v {
+        AutoPx::Auto => taffy::LengthPercentageAuto::auto(),
+        AutoPx::Len(Len::Px(px)) => taffy::LengthPercentageAuto::length(*px),
+        AutoPx::Len(Len::Percent(p)) => taffy::LengthPercentageAuto::percent(*p / 100.0),
+    };
+    taffy::Rect {
+        top: f(&style.insets.top),
+        right: f(&style.insets.right),
+        bottom: f(&style.insets.bottom),
+        left: f(&style.insets.left),
+    }
+}
+
 fn build_taffy_style(style: &ComputedStyle) -> taffy::Style {
     let display = match style.display {
         Display::None => taffy::Display::None,
@@ -160,6 +191,8 @@ fn build_taffy_style(style: &ComputedStyle) -> taffy::Style {
     };
     let mut taffy_style = taffy::Style {
         display,
+        position: taffy_position(style),
+        inset: taffy_inset(style),
         size: taffy::Size {
             width: taffy_dimension(style.width),
             height: taffy_dimension(style.height),
@@ -385,14 +418,143 @@ pub fn compute_layout(
     }
     extract(&taffy_to_dom, &tree, &mut result.rects, root_taffy, (0.0, 0.0));
 
-    if let Some(body_rect) = doc.body().and_then(|b| result.rects.get(&b).copied()) {
-        result.content_height = body_rect.y + body_rect.height;
-        result.content_width = viewport.width;
-    } else {
-        result.content_height = viewport.height;
-        result.content_width = viewport.width;
+    // ---- v0.2 post-pass: fixed anchoring + transforms + content bounds ----
+    // Children map for subtree shifting.
+    let mut children_of: HashMap<NodeId, Vec<NodeId>> = HashMap::new();
+    let mut all_elements: Vec<NodeId> = Vec::new();
+    fn collect_children(
+        doc: &Document,
+        node: NodeId,
+        children_of: &mut HashMap<NodeId, Vec<NodeId>>,
+        all: &mut Vec<NodeId>,
+    ) {
+        for &c in &doc.node(node).children {
+            all.push(c);
+            collect_children(doc, c, children_of, all);
+            children_of.entry(node).or_default().push(c);
+        }
     }
+    collect_children(doc, start, &mut children_of, &mut all_elements);
+
+    // Shift every descendant of `node` by `dx`/`dy` (recursive, pre-order).
+    fn shift_subtree(
+        rects: &mut HashMap<NodeId, Rect>,
+        children_of: &HashMap<NodeId, Vec<NodeId>>,
+        node: NodeId,
+        dx: f32,
+        dy: f32,
+        depth: usize,
+    ) {
+        if depth > 256 {
+            return;
+        }
+        if let Some(r) = rects.get_mut(&node) {
+            r.x += dx;
+            r.y += dy;
+        }
+        if let Some(kids) = children_of.get(&node) {
+            for &k in kids {
+                shift_subtree(rects, children_of, k, dx, dy, depth + 1);
+            }
+        }
+    }
+
+    // position: fixed — anchor to the viewport (initial containing block),
+    // and record for compositor layer promotion.
+    let fixed: Vec<NodeId> = all_elements
+        .iter()
+        .copied()
+        .filter(|&n| {
+            doc.is_element(n)
+                && styles.get(n).map(|s| s.position) == Some(brows12_css::values::Position::Fixed)
+        })
+        .collect();
+    for n in fixed.iter().copied() {
+        let (Some(style), Some(rect)) = (styles.get(n), result.rects.get(&n).copied()) else {
+            continue;
+        };
+        let dx = resolve_inset_x(style, rect, viewport.width) - rect.x;
+        let dy = resolve_inset_y(style, rect, viewport.height) - rect.y;
+        if let Some(r) = result.rects.get_mut(&n) {
+            r.x += dx;
+            r.y += dy;
+        }
+        shift_subtree(&mut result.rects, &children_of, n, dx, dy, 0);
+        result.fixed_nodes.push(n);
+    }
+
+    // CSS transform translate: shift node + descendants; keep full transform
+    // for the compositor/paint (rotate + scale).
+    let transformed: Vec<(NodeId, brows12_css::values::Transform)> = all_elements
+        .iter()
+        .copied()
+        .filter_map(|n| {
+            let s = styles.get(n)?;
+            if doc.is_element(n) && !s.transform.is_identity() {
+                Some((n, s.transform))
+            } else {
+                None
+            }
+        })
+        .collect();
+    for (n, t) in transformed.iter().copied() {
+        if t.tx != 0.0 || t.ty != 0.0 {
+            shift_subtree(&mut result.rects, &children_of, n, t.tx, t.ty, 0);
+        }
+        result.transforms.insert(n, t);
+    }
+
+    // Content bounds: the max extent of any laid-out box (not just body).
+    let mut max_h = 0.0f32;
+    let mut max_w = 0.0f32;
+    for r in result.rects.values() {
+        max_h = max_h.max(r.y + r.height);
+        max_w = max_w.max(r.x + r.width);
+    }
+    result.content_height = max_h.max(viewport.height);
+    result.content_width = max_w.max(viewport.width);
     result
+}
+
+/// X position for a fixed/absolute box inside its containing block.
+fn resolve_inset_x(style: &ComputedStyle, rect: Rect, cb_width: f32) -> f32 {
+    let left = inset_px(style.insets.left, cb_width);
+    let right = inset_px(style.insets.right, cb_width);
+    if let Some(l) = left {
+        return l + offset_for_margin(style.margin.left);
+    }
+    if let Some(r) = right {
+        return cb_width - r - rect.width + offset_for_margin(style.margin.right);
+    }
+    rect.x
+}
+
+fn resolve_inset_y(style: &ComputedStyle, rect: Rect, cb_height: f32) -> f32 {
+    let top = inset_px(style.insets.top, cb_height);
+    let bottom = inset_px(style.insets.bottom, cb_height);
+    if let Some(t) = top {
+        return t + offset_for_margin(style.margin.top);
+    }
+    if let Some(b) = bottom {
+        return cb_height - b - rect.height + offset_for_margin(style.margin.bottom);
+    }
+    rect.y
+}
+
+fn inset_px(v: AutoPx, basis: f32) -> Option<f32> {
+    match v {
+        AutoPx::Auto => None,
+        AutoPx::Len(Len::Px(px)) => Some(px),
+        AutoPx::Len(Len::Percent(p)) => Some(p / 100.0 * basis),
+    }
+}
+
+fn offset_for_margin(v: AutoPx) -> f32 {
+    match v {
+        AutoPx::Len(Len::Px(px)) => px,
+        AutoPx::Len(Len::Percent(p)) => p * 16.0 / 100.0,
+        AutoPx::Auto => 0.0,
+    }
 }
 
 #[cfg(test)]

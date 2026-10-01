@@ -161,3 +161,112 @@ pub enum LineHeight {
 pub type Rgba = [u8; 4];
 
 pub const TRANSPARENT: Rgba = [0, 0, 0, 0];
+
+use crate::atr::EasingKeyword;
+
+/// A 2D transform: translate + rotate + uniform scale. Compound of the
+/// `transform` properties the engine composites with.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct Transform {
+    pub tx: f32,
+    pub ty: f32,
+    pub scale: f32,
+    pub rotate_deg: f32,
+}
+
+impl Transform {
+    pub fn is_identity(&self) -> bool {
+        self.tx == 0.0 && self.ty == 0.0 && self.scale == 1.0 && self.rotate_deg == 0.0
+    }
+}
+
+/// `animation-iteration-count`: a count or `infinite`.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum IterationCount {
+    #[default]
+    One,
+    Number(f32),
+    Infinite,
+}
+
+impl IterationCount {
+    pub fn is_infinite(&self) -> bool {
+        matches!(self, IterationCount::Infinite)
+    }
+}
+
+/// `animation-direction`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AnimationDirection {
+    #[default]
+    Normal,
+    Reverse,
+    Alternate,
+    AlternateReverse,
+}
+
+/// `animation-fill-mode`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AnimationFill {
+    #[default]
+    None,
+    Forwards,
+    Backwards,
+    Both,
+}
+
+/// One comma-separated entry of the `animation` shorthand.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AnimationSpec {
+    pub name: String,
+    pub duration_s: f32,
+    pub delay_s: f32,
+    pub iteration: IterationCount,
+    pub direction: AnimationDirection,
+    pub fill: AnimationFill,
+    pub easing: crate::atr::EasingKeyword,
+}
+
+/// One comma-separated entry of the `transition` shorthand.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TransitionSpec {
+    /// Property name the transition applies to (`all` for everything).
+    pub property: String,
+    pub duration_s: f32,
+    pub delay_s: f32,
+    pub easing: crate::atr::EasingKeyword,
+}
+
+/// `container-type`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ContainerType {
+    #[default]
+    Normal,
+    InlineSize,
+    Size,
+}
+
+impl Default for AnimationSpec {
+    fn default() -> Self {
+        AnimationSpec {
+            name: String::new(),
+            duration_s: 0.0,
+            delay_s: 0.0,
+            iteration: IterationCount::One,
+            direction: AnimationDirection::Normal,
+            fill: AnimationFill::None,
+            easing: EasingKeyword::Ease,
+        }
+    }
+}
+
+impl Default for TransitionSpec {
+    fn default() -> Self {
+        TransitionSpec {
+            property: String::new(),
+            duration_s: 0.0,
+            delay_s: 0.0,
+            easing: EasingKeyword::Ease,
+        }
+    }
+}

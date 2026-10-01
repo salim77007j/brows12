@@ -20,13 +20,21 @@
 //! origins with specificity, source order and `!important` handling, plus
 //! `style=""` inline declarations and per-property inheritance.
 
+pub mod animation;
 pub mod apply;
+pub mod atr;
 pub mod cascade;
 pub mod computed;
 pub mod matcher;
 pub mod stylesheet;
 pub mod values;
+pub mod vartext;
 
+pub use animation::{apply_keyframes, AnimationStatus, TransitionEngine};
+pub use atr::{
+    cubic_bezier, DeviceEnv, EasingKeyword, KeyframesMap, LayerRegistry, OwnedFontFace,
+    OwnedKeyframe, OwnedKeyframes,
+};
 pub use cascade::{compute_styles, StyleMap};
 pub use computed::ComputedStyle;
 pub use stylesheet::{Origin, StyleEngine, Stylesheet};

@@ -12,6 +12,7 @@ use lightningcss::properties::size::{MaxSize, Size};
 use lightningcss::properties::text::{TextAlign as LcTextAlign, WhiteSpace as LcWhiteSpace};
 use lightningcss::properties::Property;
 use lightningcss::values::color::CssColor;
+use crate::atr::EasingKeyword;
 
 /// Apply one declaration onto `s`.
 pub(crate) fn apply_property(
@@ -350,9 +351,249 @@ pub(crate) fn apply_property(
                 LcZIndex::Integer(i) => ZIndex::Number(*i),
             };
         }
+        // ---- v0.2: positioning insets ---------------------------------
+        Property::Top(v) => {
+            if let Some(a) = length_percentage_auto(v, &lctx) {
+                s.insets.top = a;
+            }
+        }
+        Property::Right(v) => {
+            if let Some(a) = length_percentage_auto(v, &lctx) {
+                s.insets.right = a;
+            }
+        }
+        Property::Bottom(v) => {
+            if let Some(a) = length_percentage_auto(v, &lctx) {
+                s.insets.bottom = a;
+            }
+        }
+        Property::Left(v) => {
+            if let Some(a) = length_percentage_auto(v, &lctx) {
+                s.insets.left = a;
+            }
+        }
+        // ---- v0.2: transforms ------------------------------------------
+        Property::Transform(list, _) => {
+            s.transform = transform_of_list(list, s.transform, &lctx);
+        }
+        Property::Translate(t) => {
+            use lightningcss::properties::transform::Translate;
+            if let Translate::XYZ { x, y, .. } = t {
+                s.transform.tx = lp_px(x, &lctx);
+                s.transform.ty = lp_px(y, &lctx);
+            }
+        }
+        Property::Rotate(r) => {
+            use lightningcss::properties::transform::Rotate;
+            if let Rotate::XYZ { angle, .. } = r {
+                s.transform.rotate_deg = angle.to_degrees();
+            }
+        }
+        Property::Scale(sc) => {
+            use lightningcss::properties::transform::Scale;
+            use lightningcss::values::percentage::NumberOrPercentage as NOP;
+            if let Scale::XYZ { x, .. } = sc {
+                s.transform.scale = match x {
+                    NOP::Number(n) => *n,
+                    NOP::Percentage(p) => p.0,
+                };
+            }
+        }
+        // ---- v0.2: animation + transition ------------------------------
+        Property::Animation(anims, _) => {
+            if let Some(a) = anims.first() {
+                s.animation = Some(map_animation(a));
+            }
+        }
+        Property::AnimationName(names, _) => {
+            use lightningcss::properties::animation::AnimationName as AN;
+            for n in names {
+                if let AN::Ident(id) = n {
+                    let name = id.0.to_string();
+                    let spec = s.animation.take().unwrap_or_default();
+                    s.animation = Some(AnimationSpec { name, ..spec });
+                    break;
+                }
+            }
+        }
+        Property::AnimationDuration(times, _) => {
+            if let Some(t) = times.first() {
+                let spec = s.animation.take().unwrap_or_default();
+                s.animation = Some(AnimationSpec { duration_s: t.to_ms() / 1000.0, ..spec });
+            }
+        }
+        Property::AnimationDelay(times, _) => {
+            if let Some(t) = times.first() {
+                let spec = s.animation.take().unwrap_or_default();
+                s.animation = Some(AnimationSpec { delay_s: t.to_ms() / 1000.0, ..spec });
+            }
+        }
+        Property::AnimationIterationCount(counts, _) => {
+            use lightningcss::properties::animation::AnimationIterationCount as LIC;
+            if let Some(c) = counts.first() {
+                let it = match c {
+                    LIC::Number(n) => IterationCount::Number(*n),
+                    LIC::Infinite => IterationCount::Infinite,
+                };
+                let spec = s.animation.take().unwrap_or_default();
+                s.animation = Some(AnimationSpec { iteration: it, ..spec });
+            }
+        }
+        Property::AnimationDirection(dirs, _) => {
+            use lightningcss::properties::animation::AnimationDirection as LAD;
+            if let Some(d) = dirs.first() {
+                let dir = match d {
+                    LAD::Reverse => AnimationDirection::Reverse,
+                    LAD::Alternate => AnimationDirection::Alternate,
+                    LAD::AlternateReverse => AnimationDirection::AlternateReverse,
+                    _ => AnimationDirection::Normal,
+                };
+                let spec = s.animation.take().unwrap_or_default();
+                s.animation = Some(AnimationSpec { direction: dir, ..spec });
+            }
+        }
+        Property::AnimationFillMode(modes, _) => {
+            use lightningcss::properties::animation::AnimationFillMode as LAF;
+            if let Some(m) = modes.first() {
+                let fill = match m {
+                    LAF::Forwards => AnimationFill::Forwards,
+                    LAF::Backwards => AnimationFill::Backwards,
+                    LAF::Both => AnimationFill::Both,
+                    _ => AnimationFill::None,
+                };
+                let spec = s.animation.take().unwrap_or_default();
+                s.animation = Some(AnimationSpec { fill, ..spec });
+            }
+        }
+        Property::AnimationTimingFunction(fns, _) => {
+            if let Some(f) = fns.first() {
+                if let Some(e) = crate::atr::timing_to_easing(f) {
+                    let spec = s.animation.take().unwrap_or_default();
+                    s.animation = Some(AnimationSpec { easing: e, ..spec });
+                }
+            }
+        }
+        Property::Transition(transitions, _) => {
+            s.transitions = transitions
+                .iter()
+                .map(|t| TransitionSpec {
+                    property: crate::atr::to_css_string(&t.property)
+                        .map(|p| p.to_ascii_lowercase())
+                        .unwrap_or_default(),
+                    duration_s: t.duration.to_ms() / 1000.0,
+                    delay_s: t.delay.to_ms() / 1000.0,
+                    easing: crate::atr::timing_to_easing(&t.timing_function)
+                        .unwrap_or(EasingKeyword::Ease),
+                })
+                .collect();
+        }
+        Property::ContainerType(ct) => {
+            use lightningcss::properties::contain::ContainerType as LCT;
+            s.container_type = match ct {
+                LCT::InlineSize => ContainerType::InlineSize,
+                LCT::Size => ContainerType::Size,
+                _ => ContainerType::Normal,
+            };
+        }
         _ => {
             // Unrecognized property: intentionally ignored in v1.
         }
+    }
+}
+
+fn map_animation(
+    a: &lightningcss::properties::animation::Animation,
+) -> AnimationSpec {
+    use lightningcss::properties::animation::{
+        AnimationDirection as LAD, AnimationFillMode as LAF, AnimationName as AN,
+        AnimationIterationCount as LIC,
+    };
+    let name = match &a.name {
+        AN::Ident(id) => id.0.to_string(),
+        AN::String(s) => s.to_string(),
+        _ => String::new(),
+    };
+    AnimationSpec {
+        name,
+        duration_s: a.duration.to_ms() / 1000.0,
+        delay_s: a.delay.to_ms() / 1000.0,
+        iteration: match &a.iteration_count {
+            LIC::Number(n) => IterationCount::Number(*n),
+            LIC::Infinite => IterationCount::Infinite,
+        },
+        direction: match &a.direction {
+            LAD::Reverse => AnimationDirection::Reverse,
+            LAD::Alternate => AnimationDirection::Alternate,
+            LAD::AlternateReverse => AnimationDirection::AlternateReverse,
+            _ => AnimationDirection::Normal,
+        },
+        fill: match &a.fill_mode {
+            LAF::Forwards => AnimationFill::Forwards,
+            LAF::Backwards => AnimationFill::Backwards,
+            LAF::Both => AnimationFill::Both,
+            _ => AnimationFill::None,
+        },
+        easing: crate::atr::timing_to_easing(&a.timing_function).unwrap_or(EasingKeyword::Ease),
+    }
+}
+
+/// Resolve a LengthPercentage to px (percentages resolve to 0 without box info).
+fn lp_px(
+    lp: &lightningcss::values::length::LengthPercentage,
+    lctx: &LengthContext,
+) -> f32 {
+    use lightningcss::values::percentage::DimensionPercentage as DP;
+    match lp {
+        DP::Dimension(l) => crate::computed::length_to_px(l, lctx).unwrap_or(0.0),
+        DP::Percentage(_) | DP::Calc(_) => 0.0,
+    }
+}
+
+fn transform_of_list(
+    list: &lightningcss::properties::transform::TransformList,
+    current: Transform,
+    lctx: &LengthContext,
+) -> Transform {
+    use lightningcss::properties::transform::Transform as LT;
+    let mut t = current;
+    for item in &list.0 {
+        match item {
+            LT::Translate(x, y) => {
+                t.tx += lp_px(x, lctx);
+                t.ty += lp_px(y, lctx);
+            }
+            LT::TranslateX(x) => t.tx += lp_px(x, lctx),
+            LT::TranslateY(y) => t.ty += lp_px(y, lctx),
+            LT::TranslateZ(_) => {}
+            LT::Translate3d(x, y, _) => {
+                t.tx += lp_px(x, lctx);
+                t.ty += lp_px(y, lctx);
+            }
+            LT::Scale(x, _) => t.scale *= nop_value(x),
+            LT::ScaleX(x) => t.scale *= nop_value(x),
+            LT::ScaleY(_) => {}
+            LT::ScaleZ(_) => {}
+            LT::Scale3d(x, _, _) => t.scale *= nop_value(x),
+            LT::Rotate(a) => t.rotate_deg += a.to_degrees(),
+            LT::RotateZ(a) => t.rotate_deg += a.to_degrees(),
+            LT::RotateX(_) | LT::RotateY(_) | LT::Rotate3d(..) => {}
+            LT::Matrix(m) => {
+                t.tx += m.e;
+                t.ty += m.f;
+                t.scale *= m.a;
+                t.rotate_deg += m.b.atan2(m.a).to_degrees();
+            }
+            _ => {}
+        }
+    }
+    t
+}
+
+fn nop_value(n: &lightningcss::values::percentage::NumberOrPercentage) -> f32 {
+    use lightningcss::values::percentage::NumberOrPercentage as NOP;
+    match n {
+        NOP::Number(n) => *n,
+        NOP::Percentage(p) => p.0,
     }
 }
 
