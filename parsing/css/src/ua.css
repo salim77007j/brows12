@@ -1,0 +1,50 @@
+/* Brows12 user-agent stylesheet (Origin::UserAgent).
+ * Modeled on the HTML rendering spec defaults, trimmed to the properties
+ * the v1 cascade+layout engines understand. */
+
+html { display: block; }
+body { display: block; margin: 8px; font-size: 16px; color: #000000; }
+
+head, title, meta, link, style, script, template, noscript,
+base, col, colgroup, area, source, track, datalist, param { display: none; }
+
+/* Block-level elements (v1 layout treats inline flow as block; see ROADMAP) */
+div, p, h1, h2, h3, h4, h5, h6, ul, ol, li, blockquote, figure, figcaption,
+section, article, aside, header, footer, nav, main, address, pre, form,
+fieldset, legend, details, dialog, dl, dt, dd, table, thead, tbody, tfoot,
+tr, td, th, caption, hr, center { display: block; }
+
+h1 { font-size: 2em; font-weight: bold; margin: 0.67em 0; }
+h2 { font-size: 1.5em; font-weight: bold; margin: 0.75em 0; }
+h3 { font-size: 1.17em; font-weight: bold; margin: 0.83em 0; }
+h4 { font-weight: bold; margin: 1em 0; }
+h5 { font-size: 0.83em; font-weight: bold; margin: 1.5em 0; }
+h6 { font-size: 0.67em; font-weight: bold; margin: 1.67em 0; }
+
+p, blockquote, figure, dl, dd, pre { margin: 1em 0; }
+ul, ol { margin: 1em 0; padding-left: 40px; }
+
+b, strong { font-weight: bold; }
+i, em, cite, var, dfn { font-style: italic; }
+a { color: #0000EE; text-decoration: underline; }
+u, ins { text-decoration: underline; }
+s, strike, del { text-decoration: line-through; }
+small { font-size: 0.83em; }
+big { font-size: 1.17em; }
+sub, sup { font-size: 0.75em; }
+
+pre, code, kbd, samp, tt { font-family: monospace; }
+pre { white-space: pre; font-size: 0.92em; }
+code { font-size: 0.92em; }
+
+hr { display: block; margin: 0.5em auto; border-top-width: 1px; border-style: solid; }
+
+img, video, canvas, svg { overflow: hidden; }
+input, select, button, textarea { display: inline-block; }
+
+center { text-align: center; }
+caption { text-align: center; }
+th { font-weight: bold; }
+
+mark { background-color: #FFFF00; color: #000000; }
+abbr[title], acronym[title] { text-decoration: underline; }

@@ -1,0 +1,7 @@
+/target
+/fuzz/target
+**/*.rs.bk
+*.swp
+.DS_Store
+bench-results/
+*.profraw

@@ -1,0 +1,27 @@
+[package]
+name = "brows12-js"
+description = "Brows12 JavaScript: QuickJS-ng runtime (rquickjs), event loop, DOM / fetch / storage / navigator bindings"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+brows12-css = { path = "../parsing/css" }
+brows12-html = { path = "../parsing/html" }
+brows12-net = { path = "../networking" }
+brows12-privacy = { path = "../privacy" }
+brows12-storage = { path = "../storage" }
+lightningcss = { version = "1.0.0-alpha.72", features = ["into_owned"] }
+parcel_selectors = "0.28"
+rquickjs = { version = "0.14", features = ["loader"] }
+base64 = "0.22"
+fastrand = "2"
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["rt-multi-thread", "time", "sync"] }
+tracing = "0.1"
+url = "2.5"

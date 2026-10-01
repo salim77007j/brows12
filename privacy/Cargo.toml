@@ -1,0 +1,19 @@
+[package]
+name = "brows12-privacy"
+description = "Brows12 privacy core: network ad/tracker blocking, anti-fingerprinting, HTTPS upgrade, cookie policy"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+adblock = "0.13"
+brows12-storage = { path = "../storage" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tracing = "0.1"
+url = "2.5"

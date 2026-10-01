@@ -1,0 +1,32 @@
+[package]
+name = "brows12-engine"
+description = "Brows12 core engine: orchestrates net, parsing, style, layout, rendering, JS, storage and privacy"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+brows12-css = { path = "../parsing/css" }
+brows12-html = { path = "../parsing/html" }
+brows12-js = { path = "../js" }
+brows12-layout = { path = "../layout" }
+brows12-net = { path = "../networking" }
+brows12-privacy = { path = "../privacy" }
+brows12-render = { path = "../rendering" }
+brows12-storage = { path = "../storage" }
+cosmic-text = "0.19"
+tiny-skia = { version = "0.12", features = ["png-format"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+jiff = "0.2"
+thiserror = "2"
+tracing = "0.1"
+tokio = { version = "1", features = ["rt-multi-thread", "time", "sync", "macros"] }
+url = "2.5"
+
+[dev-dependencies]
+anyhow = "1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

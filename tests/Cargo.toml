@@ -1,0 +1,25 @@
+[package]
+name = "brows12-tests"
+description = "Brows12 cross-crate integration test suite"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+brows12-css = { path = "../parsing/css" }
+brows12-engine = { path = "../engine" }
+brows12-html = { path = "../parsing/html" }
+brows12-layout = { path = "../layout" }
+brows12-net = { path = "../networking" }
+brows12-privacy = { path = "../privacy" }
+brows12-render = { path = "../rendering" }
+brows12-storage = { path = "../storage" }
+anyhow = "1"
+tempfile = "3"
+tokio = { version = "1", features = ["rt-multi-thread", "net", "time", "io-util", "macros"] }
+tracing = "0.1"
+url = "2.5"

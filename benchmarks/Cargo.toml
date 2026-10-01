@@ -1,0 +1,56 @@
+[package]
+name = "brows12-benchmarks"
+description = "Brows12 benchmark suite: criterion micro-benchmarks + browser comparison tooling"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "brows12-compare"
+path = "src/bin/brows12-compare.rs"
+
+[[bench]]
+name = "html"
+harness = false
+
+[[bench]]
+name = "css"
+harness = false
+
+[[bench]]
+name = "layout_render"
+harness = false
+
+[[bench]]
+name = "javascript"
+harness = false
+
+[[bench]]
+name = "storage"
+harness = false
+
+[dependencies]
+brows12-css = { path = "../parsing/css" }
+brows12-engine = { path = "../engine" }
+brows12-html = { path = "../parsing/html" }
+brows12-layout = { path = "../layout" }
+brows12-render = { path = "../rendering" }
+brows12-storage = { path = "../storage" }
+anyhow = "1"
+brows12-js = { path = "../js" }
+brows12-net = { path = "../networking" }
+cosmic-text = "0.19"
+tokio = { version = "1", features = ["rt-multi-thread"] }
+url = "2.5"
+serde_json = "1"
+tracing = "0.1"
+
+[dev-dependencies]
+criterion = { version = "0.8", features = ["html_reports"] }

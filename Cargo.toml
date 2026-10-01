@@ -1,0 +1,37 @@
+[workspace]
+resolver = "2"
+members = [
+    "parsing/html",
+    "parsing/css",
+    "layout",
+    "rendering",
+    "networking",
+    "storage",
+    "privacy",
+    "js",
+    "engine",
+    "api",
+    "tests",
+    "benchmarks",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/salim77007j/brows12"
+homepage = "https://github.com/salim77007j/brows12"
+documentation = "https://github.com/salim77007j/brows12/tree/main/docs"
+authors = ["salim77007j"]
+keywords = ["browser", "engine", "quickjs", "privacy", "rendering"]
+categories = ["web-programming", "rendering"]
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = "debuginfo"
+
+[profile.bench]
+debug = true

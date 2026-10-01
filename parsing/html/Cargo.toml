@@ -1,0 +1,19 @@
+[package]
+name = "brows12-html"
+description = "Brows12 DOM implementation and HTML5 parsing (html5ever based)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+html5ever = "0.39"
+markup5ever_rcdom = "0.39"
+thiserror = "2"
+tracing = "0.1"
+
+[dev-dependencies]
+tempfile = "3"

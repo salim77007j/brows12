@@ -1,0 +1,37 @@
+[package]
+name = "brows12-net"
+description = "Brows12 networking: HTTP/1.1 + HTTP/2 (hyper, rustls TLS 1.3), RFC 8484 DNS-over-HTTPS, optional HTTP/3 (quinn + h3)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+base64 = "0.22"
+brows12-storage = { path = "../storage" }
+bytes = "1"
+h3 = { version = "0.0.8", optional = true }
+h3-quinn = { version = "0.0.10", optional = true }
+http = "1"
+http-body = "1"
+http-body-util = "0.1"
+hyper = { version = "1", features = ["client", "http1", "http2"] }
+hyper-rustls = { version = "0.27", default-features = false, features = ["ring", "webpki-roots", "http1", "http2", "tls12"] }
+hyper-util = { version = "0.1", features = ["client-legacy", "http1", "http2", "tokio", "service"] }
+quinn = { version = "0.11", default-features = false, features = ["log", "platform-verifier", "runtime-tokio", "rustls-ring"], optional = true }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+thiserror = "2"
+tokio = { version = "1", features = ["rt-multi-thread", "net", "time", "io-util", "sync", "macros"] }
+tracing = "0.1"
+url = "2.5"
+webpki-roots = "1"
+
+[features]
+default = ["doh"]
+# RFC 8484 DNS-over-HTTPS resolver
+doh = []
+# HTTP/3 over QUIC (quinn + h3)
+http3 = ["dep:quinn", "dep:h3", "dep:h3-quinn"]

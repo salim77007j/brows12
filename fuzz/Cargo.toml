@@ -1,0 +1,52 @@
+[package]
+name = "brows12-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[workspace]
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.url]
+version = "2.5"
+
+[dependencies.brows12-html]
+path = "../parsing/html"
+
+[dependencies.brows12-css]
+path = "../parsing/css"
+
+[dependencies.brows12-net]
+path = "../networking"
+
+[dependencies.brows12-storage]
+path = "../storage"
+
+[[bin]]
+name = "html_parse"
+path = "fuzz_targets/html_parse.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "css_parse"
+path = "fuzz_targets/css_parse.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "doh_wire_parse"
+path = "fuzz_targets/doh_wire_parse.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "cookie_parse"
+path = "fuzz_targets/cookie_parse.rs"
+test = false
+doc = false

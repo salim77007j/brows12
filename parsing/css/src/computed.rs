@@ -1,0 +1,183 @@
+//! Computed style: per-node resolved CSS values after cascade + inheritance.
+
+use crate::values::*;
+
+/// Fully resolved style for one node, in the property subset the v1
+/// layout + rendering engines consume. Unrecognized properties are ignored
+/// (see docs/ROADMAP.md for the supported-property matrix).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ComputedStyle {
+    pub display: Display,
+    pub color: Rgba,
+    pub background_color: Rgba,
+    pub font_size: f32,
+    pub font_weight: u16,
+    pub font_style: FontStyle,
+    pub font_family: Option<String>,
+    pub line_height: LineHeight,
+    pub text_align: TextAlign,
+    pub text_underline: bool,
+    pub text_line_through: bool,
+    pub opacity: f32,
+    pub margin: Edges<AutoPx>,
+    pub padding: Edges<Len>,
+    pub border_width: Edges<Len>,
+    pub border_color: Rgba,
+    pub border_radius: f32,
+    pub width: AutoPx,
+    pub height: AutoPx,
+    pub max_width: AutoPx,
+    pub overflow: OverflowKeyword,
+    pub position: Position,
+    pub z_index: ZIndex,
+    pub flex_direction: FlexDirection,
+    pub flex_wrap: FlexWrap,
+    pub flex: FlexBox,
+    pub justify_content: JustifyContent,
+    pub align_items: AlignItems,
+    pub row_gap: Len,
+    pub column_gap: Len,
+    pub white_space: WhiteSpace,
+}
+
+impl Default for ComputedStyle {
+    fn default() -> Self {
+        ComputedStyle {
+            display: Display::Inline,
+            color: [0, 0, 0, 255],
+            background_color: TRANSPARENT,
+            font_size: 16.0,
+            font_weight: 400,
+            font_style: FontStyle::Normal,
+            font_family: None,
+            line_height: LineHeight::Normal,
+            text_align: TextAlign::Start,
+            text_underline: false,
+            text_line_through: false,
+            opacity: 1.0,
+            margin: Edges::splat(AutoPx::Len(Len::Px(0.0))),
+            padding: Edges::splat(Len::Px(0.0)),
+            border_width: Edges::splat(Len::Px(0.0)),
+            border_color: [0, 0, 0, 255],
+            border_radius: 0.0,
+            width: AutoPx::Auto,
+            height: AutoPx::Auto,
+            max_width: AutoPx::Auto,
+            overflow: OverflowKeyword::Visible,
+            position: Position::Static,
+            z_index: ZIndex::Auto,
+            flex_direction: FlexDirection::Row,
+            flex_wrap: FlexWrap::NoWrap,
+            flex: FlexBox { grow: 0.0, shrink: 1.0 },
+            justify_content: JustifyContent::FlexStart,
+            align_items: AlignItems::Stretch,
+            row_gap: Len::Px(0.0),
+            column_gap: Len::Px(0.0),
+            white_space: WhiteSpace::Normal,
+        }
+    }
+}
+
+impl ComputedStyle {
+    /// Resolve a unitless/absolute line height into pixels for this style.
+    pub fn line_height_px(&self) -> f32 {
+        match self.line_height {
+            LineHeight::Normal => self.font_size * 1.2,
+            LineHeight::Number(n) => self.font_size * n,
+            LineHeight::Px(px) => px,
+        }
+    }
+
+    /// Inheritable properties flow from `parent` into a fresh style.
+    pub fn inherit_from(parent: &ComputedStyle) -> Self {
+        ComputedStyle {
+            display: Display::Inline,
+            color: parent.color,
+            background_color: TRANSPARENT,
+            font_size: parent.font_size,
+            font_weight: parent.font_weight,
+            font_style: parent.font_style,
+            font_family: parent.font_family.clone(),
+            line_height: parent.line_height,
+            text_align: parent.text_align,
+            text_underline: false,
+            text_line_through: false,
+            opacity: 1.0,
+            ..ComputedStyle::default()
+        }
+    }
+}
+
+/// Context needed to resolve font-relative and viewport-relative units.
+#[derive(Debug, Clone, Copy)]
+pub struct CascadeCtx {
+    pub root_font_size: f32,
+    pub viewport_width: f32,
+    pub viewport_height: f32,
+}
+
+impl Default for CascadeCtx {
+    fn default() -> Self {
+        CascadeCtx { root_font_size: 16.0, viewport_width: 1280.0, viewport_height: 720.0 }
+    }
+}
+
+pub(crate) struct LengthContext {
+    pub font_size: f32,
+    pub root_font_size: f32,
+    pub viewport_width: f32,
+    pub viewport_height: f32,
+}
+
+impl From<&CascadeCtx> for LengthContext {
+    fn from(c: &CascadeCtx) -> Self {
+        LengthContext {
+            font_size: c.root_font_size,
+            root_font_size: c.root_font_size,
+            viewport_width: c.viewport_width,
+            viewport_height: c.viewport_height,
+        }
+    }
+}
+
+/// Resolve a lightningcss length to px using the given context (font size for
+/// em, root font size for rem, viewport for vw/vh).
+pub(crate) fn length_to_px(
+    value: &lightningcss::values::length::LengthValue,
+    ctx: &LengthContext,
+) -> Option<f32> {
+    use lightningcss::values::length::LengthValue as LV;
+    match value {
+        LV::Px(v) => Some(*v),
+        LV::Em(v) => Some(*v * ctx.font_size),
+        LV::Rem(v) => Some(*v * ctx.root_font_size),
+        LV::Vw(v) => Some(*v * ctx.viewport_width / 100.0),
+        LV::Vh(v) => Some(*v * ctx.viewport_height / 100.0),
+        other => other.to_px(),
+    }
+}
+
+/// Resolve a `<length-percentage>` either to px or to a symbolic percentage.
+pub(crate) fn length_percentage_to_len(
+    lp: &lightningcss::values::length::LengthPercentage,
+    ctx: &LengthContext,
+) -> Option<Len> {
+    use lightningcss::values::percentage::DimensionPercentage as DP;
+    match lp {
+        DP::Dimension(lv) => length_to_px(lv, ctx).map(Len::Px),
+        DP::Percentage(p) => Some(Len::Percent(p.0)),
+        DP::Calc(_) => None,
+    }
+}
+
+/// Resolve a `<length-percentage | auto>`.
+pub(crate) fn length_percentage_auto(
+    lpa: &lightningcss::values::length::LengthPercentageOrAuto,
+    ctx: &LengthContext,
+) -> Option<AutoPx> {
+    use lightningcss::values::length::LengthPercentageOrAuto as LPA;
+    match lpa {
+        LPA::Auto => Some(AutoPx::Auto),
+        LPA::LengthPercentage(lp) => length_percentage_to_len(lp, ctx).map(AutoPx::Len),
+    }
+}
