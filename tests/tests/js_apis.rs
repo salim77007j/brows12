@@ -63,6 +63,7 @@ fn realm(base_url: String) -> JsRuntime {
         viewport: (800, 600),
         console_log: Arc::new(Mutex::new(Vec::new())),
         canvas_store: Arc::new(brows12_js::CanvasStore::new()),
+        webgl_store: Arc::new(brows12_js::WebGlStore::new()),
         fonts: Arc::new(Mutex::new(cosmic_text::FontSystem::new())),
     });
     let dom = DomHandle::new(Arc::new(Mutex::new(Document::new())));

@@ -28,6 +28,8 @@ pub struct JsEnvironment {
     pub console_log: Arc<Mutex<Vec<String>>>,
     /// Canvas2D surfaces created by page scripts (keyed by node id).
     pub canvas_store: Arc<crate::canvas::CanvasStore>,
+    /// WebGL canvases (keyed by node id; None-capable when no GPU exists).
+    pub webgl_store: Arc<crate::webgl::WebGlStore>,
     /// Shared font system (Canvas2D fillText).
     pub fonts: Arc<Mutex<cosmic_text::FontSystem>>,
 }

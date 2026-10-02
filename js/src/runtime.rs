@@ -265,6 +265,12 @@ impl JsRuntime {
 fn to_script_error(ctx: &Ctx<'_>, e: rquickjs::Error) -> JsExecutionError {
     if e.is_exception() {
         let caught = ctx.catch();
+        // Include the JS stack when present (TDZ errors in embedded glue are
+        // otherwise line-less and very hard to debug).
+        let stack = caught.as_object().and_then(|o| {
+            let s = o.get::<_, rquickjs::Value>("stack").ok()?;
+            s.as_string().and_then(|v| v.to_string().ok())
+        });
         let msg = caught
             .as_string()
             .and_then(|s| s.to_string().ok())
@@ -279,7 +285,10 @@ fn to_script_error(ctx: &Ctx<'_>, e: rquickjs::Error) -> JsExecutionError {
                 n.and_then(|s| s.to_string().ok())
             })
             .unwrap_or_else(|| format!("{e:?}"));
-        JsExecutionError::Script(msg)
+        JsExecutionError::Script(match stack {
+            Some(s) => format!("{msg}\n--- JS stack ---\n{s}"),
+            None => msg,
+        })
     } else {
         // Unknown / interrupted variants surface as generic errors here.
         JsExecutionError::Script(format!("{e}"))

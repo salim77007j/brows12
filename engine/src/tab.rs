@@ -93,6 +93,7 @@ pub struct Tab {
     compositor: std::sync::Mutex<Box<dyn brows12_compositor::Compositor>>,
     /// Canvas2D surfaces created by this tab's page scripts.
     canvas_store: Arc<brows12_js::CanvasStore>,
+    webgl_store: Arc<brows12_js::WebGlStore>,
 }
 
 fn now_secs() -> u64 {
@@ -112,6 +113,7 @@ impl Tab {
             frame_gen: AtomicU64::new(0),
             compositor: std::sync::Mutex::new(brows12_compositor::auto_compositor()),
             canvas_store: Arc::new(brows12_js::CanvasStore::new()),
+            webgl_store: Arc::new(brows12_js::WebGlStore::new()),
         }
     }
 
@@ -269,6 +271,7 @@ impl Tab {
     ) -> Result<(), EngineError> {
         // Navigation resets page-owned surfaces (node ids are per-document).
         self.canvas_store.clear();
+        self.webgl_store.clear();
 
         // Parse HTML into the arena DOM.
         let document = Arc::new(Mutex::new(parse_document(html_text)));
@@ -310,6 +313,8 @@ impl Tab {
 
         // Canvas2D surfaces painted by scripts join the image pipeline.
         self.harvest_canvases(&page);
+        // WebGL canvases: read back GPU pixels into the same pipeline.
+        self.harvest_webgl(&page);
 
         // If scripts mutated the DOM: full re-style / re-layout / re-paint.
         if page.dom.take_mutated() || !page.images.lock().unwrap().is_empty() {
@@ -324,6 +329,21 @@ impl Tab {
     fn harvest_canvases(&self, page: &Arc<PageInner>) {
         use brows12_render::display_list::DecodedImage as DI;
         for (node_id, width, height, pixels) in brows12_js::platform::harvest(&self.canvas_store) {
+            let node = brows12_html::NodeId(node_id.max(0) as u32);
+            let doc = page.document.lock().unwrap();
+            let is_canvas = doc.is_element(node) && doc.local_name(node) == "canvas";
+            drop(doc);
+            if !is_canvas || pixels.is_empty() {
+                continue;
+            }
+            page.images.lock().unwrap().insert(node, Arc::new(DI { width, height, pixels }));
+        }
+    }
+
+    /// Read back WebGL drawing buffers into the image pipeline.
+    fn harvest_webgl(&self, page: &Arc<PageInner>) {
+        use brows12_render::display_list::DecodedImage as DI;
+        for (node_id, width, height, pixels) in self.webgl_store.harvest() {
             let node = brows12_html::NodeId(node_id.max(0) as u32);
             let doc = page.document.lock().unwrap();
             let is_canvas = doc.is_element(node) && doc.local_name(node) == "canvas";
@@ -702,6 +722,7 @@ impl Tab {
             ),
             console_log: Arc::new(Mutex::new(Vec::new())),
             canvas_store: self.canvas_store.clone(),
+            webgl_store: self.webgl_store.clone(),
             fonts: self.engine.fonts.clone(),
         });
 

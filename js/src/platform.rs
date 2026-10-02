@@ -441,3 +441,10 @@ pub fn harvest(store: &CanvasStore) -> Vec<(i32, u32, u32, Vec<u8>)> {
         })
         .collect()
 }
+
+/// Current Canvas2D pixels of one surface, for WebGL texImage2D(canvas).
+pub fn canvas_pixels(store: &CanvasStore, node_id: i32) -> Option<(u32, u32, Vec<u8>)> {
+    let surface = store.snapshot().into_iter().find(|(k, _)| *k == node_id)?.1;
+    let pm = surface.pixmap.lock().ok()?;
+    Some((surface.width, surface.height, pm.data().to_vec()))
+}

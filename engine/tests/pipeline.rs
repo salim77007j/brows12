@@ -94,3 +94,67 @@ fn suspension_keeps_snapshot() {
     assert!(tab.frame().unwrap().generation >= before);
     assert_eq!(engine.live_page_count(), 1);
 }
+
+#[test]
+fn webgl2_triangle_renders_and_harvests() {
+    // GPU-less environments (headless containers) legitimately return null
+    // from getContext — skip rather than fail (CI installs lavapipe).
+    if !brows12_js::webgl::gpu_available() {
+        eprintln!("no GPU adapter; skipping WebGL test");
+        return;
+    }
+    let html = r#"<!DOCTYPE html><html><head><style>
+body { background-color: #ffffff; } canvas { width: 64px; height: 64px; }
+</style></head><body>
+<canvas id="gl" width="64" height="64"></canvas>
+<script>
+var canvas = document.getElementById('gl');
+var gl = canvas.getContext('webgl2');
+if (!gl) throw new Error('no webgl2 context');
+var vs = 'attribute vec3 a_pos; void main() { gl_Position = vec4(a_pos, 1.0); }';
+var fs = 'precision mediump float; uniform vec4 u_color; void main() { gl_FragColor = u_color; }';
+function makeShader(type, src) {
+  var s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+    throw new Error('shader: ' + gl.getShaderInfoLog(s));
+  }
+  return s;
+}
+var prog = gl.createProgram();
+gl.attachShader(prog, makeShader(gl.VERTEX_SHADER, vs));
+gl.attachShader(prog, makeShader(gl.FRAGMENT_SHADER, fs));
+gl.linkProgram(prog);
+if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+  throw new Error('link: ' + gl.getProgramInfoLog(prog));
+}
+gl.useProgram(prog);
+var buf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+gl.bufferData(gl.ARRAY_BUFFER,
+  new Float32Array([0.0, 0.8, 0.0, -0.8, -0.6, 0.0, 0.8, -0.6, 0.0]),
+  gl.STATIC_DRAW);
+var loc = gl.getAttribLocation(prog, 'a_pos');
+if (loc < 0) throw new Error('a_pos location missing');
+gl.enableVertexAttribArray(loc);
+gl.vertexAttribPointer(loc, 3, gl.FLOAT, false, 0, 0);
+var uc = gl.getUniformLocation(prog, 'u_color');
+if (!uc) throw new Error('u_color location missing');
+gl.uniform4f(uc, 1.0, 0.0, 0.0, 1.0);
+gl.clearColor(0.0, 0.0, 0.0, 0.0);
+gl.clear(gl.COLOR_BUFFER_BIT);
+gl.drawArrays(gl.TRIANGLES, 0, 3);
+</script></body></html>"#;
+
+    let engine = Engine::new(EngineConfig::default());
+    let tab = engine.tab();
+    tab.load_url_from_string(html, "brows12://fixture/webgl").expect("load");
+
+    let frame = tab.frame().expect("frame present");
+    let data = frame.pixmap.data();
+    // The page paints white bg + a red triangle where the canvas sits.
+    let red = data.chunks_exact(4).filter(|p| p[0] > 180 && p[1] < 90 && p[2] < 90).count();
+    assert!(red > 100, "expected red triangle pixels, got {red}");
+    eprintln!("webgl triangle: {red} red pixels painted");
+}

@@ -619,6 +619,7 @@ if (!__brows12.isWorker) {
   };
 
   __brows12PatchCanvas(Brows12Element);
+  __brows12PatchWebGL(Brows12Element);
 }
 
 function __brows12FireLoad() {
@@ -870,6 +871,219 @@ class EventSource {
   addEventListener(type, cb) { if (type === "message") this.onmessage = cb; if (type === "open") this.onopen = cb; if (type === "error") this.onerror = cb; }
 }
 
+// ---- WebGL 2 ---------------------------------------------------------------
+// Backed by the engine's wgpu stack: GLSL ES shaders are normalized, compiled
+// via naga, and rendered on offscreen targets harvested like Canvas2D surfaces.
+const GL = {
+  COLOR_BUFFER_BIT: 0x4000, DEPTH_BUFFER_BIT: 0x100, STENCIL_BUFFER_BIT: 0x400,
+  POINTS: 0, LINES: 1, LINE_LOOP: 2, LINE_STRIP: 3, TRIANGLES: 4,
+  TRIANGLE_STRIP: 5, TRIANGLE_FAN: 6,
+  FLOAT: 0x1406, UNSIGNED_BYTE: 0x1401, UNSIGNED_SHORT: 0x1403, UNSIGNED_INT: 0x1405,
+  ARRAY_BUFFER: 0x8892, ELEMENT_ARRAY_BUFFER: 0x8893, STATIC_DRAW: 0x88E4, DYNAMIC_DRAW: 0x88E8,
+  VERTEX_SHADER: 0x8B31, FRAGMENT_SHADER: 0x8B30,
+  COMPILE_STATUS: 0x8B81, LINK_STATUS: 0x8B82,
+  TEXTURE_2D: 0x0DE1, TEXTURE0: 0x84C0,
+  RGBA: 0x1908, RGB: 0x1907,
+  TEXTURE_MIN_FILTER: 0x2801, TEXTURE_MAG_FILTER: 0x2800,
+  TEXTURE_WRAP_S: 0x2802, TEXTURE_WRAP_T: 0x2803,
+  LINEAR: 0x2601, NEAREST: 0x2600, REPEAT: 0x2901, CLAMP_TO_EDGE: 0x812F,
+  DEPTH_TEST: 0x0B71, BLEND: 0x0BE2, CULL_FACE: 0x0B44, SCISSOR_TEST: 0x0C11,
+  LESS: 0x201, LEQUAL: 0x203, GREATER: 0x204, GEQUAL: 0x206, EQUAL: 0x202,
+  NOTEQUAL: 0x205, ALWAYS: 0x207, NEVER: 0x200,
+  ZERO: 0, ONE: 1, SRC_ALPHA: 0x0302, ONE_MINUS_SRC_ALPHA: 0x0303,
+  SRC_COLOR: 0x0300, ONE_MINUS_SRC_COLOR: 0x0301, DST_ALPHA: 0x0304,
+  ONE_MINUS_DST_ALPHA: 0x0305, DST_COLOR: 0x0306, ONE_MINUS_DST_COLOR: 0x0307,
+  CCW: 0x0901, CW: 0x0900, BACK: 0x0405, FRONT: 0x0404, FRONT_AND_BACK: 0x0408,
+  NO_ERROR: 0, INVALID_ENUM: 0x0500, INVALID_VALUE: 0x0501,
+  INVALID_OPERATION: 0x0502, INVALID_FRAMEBUFFER_OPERATION: 0x0506,
+  OUT_OF_MEMORY: 0x0505, CONTEXT_LOST_WEBGL: 0x9242,
+  UNPACK_FLIP_Y_WEBGL: 0x9240,
+  MAX_TEXTURE_SIZE: 0x0D33, MAX_VIEWPORT_DIMS: 0x0D3A,
+  VERSION: 0x1F02, RENDERER: 0x1F01, VENDOR: 0x1F00, SHADING_LANGUAGE_VERSION: 0x8B8C
+};
+
+class WebGLShader { constructor(id) { this.__id = id; } }
+class WebGLProgram { constructor(id) { this.__id = id; } }
+class WebGLBuffer { constructor(id) { this.__id = id; } }
+class WebGLTexture { constructor(id) { this.__id = id; } }
+class WebGLVertexArrayObject { constructor(id) { this.__id = id; } }
+class WebGLUniformLocation { constructor(id) { this.__id = id; } }
+
+class WebGL2RenderingContext {
+  constructor(nodeId, width, height, info) {
+    this.__nodeId = nodeId;
+    this.canvas = null;
+    this.drawingBufferWidth = width;
+    this.drawingBufferHeight = height;
+    this.__adapter = info[0];
+    this.__backend = info[1];
+    for (const k in GL) this[k] = GL[k];
+  }
+  // object factories
+  createShader(stage) { return new WebGLShader(__brows12.glCreateShader(this.__nodeId, stage >>> 0)); }
+  shaderSource(sh, src) { __brows12.glShaderSource(this.__nodeId, sh.__id, String(src)); }
+  compileShader(sh) { __brows12.glCompileShader(this.__nodeId, sh.__id); }
+  getShaderParameter(sh, pname) {
+    if (pname === GL.COMPILE_STATUS) return !!__brows12.glGetShaderParameter(this.__nodeId, sh.__id, pname);
+    return null;
+  }
+  getShaderInfoLog(sh) { return __brows12.glGetShaderInfoLog(this.__nodeId, sh.__id); }
+  createProgram() { return new WebGLProgram(__brows12.glCreateProgram(this.__nodeId)); }
+  attachShader(p, sh) { __brows12.glAttachShader(this.__nodeId, p.__id, sh.__id); }
+  linkProgram(p) { __brows12.glLinkProgram(this.__nodeId, p.__id); }
+  getProgramParameter(p, pname) {
+    if (pname === GL.LINK_STATUS) return !!__brows12.glGetProgramParameter(this.__nodeId, p.__id, pname);
+    return null;
+  }
+  getProgramInfoLog(p) { return __brows12.glGetProgramInfoLog(this.__nodeId, p.__id); }
+  getAttribLocation(p, name) {
+    const loc = __brows12.glGetAttribLocation(this.__nodeId, p.__id, String(name));
+    return loc === null || loc < 0 ? -1 : loc;
+  }
+  getUniformLocation(p, name) {
+    const loc = __brows12.glGetUniformLocation(this.__nodeId, p.__id, String(name));
+    return loc === null || loc < 0 ? null : new WebGLUniformLocation(loc);
+  }
+  createBuffer() { return new WebGLBuffer(__brows12.glCreateBuffer(this.__nodeId)); }
+  createTexture() { return new WebGLTexture(__brows12.glCreateTexture(this.__nodeId)); }
+  createVertexArray() { return new WebGLVertexArrayObject(__brows12.glCreateVertexArray(this.__nodeId)); }
+
+  // buffers / VAOs
+  bindBuffer(target, buf) { __brows12.glBindBuffer(this.__nodeId, target >>> 0, buf ? buf.__id : 0); }
+  bufferData(target, data, usage) {
+    const bytes = __brows12TypedBytes(data);
+    __brows12.glBufferData(this.__nodeId, target >>> 0, bytes);
+  }
+  bufferSubData(target, offset, data) {
+    const bytes = __brows12TypedBytes(data);
+    __brows12.glBufferSubData(this.__nodeId, target >>> 0, offset >>> 0, bytes);
+  }
+  bindVertexArray(vao) { __brows12.glBindVertexArray(this.__nodeId, vao ? vao.__id : 0); }
+  enableVertexAttribArray(idx) { __brows12.glEnableVertexAttribArray(this.__nodeId, idx >>> 0); }
+  disableVertexAttribArray(idx) { __brows12.glDisableVertexAttribArray(this.__nodeId, idx >>> 0); }
+  vertexAttribPointer(idx, size, type, norm, stride, offset) {
+    __brows12.glVertexAttribPointer(this.__nodeId, idx >>> 0, size, type >>> 0, !!norm, stride, offset >>> 0);
+  }
+
+  // uniforms
+  uniform1f(loc, x) { __brows12.glUniform1f(this.__nodeId, loc.__id, x); }
+  uniform2f(loc, x, y) { __brows12.glUniform2f(this.__nodeId, loc.__id, x, y); }
+  uniform3f(loc, x, y, z) { __brows12.glUniform3f(this.__nodeId, loc.__id, x, y, z); }
+  uniform4f(loc, x, y, z, w) { __brows12.glUniform4f(this.__nodeId, loc.__id, x, y, z, w); }
+  uniform1i(loc, x) { __brows12.glUniform1i(this.__nodeId, loc.__id, x); }
+  uniform1fv(loc, v) { __brows12.glUniformFv(this.__nodeId, loc.__id, __brows12ToFloats(v)); }
+  uniform2fv(loc, v) { __brows12.glUniformFv(this.__nodeId, loc.__id, __brows12ToFloats(v)); }
+  uniform3fv(loc, v) { __brows12.glUniformFv(this.__nodeId, loc.__id, __brows12ToFloats(v)); }
+  uniform4fv(loc, v) { __brows12.glUniformFv(this.__nodeId, loc.__id, __brows12ToFloats(v)); }
+  uniformMatrix2fv(loc, t, v) { __brows12.glUniformFv(this.__nodeId, loc.__id, __brows12ToFloats(v)); }
+  uniformMatrix3fv(loc, t, v) { __brows12.glUniformFv(this.__nodeId, loc.__id, __brows12ToFloats(v)); }
+  uniformMatrix4fv(loc, t, v) { __brows12.glUniformFv(this.__nodeId, loc.__id, __brows12ToFloats(v)); }
+
+  // textures
+  activeTexture(unit) { __brows12.glActiveTexture(this.__nodeId, unit >>> 0); }
+  bindTexture(target, tex) { __brows12.glBindTexture(this.__nodeId, target >>> 0, tex ? tex.__id : 0); }
+  texParameteri(target, name, value) { __brows12.glTexParameteri(this.__nodeId, target >>> 0, name >>> 0, value >>> 0); }
+  texImage2D(target, level, internal, w, h, border, fmt, typ, data) {
+    // Two call shapes: (target, level, internal, w, h, border, fmt, typ, src)
+    // and the (target, level, internal, w, h, border, fmt, typ, source) canvas form.
+    if (data === undefined || data === null) return;
+    if (typeof data === "object" && data.__nodeId !== undefined) {
+      __brows12.glTexImage2DCanvas(this.__nodeId, data.__nodeId);
+      return;
+    }
+    const bytes = __brows12TypedBytes(data);
+    if (fmt === GL.RGB) __brows12.glTexImage2DBytes(this.__nodeId, w, h, bytes, true);
+    else __brows12.glTexImage2DBytes(this.__nodeId, w, h, bytes, false);
+  }
+  pixelStorei(pname, value) {
+    if (pname === GL.UNPACK_FLIP_Y_WEBGL) __brows12.glPixelStoreiFlipY(this.__nodeId, !!value);
+  }
+
+  // state
+  enable(cap) { __brows12.glEnable(this.__nodeId, cap >>> 0); }
+  disable(cap) { __brows12.glDisable(this.__nodeId, cap >>> 0); }
+  blendFunc(src, dst) { __brows12.glBlendFunc(this.__nodeId, src >>> 0, dst >>> 0); }
+  depthFunc(f) { __brows12.glDepthFunc(this.__nodeId, f >>> 0); }
+  depthMask(on) { __brows12.glDepthMask(this.__nodeId, !!on); }
+  frontFace(f) { __brows12.glFrontFace(this.__nodeId, f >>> 0); }
+  cullFace(f) { __brows12.glCullFace(this.__nodeId, f >>> 0); }
+  viewport(x, y, w, h) { __brows12.glViewport(this.__nodeId, x, y, w, h); }
+  scissor(x, y, w, h) { __brows12.glScissor(this.__nodeId, x, y, w, h); }
+  clearColor(r, g, b, a) { __brows12.glClearColor(this.__nodeId, r, g, b, a); }
+  clearDepth(d) { __brows12.glClearDepth(this.__nodeId, d); }
+  useProgram(p) { __brows12.glUseProgram(this.__nodeId, p ? p.__id : 0); }
+  clear(mask) { __brows12.glClear(this.__nodeId, mask >>> 0); }
+  getError() { return __brows12.glGetError(this.__nodeId); }
+
+  // draws
+  drawArrays(mode, first, count) { __brows12.glDrawArrays(this.__nodeId, mode >>> 0, first, count); }
+  drawElements(mode, count, type, offset) {
+    __brows12.glDrawElements(this.__nodeId, mode >>> 0, count, type >>> 0, offset >>> 0);
+  }
+
+  // queries / info
+  getString(pname) {
+    if (pname === GL.VERSION) return "WebGL 2.0 (brows12 v0.2 wgpu/" + this.__backend + ")";
+    if (pname === GL.SHADING_LANGUAGE_VERSION) return "WebGL GLSL ES 3.00 (brows12 via naga)";
+    if (pname === GL.VENDOR) return "brows12";
+    if (pname === GL.RENDERER) return this.__adapter;
+    return "";
+  }
+  getParameter(pname) {
+    if (pname === GL.MAX_TEXTURE_SIZE) return 4096;
+    if (pname === GL.MAX_VIEWPORT_DIMS) return new Int32Array([4096, 4096]);
+    if (pname === GL.VERSION || pname === GL.RENDERER || pname === GL.VENDOR ||
+        pname === GL.SHADING_LANGUAGE_VERSION) return this.getString(pname);
+    return null;
+  }
+  getContextAttributes() {
+    return { alpha: true, antialias: false, depth: true, failIfMajorPerformanceCaveat: false,
+      premultipliedAlpha: true, preserveDrawingBuffer: false, powerPreference: "default" };
+  }
+  isContextLost() { return false; }
+  getExtension(name) { return null; } // documented: no extensions in v0.2
+  getSupportedExtensions() { return []; }
+  drawingBufferStorage() {}
+}
+
+function __brows12TypedBytes(data) {
+  if (data === undefined || data === null) return new Uint8Array(0);
+  if (data instanceof Uint8Array) return data;
+  if (data instanceof Int8Array) return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+  if (data instanceof Uint16Array || data instanceof Int16Array ||
+      data instanceof Uint32Array || data instanceof Int32Array ||
+      data instanceof Float32Array) {
+    return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+  }
+  if (Array.isArray(data)) return new Uint8Array(data);
+  return new Uint8Array(0);
+}
+
+function __brows12ToFloats(v) {
+  if (v instanceof Float32Array) return Array.from(v);
+  if (Array.isArray(v)) return v.map(Number);
+  return [];
+}
+
+function __brows12PatchWebGL(Brows12Element) {
+  const proto = Brows12Element.prototype;
+  const oldGetContext = proto.getContext;
+  proto.getContext = function (kind) {
+    const k = String(kind).toLowerCase();
+    if (k === "2d") return oldGetContext.call(this, kind);
+    if (k === "webgl" || k === "webgl2" || k === "experimental-webgl") {
+      const w = parseInt(this.getAttribute("width") || "300", 10);
+      const h = parseInt(this.getAttribute("height") || "150", 10);
+      const info = __brows12.glGetContext(this.__nodeId, w, h);
+      if (!info) return null; // GPU-less environment (spec behaviour)
+      const ctx = new WebGL2RenderingContext(this.__nodeId, w, h, info);
+      ctx.canvas = this;
+      return ctx;
+    }
+    return oldGetContext.call(this, kind);
+  };
+}
+
 Object.assign(globalThis, {
   performance: performance,
   WebAssembly: WebAssembly,
@@ -877,7 +1091,14 @@ Object.assign(globalThis, {
   ResizeObserver: ResizeObserver,
   IntersectionObserver: IntersectionObserver,
   EventSource: EventSource,
-  CanvasRenderingContext2D: CanvasRenderingContext2D
+  CanvasRenderingContext2D: CanvasRenderingContext2D,
+  WebGL2RenderingContext: WebGL2RenderingContext,
+  WebGLShader: WebGLShader,
+  WebGLProgram: WebGLProgram,
+  WebGLBuffer: WebGLBuffer,
+  WebGLTexture: WebGLTexture,
+  WebGLVertexArrayObject: WebGLVertexArrayObject,
+  WebGLUniformLocation: WebGLUniformLocation
 });
 
 function __brows12PatchCanvas(Brows12Element) {
@@ -894,3 +1115,4 @@ function __brows12PatchCanvas(Brows12Element) {
   };
   proto.toDataURL = function () { return "data:image/png;base64,"; };
 }
+

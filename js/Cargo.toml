@@ -29,8 +29,9 @@ brows12-render = { path = "../rendering" }
 tiny-skia = { version = "0.12", features = ["png-format"] }
 cosmic-text = "0.19"
 wasmi = "2"
-# WebGL2 over wgpu: GLSL ES 3.0 -> naga IR -> WGSL -> wgpu pipelines.
-# glsl-in parses ESSL, wgsl-out avoids coupling to wgpu's internal naga types.
-naga = { version = "30.0.1", default-features = false, features = ["glsl-in", "wgsl-out"] }
+# WebGL2 over wgpu: GLSL ES → normalized 460-core → naga (29 LTS for glsl-in;
+# 30.0.1 glsl-in is broken upstream) → WGSL → wgpu 30 pipelines. The text-level
+# WGSL bridge decouples the naga version from wgpu's internal naga.
+naga = { version = "=29.0.4", default-features = false, features = ["glsl-in", "wgsl-out"] }
 wgpu = { version = "30", default-features = true }
 pollster = "0.4"
