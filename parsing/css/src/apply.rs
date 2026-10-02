@@ -54,7 +54,7 @@ pub(crate) fn apply_property(
                 FontSize::Length(lp) => {
                     crate::computed::length_percentage_to_len(lp, &lctx).map(|len| match len {
                         Len::Px(px) => px,
-                        Len::Percent(p) => parent_size * p / 100.0,
+                        Len::Percent(p) => parent_size * p,
                     })
                 }
                 FontSize::Absolute(kw) => Some(absolute_font_size(*kw)),
@@ -102,7 +102,7 @@ pub(crate) fn apply_property(
                 LcLH::Length(lp) => crate::computed::length_percentage_to_len(lp, &lctx)
                     .map(|len| match len {
                         Len::Px(px) => LineHeight::Px(px),
-                        Len::Percent(p) => LineHeight::Px(s.font_size * p / 100.0),
+                        Len::Percent(p) => LineHeight::Px(s.font_size * p),
                     })
                     .unwrap_or(LineHeight::Normal),
             };

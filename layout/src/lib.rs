@@ -158,14 +158,14 @@ fn taffy_dimension(v: AutoPx) -> taffy::Dimension {
     match v {
         AutoPx::Auto => taffy::Dimension::auto(),
         AutoPx::Len(Len::Px(px)) => taffy::Dimension::length(px),
-        AutoPx::Len(Len::Percent(p)) => taffy::Dimension::percent(p / 100.0),
+        AutoPx::Len(Len::Percent(p)) => taffy::Dimension::percent(p),
     }
 }
 
 fn taffy_len_or_percent(v: Len) -> taffy::LengthPercentage {
     match v {
         Len::Px(px) => taffy::LengthPercentage::length(px),
-        Len::Percent(p) => taffy::LengthPercentage::percent(p / 100.0),
+        Len::Percent(p) => taffy::LengthPercentage::percent(p),
     }
 }
 
@@ -173,7 +173,7 @@ fn taffy_auto_len(v: AutoPx) -> taffy::LengthPercentageAuto {
     match v {
         AutoPx::Auto => taffy::LengthPercentageAuto::auto(),
         AutoPx::Len(Len::Px(px)) => taffy::LengthPercentageAuto::length(px),
-        AutoPx::Len(Len::Percent(p)) => taffy::LengthPercentageAuto::percent(p / 100.0),
+        AutoPx::Len(Len::Percent(p)) => taffy::LengthPercentageAuto::percent(p),
     }
 }
 
@@ -193,7 +193,7 @@ fn taffy_inset(style: &ComputedStyle) -> taffy::Rect<taffy::LengthPercentageAuto
     let f = |v: &AutoPx| match v {
         AutoPx::Auto => taffy::LengthPercentageAuto::auto(),
         AutoPx::Len(Len::Px(px)) => taffy::LengthPercentageAuto::length(*px),
-        AutoPx::Len(Len::Percent(p)) => taffy::LengthPercentageAuto::percent(*p / 100.0),
+        AutoPx::Len(Len::Percent(p)) => taffy::LengthPercentageAuto::percent(*p),
     };
     taffy::Rect {
         top: f(&style.insets.top),
@@ -768,6 +768,137 @@ pub fn compute_layout(
         }
     }
 
+    // position: absolute — resolve insets ourselves against the parent's
+    // padding box (taffy does not resolve percentage top/bottom insets on
+    // absolute children). Auto top+bottom keep the STATIC flow position
+    // (CSS 2.1 §10.3.7); same for auto left+right on the x axis.
+    {
+        // Parent map (walk from the layout start node).
+        let mut parent_of: HashMap<NodeId, NodeId> = HashMap::new();
+        fn collect_parents(
+            doc: &Document,
+            node: NodeId,
+            parent_of: &mut HashMap<NodeId, NodeId>,
+        ) {
+            for &c in &doc.node(node).children {
+                parent_of.insert(c, node);
+                collect_parents(doc, c, parent_of);
+            }
+        }
+        collect_parents(doc, start, &mut parent_of);
+
+        let absolutes: Vec<NodeId> = all_elements
+            .iter()
+            .copied()
+            .filter(|&n| {
+                doc.is_element(n)
+                    && styles.get(n).map(|s| s.position)
+                        == Some(brows12_css::values::Position::Absolute)
+            })
+            .collect();
+        for n in absolutes {
+            let Some(style) = styles.get(n) else { continue };
+            if std::env::var("BROWS_DEBUG").is_ok() {
+                eprintln!(
+                    "ABS n={n:?} pos={:?} insets=({:?},{:?},{:?},{:?})",
+                    style.position,
+                    style.insets.top,
+                    style.insets.right,
+                    style.insets.bottom,
+                    style.insets.left
+                );
+            }
+            let Some(&parent) = parent_of.get(&n) else { continue };
+            let (Some(p_style), Some(p_rect)) =
+                (styles.get(parent), result.rects.get(&parent).copied())
+            else {
+                continue;
+            };
+            let Some(r) = result.rects.get(&n).copied() else { continue };
+
+            // Containing block: parent's padding box.
+            let bl = len_px(&p_style.border_width.left);
+            let bt = len_px(&p_style.border_width.top);
+            let br = len_px(&p_style.border_width.right);
+            let bb = len_px(&p_style.border_width.bottom);
+            let cb_x = p_rect.x + bl;
+            let cb_y = p_rect.y + bt;
+            let cb_w = (p_rect.width - bl - br).max(0.0);
+            let cb_h = (p_rect.height - bt - bb).max(0.0);
+
+            let mt = offset_for_margin(style.margin.top);
+            let mb = offset_for_margin(style.margin.bottom);
+            let ml = offset_for_margin(style.margin.left);
+            let mr = offset_for_margin(style.margin.right);
+
+            // ---- X axis ----
+            let nx = match (&style.insets.left, &style.insets.right) {
+                (AutoPx::Len(_), _) => cb_x + inset_px(style.insets.left, cb_w).unwrap_or(0.0) + ml,
+                (_, AutoPx::Len(_)) => {
+                    cb_x + cb_w - inset_px(style.insets.right, cb_w).unwrap_or(0.0) - r.width - mr
+                }
+                _ => {
+                    // Static position: where the box would sit in flow.
+                    let mut cursor_x = cb_x + len_px(&p_style.padding.left);
+                    for &c in &doc.node(parent).children {
+                        if c == n {
+                            cursor_x += ml;
+                            break;
+                        }
+                        // Inline flow siblings: x stays at content left.
+                    }
+                    cursor_x
+                }
+            };
+
+            // ---- Y axis ----
+            let ny = match (&style.insets.top, &style.insets.bottom) {
+                (AutoPx::Len(_), _) => cb_y + inset_px(style.insets.top, cb_h).unwrap_or(0.0) + mt,
+                (_, AutoPx::Len(_)) => {
+                    cb_y + cb_h - inset_px(style.insets.bottom, cb_h).unwrap_or(0.0) - r.height - mb
+                }
+                _ => {
+                    // Static position: after the previous in-flow siblings.
+                    let mut cursor_y = cb_y + len_px(&p_style.padding.top);
+                    for &c in &doc.node(parent).children {
+                        if c == n {
+                            cursor_y += mt;
+                            break;
+                        }
+                        if styles.get(c).map(|s| s.display) == Some(Display::None) {
+                            continue;
+                        }
+                        if let Some(cr) = result.rects.get(&c) {
+                            let cmb = styles
+                                .get(c)
+                                .map(|s| offset_for_margin(s.margin.bottom))
+                                .unwrap_or(0.0);
+                            cursor_y = cursor_y.max(cr.y + cr.height + cmb);
+                        }
+                    }
+                    cursor_y
+                }
+            };
+
+            let dx = nx - r.x;
+            let dy = ny - r.y;
+            if std::env::var("BROWS_DEBUG").is_ok() {
+                eprintln!(
+                    "ABS-> n={n:?} parent={parent:?} p_rect=({:.0},{:.0} {}x{}) cb=({:.0},{:.0} {}x{}) r=({:.0},{:.0}) -> ({:.0},{:.0})",
+                    p_rect.x, p_rect.y, p_rect.width, p_rect.height,
+                    cb_x, cb_y, cb_w, cb_h, r.x, r.y, nx, ny
+                );
+            }
+            if dx != 0.0 || dy != 0.0 {
+                if let Some(rr) = result.rects.get_mut(&n) {
+                    rr.x = nx;
+                    rr.y = ny;
+                }
+                shift_subtree(&mut result.rects, &children_of, n, dx, dy, 0);
+            }
+        }
+    }
+
     // position: fixed — anchor to the viewport (initial containing block),
     // and record for compositor layer promotion.
     let fixed: Vec<NodeId> = all_elements
@@ -825,6 +956,15 @@ pub fn compute_layout(
     result
 }
 
+/// Extract a px value from a resolved `Len` (percent contributes 0 here;
+/// static-position estimation is a v1 approximation).
+fn len_px(v: &Len) -> f32 {
+    match v {
+        Len::Px(px) => *px,
+        Len::Percent(_) => 0.0,
+    }
+}
+
 /// X position for a fixed/absolute box inside its containing block.
 fn resolve_inset_x(style: &ComputedStyle, rect: Rect, cb_width: f32) -> f32 {
     let left = inset_px(style.insets.left, cb_width);
@@ -854,14 +994,14 @@ fn inset_px(v: AutoPx, basis: f32) -> Option<f32> {
     match v {
         AutoPx::Auto => None,
         AutoPx::Len(Len::Px(px)) => Some(px),
-        AutoPx::Len(Len::Percent(p)) => Some(p / 100.0 * basis),
+        AutoPx::Len(Len::Percent(p)) => Some(p * basis),
     }
 }
 
 fn offset_for_margin(v: AutoPx) -> f32 {
     match v {
         AutoPx::Len(Len::Px(px)) => px,
-        AutoPx::Len(Len::Percent(p)) => p * 16.0 / 100.0,
+        AutoPx::Len(Len::Percent(p)) => p * 16.0,
         AutoPx::Auto => 0.0,
     }
 }
