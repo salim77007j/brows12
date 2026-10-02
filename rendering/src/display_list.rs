@@ -40,6 +40,13 @@ pub enum DisplayItem {
     GradientRect { rect: Rect, gradient: brows12_css::values::Gradient, radius: f32 },
     /// A decoded image blit.
     Image { rect: Rect, image: Arc<DecodedImage>, radius: f32 },
+    /// Begin a clip region (CSS `overflow: hidden/scroll/auto`): every
+    /// item until the matching [`DisplayItem::PopClip`] is clipped to this
+    /// rect (the padding box) with optional rounded corners.
+    PushClip { rect: Rect, radius: f32 },
+    /// End the most recent `PushClip` region (tree order guarantees
+    /// nesting).
+    PopClip,
 }
 
 /// A decoded RGBA image, shared across frames.
@@ -255,6 +262,32 @@ pub fn build_display_list(
                         },
                     ));
                 }
+                // overflow: hidden/scroll/auto clips the subtree to the
+                // padding box (the border still paints outside the clip).
+                let clipped =
+                    style.overflow != brows12_css::values::OverflowKeyword::Visible;
+                if clipped {
+                    let bw = &style.border_width;
+                    let pad_rect = Rect {
+                        x: rect.x + bw.left.extract_px(),
+                        y: rect.y + bw.top.extract_px(),
+                        width: (rect.width
+                            - bw.left.extract_px()
+                            - bw.right.extract_px())
+                        .max(0.0),
+                        height: (rect.height
+                            - bw.top.extract_px()
+                            - bw.bottom.extract_px())
+                        .max(0.0),
+                    };
+                    list.tagged.push((
+                        z,
+                        DisplayItem::PushClip {
+                            rect: pad_rect,
+                            radius: style.border_radius,
+                        },
+                    ));
+                }
                 for &c in &doc.node(node).children {
                     emit(
                         doc,
@@ -269,6 +302,9 @@ pub fn build_display_list(
                         c,
                         scope,
                     );
+                }
+                if clipped {
+                    list.tagged.push((z, DisplayItem::PopClip));
                 }
             }
             NodeData::Text(_) => {

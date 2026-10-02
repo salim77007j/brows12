@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Overflow Test</title>
+<style>
+  body { margin: 0; font-family: sans-serif; }
+  h1 { margin: 10px; font-size: 22px; }
+  .card {
+    width: 420px;
+    height: 110px;
+    overflow: hidden;
+    border: 3px solid #333;
+    border-radius: 18px;
+    background: #fff8e1;
+    margin: 10px;
+    padding: 8px;
+    position: relative;
+  }
+  .spill {
+    position: absolute;
+    top: 70px;
+    left: 12px;
+    background: #e74c3c;
+    color: #fff;
+    padding: 6px 10px;
+  }
+  .abs-out {
+    position: absolute;
+    top: 88px;
+    left: 200px;
+    background: #8e44ad;
+    color: #fff;
+    padding: 6px 10px;
+  }
+  .noclip {
+    width: 420px;
+    height: 110px;
+    border: 3px solid #333;
+    background: #e8f5e9;
+    margin: 10px;
+    padding: 8px;
+    position: relative;
+  }
+  p { margin: 0 0 6px 0; }
+</style>
+</head>
+<body>
+  <h1>overflow: hidden clipping</h1>
+  <div class="card">
+    <p>This card has overflow:hidden and rounded corners.</p>
+    <div class="spill">I am absolutely positioned and MUST be clipped at the card edge</div>
+  </div>
+  <div class="noclip">
+    <p>This card has overflow:visible.</p>
+    <div class="abs-out">I must remain visible, spilling outside the border</div>
+  </div>
+</body>
+</html>

@@ -35,30 +35,57 @@ impl Rasterizer {
         let mut pixmap = Pixmap::new(width, height)
             .ok_or_else(|| RenderError::Pixmap("invalid surface size".into()))?;
         let mut stats = RasterStats::default();
+        // Clip stack for `overflow: hidden` regions: the top mask is the
+        // intersection of all enclosing clips; every draw call receives it.
+        let mut clip_stack: Vec<tiny_skia::Mask> = Vec::new();
         for item in &list.items {
             match item {
+                DisplayItem::PushClip { rect, radius } => {
+                    if let Some(mut m) = build_clip_mask(rect, *radius, width, height) {
+                        // Nested clips intersect with the enclosing mask.
+                        if let Some(outer) = clip_stack.last() {
+                            let ow = outer.data();
+                            let mw = m.data_mut();
+                            for (a, b) in mw.iter_mut().zip(ow.iter()) {
+                                *a = ((*a as u32 * *b as u32) / 255) as u8;
+                            }
+                        }
+                        clip_stack.push(m);
+                    }
+                }
+                DisplayItem::PopClip => {
+                    clip_stack.pop();
+                }
                 DisplayItem::Rect { rect, color, radius } => {
-                    fill_rect(&mut pixmap, rect, *color, *radius);
+                    fill_rect(&mut pixmap, rect, *color, *radius, clip_stack.last());
                     stats.rects += 1;
                 }
                 DisplayItem::Border { rect, widths, color, radius } => {
-                    stroke_border(&mut pixmap, rect, *widths, *color, *radius);
+                    stroke_border(&mut pixmap, rect, *widths, *color, *radius, clip_stack.last());
                     stats.borders += 1;
                 }
                 DisplayItem::Text { rect, text, style, underline, line_through } => {
-                    self.paint_text(&mut pixmap, *rect, text, style, *underline, *line_through);
+                    self.paint_text(
+                        &mut pixmap,
+                        *rect,
+                        text,
+                        style,
+                        *underline,
+                        *line_through,
+                        clip_stack.last(),
+                    );
                     stats.text_runs += 1;
                 }
                 DisplayItem::InlineFlow { rect, flow } => {
-                    self.paint_inline_flow(&mut pixmap, *rect, flow);
+                    self.paint_inline_flow(&mut pixmap, *rect, flow, clip_stack.last());
                     stats.text_runs += 1;
                 }
                 DisplayItem::GradientRect { rect, gradient, radius } => {
-                    fill_gradient(&mut pixmap, rect, gradient, *radius);
+                    fill_gradient(&mut pixmap, rect, gradient, *radius, clip_stack.last());
                     stats.rects += 1;
                 }
                 DisplayItem::Image { rect, image, radius } => {
-                    draw_image(&mut pixmap, rect, image, *radius);
+                    draw_image(&mut pixmap, rect, image, *radius, clip_stack.last());
                     stats.images += 1;
                 }
             }
@@ -105,7 +132,7 @@ impl Rasterizer {
         let ph = (h.ceil() as u32).max(1);
         let mut pm = Pixmap::new(pw, ph)?;
         let rect = brows12_layout::Rect { x: 0.0, y: 0.0, width: pw as f32, height: ph as f32 };
-        self.paint_text(&mut pm, rect, text, &measure_style, false, false);
+        self.paint_text(&mut pm, rect, text, &measure_style, false, false, None);
         Some(pm)
     }
 
@@ -117,6 +144,7 @@ impl Rasterizer {
         pixmap: &mut Pixmap,
         rect: brows12_layout::Rect,
         flow: &brows12_layout::InlineFlowLayout,
+        mask: Option<&tiny_skia::Mask>,
     ) {
         let mut fs = self.font_system.lock().unwrap();
         let mut cache = self.swash_cache.lock().unwrap();
@@ -133,6 +161,7 @@ impl Rasterizer {
                             seg.width.ceil() as u32,
                             line.height.ceil() as u32,
                             tiny_skia::Color::from_rgba8(bg[0], bg[1], bg[2], bg[3]),
+                            mask,
                         );
                     }
                 }
@@ -166,7 +195,7 @@ impl Rasterizer {
                         if let Some(image) = cache.get_image(&mut fs, physical.cache_key) {
                             let x = physical.x + image.placement.left;
                             let y = physical.y - image.placement.top;
-                            blit_swash_image(pixmap, image, x, y, tint);
+                            blit_swash_image(pixmap, image, x, y, tint, mask);
                         }
                     }
                 }
@@ -181,6 +210,7 @@ impl Rasterizer {
                         seg.width.ceil() as u32,
                         thickness,
                         tint,
+                        mask,
                     );
                 }
                 if seg.line_through {
@@ -192,6 +222,7 @@ impl Rasterizer {
                         seg.width.ceil() as u32,
                         thickness,
                         tint,
+                        mask,
                     );
                 }
             }
@@ -208,6 +239,7 @@ impl Rasterizer {
         style: &crate::display_list::TextStyle,
         underline: bool,
         line_through: bool,
+        mask: Option<&tiny_skia::Mask>,
     ) {
         let mut fs = self.font_system.lock().unwrap();
         let mut cache = self.swash_cache.lock().unwrap();
@@ -269,7 +301,7 @@ impl Rasterizer {
                     // swash placement.top is the distance UP from the
                     // baseline to the bitmap top: bitmap_y = baseline - top.
                     let y = physical.y - image.placement.top;
-                    blit_swash_image(pixmap, image, x, y, tint);
+                    blit_swash_image(pixmap, image, x, y, tint, mask);
                 }
             }
             // Underline / line-through rectangles.
@@ -285,6 +317,7 @@ impl Rasterizer {
                     w,
                     1.max((style.font_size / 16.0) as u32),
                     tint,
+                    mask,
                 );
             };
             if underline {
@@ -304,6 +337,7 @@ fn fill_gradient(
     rect: &brows12_layout::Rect,
     gradient: &brows12_css::values::Gradient,
     radius: f32,
+    mask: Option<&tiny_skia::Mask>,
 ) {
     let (stops, angle_deg, radial) = match gradient {
         brows12_css::values::Gradient::Linear { angle_deg, stops } => (stops, *angle_deg, false),
@@ -359,6 +393,12 @@ fn fill_gradient(
         for px in x0.max(0)..(x0 + rw).min(w) {
             let fx = px as f32 + 0.5;
             let fy = py as f32 + 0.5;
+            // Clip-mask membership (overflow: hidden regions).
+            if let Some(m) = mask {
+                if m.data()[(py * w + px) as usize] == 0 {
+                    continue;
+                }
+            }
             // Rounded-rect membership (when radius requested).
             if r > 0.0 {
                 let qx = (fx - rect.x - r).abs().max(0.0) - (rect.width - 2.0 * r).max(0.0) / 2.0;
@@ -427,7 +467,13 @@ fn sample_stops(pos: &[f32], stops: &[brows12_css::values::GradientStop], t: f32
 }
 
 /// Fill an axis-aligned (optionally rounded) rect with premultiplied blending.
-fn fill_rect(pixmap: &mut Pixmap, rect: &brows12_layout::Rect, color: [u8; 4], radius: f32) {
+fn fill_rect(
+    pixmap: &mut Pixmap,
+    rect: &brows12_layout::Rect,
+    color: [u8; 4],
+    radius: f32,
+    mask: Option<&tiny_skia::Mask>,
+) {
     if color[3] == 0 {
         return;
     }
@@ -467,11 +513,11 @@ fn fill_rect(pixmap: &mut Pixmap, rect: &brows12_layout::Rect, color: [u8; 4], r
                 &paint,
                 tiny_skia::FillRule::Winding,
                 tiny_skia::Transform::identity(),
-                None,
+                mask,
             );
         }
     } else {
-        pixmap.fill_rect(sk_rect, &paint, tiny_skia::Transform::identity(), None);
+        pixmap.fill_rect(sk_rect, &paint, tiny_skia::Transform::identity(), mask);
     }
 }
 
@@ -482,6 +528,7 @@ fn stroke_border(
     widths: (f32, f32, f32, f32),
     color: [u8; 4],
     _radius: f32,
+    mask: Option<&tiny_skia::Mask>,
 ) {
     let (t, r, b, l) = widths;
     if color[3] == 0 {
@@ -489,7 +536,7 @@ fn stroke_border(
     }
     let mut strip = |rect: brows12_layout::Rect| {
         if rect.width > 0.0 && rect.height > 0.0 {
-            fill_rect(pixmap, &rect, color, 0.0);
+            fill_rect(pixmap, &rect, color, 0.0, mask);
         }
     };
     strip(brows12_layout::Rect { x: rect.x, y: rect.y, width: rect.width, height: t }); // top
@@ -509,12 +556,20 @@ fn stroke_border(
     // left
 }
 
-fn fill_pixel_rect(pixmap: &mut Pixmap, x: i32, y: i32, w: u32, h: u32, color: tiny_skia::Color) {
+fn fill_pixel_rect(
+    pixmap: &mut Pixmap,
+    x: i32,
+    y: i32,
+    w: u32,
+    h: u32,
+    color: tiny_skia::Color,
+    mask: Option<&tiny_skia::Mask>,
+) {
     if let Some(sk_rect) = SkRect::from_xywh(x as f32, y as f32, w as f32, h as f32) {
         let mut paint = Paint::default();
         paint.set_color(color);
         paint.anti_alias = false;
-        pixmap.fill_rect(sk_rect, &paint, tiny_skia::Transform::identity(), None);
+        pixmap.fill_rect(sk_rect, &paint, tiny_skia::Transform::identity(), mask);
     }
 }
 
@@ -526,6 +581,7 @@ fn blit_swash_image(
     x: i32,
     y: i32,
     tint: tiny_skia::Color,
+    mask: Option<&tiny_skia::Mask>,
 ) {
     use cosmic_text::SwashContent;
     let w = image.placement.width;
@@ -557,7 +613,7 @@ fn blit_swash_image(
                 glyph_pixmap.as_ref(),
                 &tiny_skia::PixmapPaint::default(),
                 tiny_skia::Transform::identity(),
-                None,
+                mask,
             );
         }
     } else {
@@ -575,6 +631,12 @@ fn blit_swash_image(
                 let px = x + col;
                 if px < 0 || px >= pw {
                     continue;
+                }
+                // Clip-mask membership (overflow: hidden regions).
+                if let Some(m) = mask {
+                    if m.data()[(py * pw + px) as usize] == 0 {
+                        continue;
+                    }
                 }
                 let coverage = image.data[(row * w as i32 + col) as usize] as f32 / 255.0;
                 if coverage <= 0.0 {
@@ -612,6 +674,7 @@ fn draw_image(
     rect: &brows12_layout::Rect,
     image: &crate::display_list::DecodedImage,
     _radius: f32,
+    mask: Option<&tiny_skia::Mask>,
 ) {
     let Some(mut img_pixmap) = Pixmap::new(image.width, image.height) else {
         return;
@@ -636,9 +699,48 @@ fn draw_image(
             scaled.as_ref(),
             &tiny_skia::PixmapPaint::default(),
             tiny_skia::Transform::identity(),
-            None,
+            mask,
         );
     }
+}
+
+/// Build a full-canvas clip mask from a (possibly rounded) rect.
+fn build_clip_mask(
+    rect: &brows12_layout::Rect,
+    radius: f32,
+    width: u32,
+    height: u32,
+) -> Option<tiny_skia::Mask> {
+    use tiny_skia::PathBuilder;
+    let mut mask = tiny_skia::Mask::new(width, height)?;
+    let r = radius.min(rect.width / 2.0).min(rect.height / 2.0);
+    let path = if r > 0.0 {
+        // Rounded corners via 4 quadratic curves (same shape as fill_rect).
+        let (x, y, w, h) = (rect.x, rect.y, rect.width.max(0.0), rect.height.max(0.0));
+        let mut pb = PathBuilder::new();
+        pb.move_to(x + r, y);
+        pb.line_to(x + w - r, y);
+        pb.quad_to(x + w, y, x + w, y + r);
+        pb.line_to(x + w, y + h - r);
+        pb.quad_to(x + w, y + h, x + w - r, y + h);
+        pb.line_to(x + r, y + h);
+        pb.quad_to(x, y + h, x, y + h - r);
+        pb.line_to(x, y + r);
+        pb.quad_to(x, y, x + r, y);
+        pb.close();
+        pb.finish()?
+    } else {
+        let mut pb = PathBuilder::new();
+        pb.push_rect(tiny_skia::Rect::from_xywh(
+            rect.x,
+            rect.y,
+            rect.width.max(0.0),
+            rect.height.max(0.0),
+        )?);
+        pb.finish()?
+    };
+    mask.fill_path(&path, tiny_skia::FillRule::Winding, true, tiny_skia::Transform::identity());
+    Some(mask)
 }
 
 /// Pixmap scaling (tiny-skia 0.12 exposes resize behind a different path;
