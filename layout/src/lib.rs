@@ -81,6 +81,155 @@ pub struct PlacedFloat {
     pub cb: NodeId,
 }
 
+/// Table slot assignments for tables that contain colspan/rowspan cells
+/// (CSS 2.1 §17). Such tables map onto a grid; each cell gets an explicit
+/// column/row placement. Tables without spans keep the anonymous-flex
+/// mapping (proven on HN/Wikipedia).
+#[derive(Debug, Default)]
+pub struct TableSpans {
+    /// Tables mapped to grid: table node -> (max column count).
+    pub tables: HashMap<NodeId, usize>,
+    /// Cell placement: cell node -> (col0, colspan, row0, rowspan).
+    pub cells: HashMap<NodeId, (u16, u16, u16, u16)>,
+}
+
+/// Compute table slot assignments (the CSS 2.1 table algorithm's
+/// column-assignment step) for every table that has spanning cells.
+fn compute_table_spans(
+    doc: &Document,
+    styles: &brows12_css::StyleMap,
+) -> TableSpans {
+    let mut out = TableSpans::default();
+    let Some(body) = doc.body().or_else(|| doc.document_element()) else {
+        return out;
+    };
+    // Walk the whole tree; each table gets its own slot pass.
+    fn walk(
+        doc: &Document,
+        styles: &brows12_css::StyleMap,
+        node: NodeId,
+        out: &mut TableSpans,
+    ) {
+        if !doc.is_element(node) {
+            for &c in &doc.node(node).children {
+                walk(doc, styles, c, out);
+            }
+            return;
+        }
+        let Some(style) = styles.get(node) else {
+            for &c in &doc.node(node).children {
+                walk(doc, styles, c, out);
+            }
+            return;
+        };
+        if style.display == Display::Table {
+            assign_table_slots(doc, styles, node, out);
+            // Nested tables are handled by their own assignment (the walk
+            // below re-enters cells; assign_table_slots prunes nested
+            // tables, this walk covers them).
+        }
+        for &c in &doc.node(node).children {
+            walk(doc, styles, c, out);
+        }
+    }
+    walk(doc, styles, body, &mut out);
+    out
+}
+
+/// Rows of a table: TableRow elements that directly contain cells, with
+/// row-group containers (also mapped to TableRow) recursed through.
+/// Nested tables are pruned (they compute their own slots).
+fn table_rows_of(
+    doc: &Document,
+    styles: &brows12_css::StyleMap,
+    table: NodeId,
+) -> Vec<NodeId> {
+    let mut rows = Vec::new();
+    fn visit(doc: &Document, styles: &brows12_css::StyleMap, node: NodeId, rows: &mut Vec<NodeId>) {
+        for &c in &doc.node(node).children {
+            let Some(st) = styles.get(c) else { continue };
+            if !doc.is_element(c) {
+                continue;
+            }
+            match st.display {
+                Display::TableRow => {
+                    let is_group = doc.node(c).children.iter().any(|&g| {
+                        doc.is_element(g) && styles.get(g).map(|s| s.display) == Some(Display::TableRow)
+                    });
+                    if is_group {
+                        visit(doc, styles, c, rows);
+                    } else {
+                        rows.push(c);
+                    }
+                }
+                Display::Table => {} // nested table: pruned
+                _ => visit(doc, styles, c, rows),
+            }
+        }
+    }
+    visit(doc, styles, table, &mut rows);
+    rows
+}
+
+fn attr_num(doc: &Document, node: NodeId, name: &str, lo: u16, hi: u16) -> u16 {
+    doc.attr(node, name)
+        .and_then(|v| v.trim().parse::<u16>().ok())
+        .map(|v| v.clamp(lo, hi))
+        .unwrap_or(1)
+}
+
+/// The slot-assignment pass for one table (CSS 2.1 §17.2.1 fixed + auto
+/// layout share this step): cells take the next free column, honouring
+/// rowspan occupancy from earlier rows.
+fn assign_table_slots(
+    doc: &Document,
+    styles: &brows12_css::StyleMap,
+    table: NodeId,
+    out: &mut TableSpans,
+) {
+    let rows = table_rows_of(doc, styles, table);
+    // Only map to grid when some cell actually spans.
+    let raw_attr = |n: NodeId, name: &str| -> u16 {
+        doc.attr(n, name).and_then(|v| v.trim().parse::<u16>().ok()).unwrap_or(1)
+    };
+    let has_span = rows.iter().any(|&r| {
+        doc.node(r).children.iter().any(|&c| {
+            doc.is_element(c)
+                && (raw_attr(c, "colspan") > 1 || raw_attr(c, "rowspan") > 1)
+        })
+    });
+    if !has_span {
+        return;
+    }
+    let mut occupied: std::collections::HashSet<(usize, usize)> = Default::default();
+    let mut max_cols = 0usize;
+    for (r, &row) in rows.iter().enumerate() {
+        let mut cursor = 0usize;
+        for &c in &doc.node(row).children {
+            let Some(st) = styles.get(c) else { continue };
+            if !doc.is_element(c) || st.display != Display::TableCell {
+                continue;
+            }
+            let colspan = attr_num(doc, c, "colspan", 1, 128);
+            let rowspan = attr_num(doc, c, "rowspan", 1, 64);
+            while occupied.contains(&(r, cursor)) {
+                cursor += 1;
+            }
+            out.cells.insert(c, (cursor as u16, colspan, r as u16, rowspan));
+            for i in 0..rowspan as usize {
+                for j in 0..colspan as usize {
+                    occupied.insert((r + i, cursor + j));
+                }
+            }
+            cursor += colspan as usize;
+            max_cols = max_cols.max(cursor);
+        }
+    }
+    if max_cols > 0 {
+        out.tables.insert(table, max_cols);
+    }
+}
+
 /// Result of a layout pass: absolute rects for every laid-out node.
 #[derive(Debug, Clone, Default)]
 pub struct LayoutResult {
@@ -229,7 +378,11 @@ fn taffy_inset(style: &ComputedStyle) -> taffy::Rect<taffy::LengthPercentageAuto
     }
 }
 
-fn build_taffy_style(style: &ComputedStyle) -> taffy::Style {
+fn build_taffy_style(
+    style: &ComputedStyle,
+    spans: &TableSpans,
+    node: NodeId,
+) -> taffy::Style {
     let display = match style.display {
         Display::None => taffy::Display::None,
         Display::Flex | Display::Table | Display::TableRow => taffy::Display::Flex,
@@ -425,6 +578,30 @@ fn build_taffy_style(style: &ComputedStyle) -> taffy::Style {
         taffy_style.flex_grow = style.flex.grow;
         taffy_style.flex_shrink = style.flex.shrink;
     }
+
+    // Spanning table cells: explicit grid placement from the slot
+    // algorithm (grid-mapped tables only).
+    if style.display == Display::TableCell {
+        if let Some(&(col, colspan, row, rowspan)) = spans.cells.get(&node) {
+            use taffy::prelude::TaffyGridLine;
+            taffy_style.grid_column = taffy::Line {
+                start: taffy::style::GridPlacement::from_line_index(col as i16 + 1),
+                end: if colspan > 1 {
+                    taffy::style::GridPlacement::Span(colspan)
+                } else {
+                    taffy::style::GridPlacement::Auto
+                },
+            };
+            taffy_style.grid_row = taffy::Line {
+                start: taffy::style::GridPlacement::from_line_index(row as i16 + 1),
+                end: if rowspan > 1 {
+                    taffy::style::GridPlacement::Span(rowspan)
+                } else {
+                    taffy::style::GridPlacement::Auto
+                },
+            };
+        }
+    }
     taffy_style
 }
 
@@ -488,6 +665,7 @@ pub fn compute_layout(
         image_sizes: &HashMap<NodeId, (u32, u32)>,
         inline_ctx: &mut HashMap<NodeId, (Arc<Vec<InlineItem>>, TextAlign)>,
         covered: &mut HashSet<NodeId>,
+        spans: &TableSpans,
         node: NodeId,
     ) -> Option<taffy::NodeId> {
         let style = styles.get(node)?;
@@ -501,7 +679,8 @@ pub fn compute_layout(
                     return None;
                 }
                 let ctx = leaf_context(style, text);
-                let tnode = tree.new_leaf_with_context(build_taffy_style(style), ctx).ok()?;
+                let tnode =
+                    tree.new_leaf_with_context(build_taffy_style(style, spans, node), ctx).ok()?;
                 node_ids.insert(node, tnode);
                 Some(tnode)
             }
@@ -509,7 +688,7 @@ pub fn compute_layout(
                 // Leaf elements with intrinsic size (img).
                 if doc.node(node).children.is_empty() {
                     if let Some(&(w, h)) = image_sizes.get(&node) {
-                        let taffy_style = build_taffy_style(style);
+                        let taffy_style = build_taffy_style(style, spans, node);
                         let ctx = LeafContext::Image { intrinsic_width: w, intrinsic_height: h };
                         let tnode = tree.new_leaf_with_context(taffy_style, ctx).ok()?;
                         node_ids.insert(node, tnode);
@@ -517,7 +696,55 @@ pub fn compute_layout(
                     }
                 }
 
-                let taffy_style = build_taffy_style(style);
+                // Tables with spanning cells map onto a grid: cells become
+                // direct grid items with explicit slot placement (row boxes
+                // are skipped); the slot algorithm ran in compute_table_spans.
+                if style.display == Display::Table {
+                    if let Some(&max_cols) = spans.tables.get(&node) {
+                        use taffy::prelude::TaffyAuto;
+                        let mut taffy_style = build_taffy_style(style, spans, node);
+                        taffy_style.display = taffy::Display::Grid;
+                        taffy_style.grid_template_columns = (0..max_cols)
+                            .map(|_| {
+                                taffy::style::GridTemplateComponent::Single(
+                                    taffy::style::TrackSizingFunction::AUTO,
+                                )
+                            })
+                            .collect();
+                        taffy_style.grid_auto_rows = vec![taffy::style::TrackSizingFunction::AUTO];
+                        let mut children: Vec<taffy::NodeId> = Vec::new();
+                        for row in table_rows_of(doc, styles, node) {
+                            for &cell in &doc.node(row).children {
+                                let Some(cs) = styles.get(cell) else { continue };
+                                if !doc.is_element(cell) || cs.display != Display::TableCell {
+                                    continue;
+                                }
+                                if let Some(t) = build(
+                                    doc,
+                                    styles,
+                                    tree,
+                                    node_ids,
+                                    image_sizes,
+                                    inline_ctx,
+                                    covered,
+                                    spans,
+                                    cell,
+                                ) {
+                                    children.push(t);
+                                }
+                            }
+                        }
+                        let tnode = if children.is_empty() {
+                            tree.new_leaf(taffy_style).ok()?
+                        } else {
+                            tree.new_with_children(taffy_style, &children).ok()?
+                        };
+                        node_ids.insert(node, tnode);
+                        return Some(tnode);
+                    }
+                }
+
+                let taffy_style = build_taffy_style(style, spans, node);
                 // Partition children into inline runs and block children
                 // (CSS anonymous block boxes).
                 let pieces = group_children(doc, styles, image_sizes, node);
@@ -533,6 +760,7 @@ pub fn compute_layout(
                                 image_sizes,
                                 inline_ctx,
                                 covered,
+                                spans,
                                 c,
                             ) {
                                 children.push(t);
@@ -567,9 +795,17 @@ pub fn compute_layout(
             _ => {
                 // Document/doctype/comments: recurse through children.
                 for &c in &doc.node(node).children {
-                    if let Some(t) =
-                        build(doc, styles, tree, node_ids, image_sizes, inline_ctx, covered, c)
-                    {
+                    if let Some(t) = build(
+                        doc,
+                        styles,
+                        tree,
+                        node_ids,
+                        image_sizes,
+                        inline_ctx,
+                        covered,
+                        spans,
+                        c,
+                    ) {
                         return Some(t);
                     }
                 }
@@ -797,6 +1033,7 @@ pub fn compute_layout(
 
     let mut inline_ctx: HashMap<NodeId, (Arc<Vec<InlineItem>>, TextAlign)> = HashMap::new();
     let mut covered: HashSet<NodeId> = HashSet::new();
+    let table_spans = compute_table_spans(doc, styles);
     let Some(root_taffy) = build(
         doc,
         styles,
@@ -805,6 +1042,7 @@ pub fn compute_layout(
         image_sizes,
         &mut inline_ctx,
         &mut covered,
+        &table_spans,
         start,
     ) else {
         return LayoutResult::default();

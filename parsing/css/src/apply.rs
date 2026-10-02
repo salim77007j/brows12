@@ -234,6 +234,15 @@ pub(crate) fn apply_property(
                 s.max_width = a;
             }
         }
+        // `border` shorthand: width + style + color on all four sides.
+        Property::Border(b) => {
+            let w = side_width(&b.width, &lctx);
+            let w = style_width(w, &b.style);
+            s.border_width = Edges::splat(w);
+            if let Some(rgba) = color(&b.color, s.color) {
+                s.border_color = rgba;
+            }
+        }
         Property::BorderWidth(bw) => {
             s.border_width = Edges {
                 top: side_width(&bw.top, &lctx),
