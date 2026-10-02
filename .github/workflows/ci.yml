@@ -47,6 +47,52 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: cargo run -q -p brows12-benchmarks --bin brows12-compare
 
+  headless-harness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Software GPU for the wgpu compositor path (lavapipe)
+        run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers libvulkan1
+      - name: Build harness
+        run: cargo build -p brows12-harness
+      - name: Render fixture page (full pipeline, headless)
+        run: |
+          mkdir -p target/harness
+          cat > target/harness/fixture.html <<'HTML'
+          <!DOCTYPE html><html><head><style>
+            body { background-color: #102030; font-family: sans-serif; }
+            h1 { color: #ffcc00; font-size: 40px; }
+            @media (min-width: 900px) { .wide { color: #66ff99; } }
+          </style></head>
+          <body><h1 class="wide">Harness fixture</h1>
+          <canvas id="c" width="120" height="60"></canvas>
+          <script>
+            var ctx = document.getElementById('c').getContext('2d');
+            ctx.fillStyle = '#3366ff'; ctx.fillRect(4, 4, 60, 30);
+            document.title = 'fixture-ok';
+          </script></body></html>
+          HTML
+          ./target/debug/brows render --html target/harness/fixture.html             --png target/harness/fixture.png --json target/harness/fixture.json
+      - name: Assert render output
+        run: |
+          test -s target/harness/fixture.png
+          grep -q '"loaded": true' target/harness/fixture.json
+          grep -q 'fixture-ok' target/harness/fixture.json
+      - name: Publish capability artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: capability-report
+          path: |
+            docs/CAPABILITY_REPORT.md
+            docs/test-results.json
+            target/harness/fixture.png
+            target/harness/fixture.json
+          if-no-files-found: warn
+
   sanitizer:
     runs-on: ubuntu-latest
     steps:

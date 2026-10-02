@@ -12,6 +12,16 @@ designed so a UI layer can be built on top of a small, clean API
 assembled from the fastest actively-maintained Rust crates of 2026, chosen
 by benchmark and memory profile (see [LIBRARY_CHOICES.md](LIBRARY_CHOICES.md)).
 
+## v0.2 — the engine is ready for the UI layer
+
+v0.2 adds the GPU-composited rendering core, the modern CSS layer
+(`@media`/`@supports`/`@layer`/`@container`, custom properties, keyframe +
+transition engines), Canvas 2D, WebAssembly (wasmi), observers and a
+headless CLI harness — validated against 25 real-world sites with published
+screenshots. **The engine is ready for the UI layer. See docs/API.md.**
+Honest capability matrix, per-site verdicts and v0.3 priorities live in
+[docs/CAPABILITY_REPORT.md](docs/CAPABILITY_REPORT.md).
+
 ```
 URL ─▶ HTTPS upgrade ─▶ ad/tracker filter ─▶ HTTP/1.1·2·3 (rustls TLS 1.3)
     ─▶ HTML5 parse (html5ever) ─▶ arena DOM

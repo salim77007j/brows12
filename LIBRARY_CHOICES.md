@@ -19,7 +19,9 @@ of writing; `Cargo.lock` pins exact builds.
 | Layout | **taffy 0.14** | morphorm (smaller feature set), stretch (dead), custom Cassowary solver (months of work) |
 | Text shaping | **cosmic-text 0.19** (rustybuzz + swash) | rustybuzz alone (no layout runs/bidi wrapping), fontdue (rasterization only, no complex shaping), harfbuzz-sys (C dependency) |
 | 2D raster | **tiny-skia 0.12** | vello (GPU-first; wonderful, but adds wgpu driver matrix to CI and ~20 s cold start; tracked as opt-in), raqote (slower than tiny-skia in resvg comparisons), skia-bindings (giant C++ build) |
-| GPU compositing | tiny-skia now; **vello/wgpu planned** behind a feature | — |
+| GPU compositing | **wgpu 30** (`brows12-compositor`, feature `gpu`, default) with tiny-skia CPU fallback | vello (scene GPU rasterizer — beautiful, but replaces rather than complements our tiny-skia paint pipeline; revisit for tile-based GPU paint in v0.3), skia's GPU backend (C++) |
+| WebAssembly | **wasmi 2.0** (in-process interpreter) | wasmtime 30 (JIT: multi-GB build, RWX pages — marginalizes on hardened containers and 2-core CI; cranelift compile latency hurts small page modules end-to-end), wasmer (runtime churn), QuickJS's own wasm (none) |
+| Headless harness | **custom `brows` CLI** over `brows12-api` | headless-chrome style CDP forks (we ARE the engine) |
 | HTTP/1.1 + 2 | **hyper 1.x + hyper-util 0.1** | reqwest (full client but opinionated, hides the connection layer we need for cookies/DoH/alt-svc), ureq (blocking only) |
 | TLS | **rustls 0.23 (ring provider)** | native-tls/OpenSSL (C, CVE surface, platform variance), aws-lc-rs (cmake/NASM build burden for marginal gain) |
 | HTTP/3 | **quinn 0.11 + h3 0.0.8 + h3-quinn 0.0.10** (feature `http3`) | s2n-quic (AWS-centric, heavier), msquic (C) |
@@ -43,6 +45,30 @@ of writing; `Cargo.lock` pins exact builds.
 | Fuzzing | **cargo-fuzz + libfuzzer-sys** | afl.rs (same class; libFuzzer CI integration is smoother) |
 
 ## The interesting decisions, argued properly
+
+### wgpu 30 as the compositor GPU backend
+
+The compositor contract (layer textures + transform/opacity + scroll applied
+at composite time) is exactly what wgpu is for: one render pipeline, premultiplied-alpha
+blending, offscreen targets with readback for the headless path. Alternatives:
+vello would give us GPU *rasterization* too but replaces the tiny-skia paint
+path wholesale (driver matrix + cold-start cost in every CI lane) — deferred
+as an opt-in tile backend; raw wgpu-hal (unsafe, three platforms of unsafe
+code for no gain); skia GPU (C++). The CPU fallback implements the same
+`Compositor` trait in tiny-skia so GPU-less environments (this CI container)
+and battery-saver mode produce identical frames — validated by a shared
+round-trip test. On GitHub runners, `apt-get install mesa-vulkan-drivers`
+(lavapipe) exercises the true GPU path.
+
+### wasmi 2 over wasmtime for WebAssembly
+
+Evidence-driven pick: (1) hardened containers often block RWX mmap — JITs
+degrade or fail; (2) wasmi builds in seconds vs wasmtime's cranelift
+multi-GB, RAM-heavy build (our CI box: 2 cores / 3.9 GB); (3) end-to-end
+latency for the small modules pages actually ship favors interpretation over
+JIT compilation on 2 cores; (4) deterministic execution simplifies fuzzing.
+The JS `WebAssembly` surface (instantiate/call/memory RW) is engine-level,
+so swapping wasmtime later is a leaf change behind a feature flag.
 
 ### QuickJS-ng over V8 — the defining trade
 
