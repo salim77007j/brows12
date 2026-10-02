@@ -479,7 +479,8 @@ impl Tab {
             });
         }
         let engine_sheet = brows12_css::StyleEngine::with_author_sheets(&sheets);
-        self.load_web_fonts(&engine_sheet);
+        let base_url = page.url.clone();
+        self.load_web_fonts(&engine_sheet, &base_url);
         let ctx = brows12_css::computed::CascadeCtx {
             viewport_width: self.engine.config.viewport.width,
             viewport_height: self.engine.config.viewport.height,
@@ -551,18 +552,63 @@ impl Tab {
         Ok(())
     }
 
-    /// Fetch and register `@font-face` web fonts (first URL per face, cap 6).
-    fn load_web_fonts(&self, engine_sheet: &brows12_css::StyleEngine) {
+    /// Fetch and register `@font-face` web fonts. Relative URLs resolve
+    /// against the page URL; each face's sources are tried in order until
+    /// one decodes. Raw TTF/OTF and WOFF1 (zlib table stream) are
+    /// decompressed and registered; WOFF2 is not supported by the font
+    /// stack (ttf-parser 0.25 has no woff2 tables) and is skipped with a
+    /// debug note (pages fall back to system fonts, as intended).
+    fn load_web_fonts(&self, engine_sheet: &brows12_css::StyleEngine, base_url: &str) {
+        let base = url::Url::parse(base_url).ok();
+        let site = base
+            .as_ref()
+            .and_then(|b| b.host_str().map(brows12_storage::registrable_domain))
+            .unwrap_or_default();
         for face in engine_sheet.font_faces.iter().take(6) {
-            let Some(first_url) = face.urls.first() else { continue };
-            let Ok(base) = url::Url::parse(first_url) else { continue };
-            let site = brows12_storage::registrable_domain(base.host_str().unwrap_or(""));
-            if let Ok(resp) = self.engine.tokio.block_on(
-                self.engine.net.send(brows12_net::NetRequest::get(first_url.clone(), site)),
-            ) {
-                if resp.is_success() {
-                    let mut fs = self.engine.fonts.lock().unwrap();
-                    fs.db_mut().load_font_data(resp.body.clone());
+            if face.family.is_empty() {
+                continue;
+            }
+            for src in face.urls.iter() {
+                // Resolve relative URLs against the page base.
+                let resolved = match &base {
+                    Some(b) => match b.join(src) {
+                        Ok(u) => u.to_string(),
+                        Err(_) => continue,
+                    },
+                    None => src.clone(),
+                };
+                let Ok(resp) = self.engine.tokio.block_on(
+                    self.engine.net.send(brows12_net::NetRequest::get(resolved, site.clone())),
+                ) else {
+                    continue;
+                };
+                if !resp.is_success() || resp.body.is_empty() {
+                    continue;
+                }
+                match classify_font(&resp.body) {
+                    FontBytes::Raw => {
+                        let aliased = crate::fonts::alias_font_family(&resp.body, &face.family);
+                        self.engine.fonts.lock().unwrap().db_mut().load_font_data(aliased);
+                        break;
+                    }
+                    FontBytes::Woff1 => match woff1_decompress(&resp.body) {
+                        Ok(raw) => {
+                            let aliased = crate::fonts::alias_font_family(&raw, &face.family);
+                            self.engine.fonts.lock().unwrap().db_mut().load_font_data(aliased);
+                            break;
+                        }
+                        Err(_) => continue,
+                    },
+                    FontBytes::Woff2 => {
+                        if std::env::var("BROWS_DEBUG").is_ok() {
+                            eprintln!(
+                                "FONT woff2 not supported (face '{}'), falling back",
+                                face.family
+                            );
+                        }
+                        continue;
+                    }
+                    FontBytes::Unknown => continue,
                 }
             }
         }
@@ -1008,4 +1054,118 @@ impl Tab {
             _ => 0,
         }
     }
+}
+
+/// Sniff font file magic bytes.
+enum FontBytes {
+    Raw,
+    Woff1,
+    Woff2,
+    Unknown,
+}
+
+fn classify_font(b: &[u8]) -> FontBytes {
+    if b.len() < 4 {
+        return FontBytes::Unknown;
+    }
+    match &b[0..4] {
+        // sfnt versions: 0x00010000 (ttc), 'true', 'OTTO' (cff), 'ttcf'
+        [0x00, 0x01, 0x00, 0x00] => FontBytes::Raw,
+        [b't', b'r', b'u', b'e'] | [b'O', b'T', b'T', b'O'] | [b't', b't', b'c', b'f'] => {
+            FontBytes::Raw
+        }
+        [b'w', b'O', b'F', b'F'] => FontBytes::Woff1,
+        [b'w', b'O', b'F', b'2'] => FontBytes::Woff2,
+        _ => FontBytes::Unknown,
+    }
+}
+
+/// Decompress a WOFF1 container into a raw sfnt font (WOFF2's transformed
+/// glyf stream is out of scope; WOFF1 tables are plain zlib streams).
+/// Format: <WOFF header><table directory (compressed)>[table data] —
+/// rebuilds the original table order with 4-byte alignment.
+fn woff1_decompress(data: &[u8]) -> Result<Vec<u8>, ()> {
+    use std::io::Read;
+    if data.len() < 44 || &data[0..4] != b"wOFF" {
+        return Err(());
+    }
+    let be32 = |o: usize| -> u32 {
+        u32::from_be_bytes([data[o], data[o + 1], data[o + 2], data[o + 3]])
+    };
+    let flavor = be32(4);
+    let num_tables = be32(12) as usize;
+    if num_tables == 0 || num_tables > 512 {
+        return Err(());
+    }
+    // Rebuild the table directory.
+    struct Entry {
+        tag: [u8; 4],
+        orig_checksum: u32,
+        orig_len: u32,
+        data: Vec<u8>,
+    }
+    let mut entries: Vec<Entry> = Vec::with_capacity(num_tables);
+    let mut off = 44usize;
+    for _ in 0..num_tables {
+        if off + 20 > data.len() {
+            return Err(());
+        }
+        let mut tag = [0u8; 4];
+        tag.copy_from_slice(&data[off..off + 4]);
+        let offset = be32(off + 4) as usize;
+        let comp_len = be32(off + 8) as usize;
+        let orig_len = be32(off + 12) as usize;
+        let orig_checksum = be32(off + 16);
+        if offset.saturating_add(comp_len) > data.len() {
+            return Err(());
+        }
+        let raw = &data[offset..offset + comp_len];
+        let table = if comp_len < orig_len {
+            let mut out = Vec::with_capacity(orig_len);
+            let mut dec = flate2::read::ZlibDecoder::new(raw);
+            dec.read_to_end(&mut out).map_err(|_| ())?;
+            if out.len() != orig_len {
+                return Err(());
+            }
+            out
+        } else {
+            raw.to_vec()
+        };
+        entries.push(Entry { tag, orig_checksum, orig_len: orig_len as u32, data: table });
+        off += 20;
+    }
+
+    // Assemble sfnt: header (12) + directory (16 * n) + tables (4-aligned).
+    let dir_size = 12 + 16 * num_tables;
+    let total: usize = entries.iter().map(|e| (e.data.len() + 3) & !3).sum::<usize>() + dir_size;
+    let mut out = Vec::with_capacity(total);
+    out.extend_from_slice(&flavor.to_be_bytes());
+    out.extend_from_slice(&(num_tables as u16).to_be_bytes());
+    // searchRange/entrySelector/rangeShift (per spec, from num_tables).
+    let mut entry_selector = 0u16;
+    while (1u16 << (entry_selector + 1)) <= num_tables as u16 {
+        entry_selector += 1;
+    }
+    let search_range = (1u16 << entry_selector) * 16;
+    out.extend_from_slice(&search_range.to_be_bytes());
+    out.extend_from_slice(&entry_selector.to_be_bytes());
+    out.extend_from_slice(&((num_tables as u16) * 16 - search_range).to_be_bytes());
+
+    // sfnt directory entries must be sorted by tag.
+    entries.sort_by(|a, b| a.tag.cmp(&b.tag));
+    let mut offset_cursor = dir_size as u32;
+    for e in &entries {
+        out.extend_from_slice(&e.tag);
+        out.extend_from_slice(&e.orig_checksum.to_be_bytes());
+        out.extend_from_slice(&offset_cursor.to_be_bytes());
+        out.extend_from_slice(&e.orig_len.to_be_bytes());
+        offset_cursor += (e.data.len() as u32 + 3) & !3;
+    }
+    for e in &entries {
+        out.extend_from_slice(&e.data);
+        while out.len() % 4 != 0 {
+            out.push(0);
+        }
+    }
+    Ok(out)
 }

@@ -18,6 +18,7 @@ brows12-net = { path = "../networking" }
 brows12-privacy = { path = "../privacy" }
 brows12-render = { path = "../rendering" }
 brows12-compositor = { path = "../compositor" }
+flate2 = "1"
 brows12-storage = { path = "../storage" }
 cosmic-text = "0.19"
 tiny-skia = { version = "0.12", features = ["png-format"] }

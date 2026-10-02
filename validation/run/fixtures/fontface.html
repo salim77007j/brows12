@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>@font-face Test</title>
+<style>
+  @font-face {
+    font-family: 'MyWebFont';
+    src: url('fonts/WebFont.ttf') format('truetype');
+  }
+  body { margin: 20px; font-family: sans-serif; font-size: 20px; }
+  .webfont { font-family: 'MyWebFont', sans-serif; font-size: 24px; }
+</style>
+</head>
+<body>
+  <p style="font-family: sans-serif;">This line uses the SYSTEM sans-serif font.</p>
+  <p class="webfont">This line uses the MyWebFont web font via @font-face.</p>
+  <p style="font-family: serif;">This line uses the SYSTEM serif font.</p>
+  <p class="webfont">Second web font line: Regular 400 weight, size 24px.</p>
+</body>
+</html>
