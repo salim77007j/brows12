@@ -350,6 +350,7 @@ pub fn compute_layout(
     // Start at body when present so the root box matches the viewport.
     let start = doc.body().or_else(|| doc.document_element()).unwrap_or(doc.root());
 
+    #[allow(clippy::too_many_arguments)] // state-threading over recursion
     fn build(
         doc: &Document,
         styles: &brows12_css::StyleMap,

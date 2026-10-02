@@ -651,7 +651,6 @@ fn gradient_of(img: &lightningcss::values::image::Image) -> Option<crate::values
             lightningcss::values::angle::Angle::Rad(r) => r * 180.0 / std::f32::consts::PI,
             lightningcss::values::angle::Angle::Grad(g) => g * 0.9,
             lightningcss::values::angle::Angle::Turn(t) => t * 360.0,
-            _ => 180.0,
         },
         LineDirection::Horizontal(h) => match h {
             lightningcss::values::position::HorizontalPositionKeyword::Left => 270.0,
