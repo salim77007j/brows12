@@ -24,7 +24,11 @@ macro_rules! dev {
 }
 
 /// Install the `__brows12` WebGPU natives.
-pub fn install<'js>(ctx: &Ctx<'js>, _env: &Arc<JsEnvironment>, ns: &Object<'js>) -> rquickjs::Result<()> {
+pub fn install<'js>(
+    ctx: &Ctx<'js>,
+    _env: &Arc<JsEnvironment>,
+    ns: &Object<'js>,
+) -> rquickjs::Result<()> {
     let _ = ctx;
     let _ = _env;
 
@@ -88,60 +92,53 @@ pub fn install<'js>(ctx: &Ctx<'js>, _env: &Arc<JsEnvironment>, ns: &Object<'js>)
     )?;
     ns.set(
         "gpuCreateBindGroupLayout",
-        Function::new(
-            ctx.clone(),
-            move |entries: Vec<Value>| -> Option<u64> {
-                let d = device()?;
-                let mut parsed: Vec<(u32, u32, String)> = Vec::new();
-                for e in &entries {
-                    let obj = e.as_object()?;
-                    let binding: u32 = obj.get("binding").ok()?;
-                    let visibility: u32 = obj.get("visibility").ok()?;
-                    let ty: String = obj
-                        .get::<_, String>("bufferType")
-                        .unwrap_or_else(|_| "uniform".to_string());
-                    parsed.push((binding, visibility, ty));
+        Function::new(ctx.clone(), move |entries: Vec<Value>| -> Option<u64> {
+            let d = device()?;
+            let mut parsed: Vec<(u32, u32, String)> = Vec::new();
+            for e in &entries {
+                let obj = e.as_object()?;
+                let binding: u32 = obj.get("binding").ok()?;
+                let visibility: u32 = obj.get("visibility").ok()?;
+                let ty: String =
+                    obj.get::<_, String>("bufferType").unwrap_or_else(|_| "uniform".to_string());
+                parsed.push((binding, visibility, ty));
+            }
+            let refs: Vec<(u32, u32, &str)> =
+                parsed.iter().map(|(b, v, t)| (*b, *v, t.as_str())).collect();
+            match d.create_bind_group_layout(&refs) {
+                Ok(id) => Some(id),
+                Err(msg) => {
+                    d.errors.push(msg);
+                    None
                 }
-                let refs: Vec<(u32, u32, &str)> =
-                    parsed.iter().map(|(b, v, t)| (*b, *v, t.as_str())).collect();
-                match d.create_bind_group_layout(&refs) {
-                    Ok(id) => Some(id),
-                    Err(msg) => {
-                        d.errors.push(msg);
-                        None
-                    }
-                }
-            },
-        ),
+            }
+        }),
     )?;
     ns.set(
         "gpuCreateBindGroup",
-        Function::new(
-            ctx.clone(),
-            move |layout: u64, entries: Vec<Value>| -> Option<u64> {
-                let d = device()?;
-                let mut parsed: Vec<(u32, u64, u64, Option<u64>)> = Vec::new();
-                for e in &entries {
-                    let obj = e.as_object()?;
-                    let binding: u32 = obj.get("binding").ok()?;
-                    let buffer: u64 = obj.get("buffer").ok()?;
-                    let offset: u64 = obj.get::<_, f64>("offset").unwrap_or(0.0).max(0.0) as u64;
-                    let size: Option<u64> = obj
-                        .get::<_, Option<f64>>("size")
-                        .unwrap_or(None)
-                        .filter(|s| *s > 0.0)
-                        .map(|s| s as u64);
-                    parsed.push((binding, buffer, offset, size));
+        Function::new(ctx.clone(), move |layout: u64, entries: Vec<Value>| -> Option<u64> {
+            let d = device()?;
+            let mut parsed: Vec<(u32, u64, u64, Option<u64>)> = Vec::new();
+            for e in &entries {
+                let obj = e.as_object()?;
+                let binding: u32 = obj.get("binding").ok()?;
+                let buffer: u64 = obj.get("buffer").ok()?;
+                let offset: u64 = obj.get::<_, f64>("offset").unwrap_or(0.0).max(0.0) as u64;
+                let size: Option<u64> = obj
+                    .get::<_, Option<f64>>("size")
+                    .unwrap_or(None)
+                    .filter(|s| *s > 0.0)
+                    .map(|s| s as u64);
+                parsed.push((binding, buffer, offset, size));
+            }
+            match d.create_bind_group(layout, &parsed) {
+                Ok(id) => Some(id),
+                Err(msg) => {
+                    d.errors.push(msg);
+                    None
                 }
-                match d.create_bind_group(layout, &parsed) {
-                    Ok(id) => Some(id),
-                    Err(msg) => {
-                        d.errors.push(msg);
-                        None
-                    }
-                }
-            },
-        ),
+            }
+        }),
     )?;
     ns.set(
         "gpuSubmitCompute",

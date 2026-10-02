@@ -60,7 +60,8 @@ impl HttpModuleLoader {
         if let Some(cached) = self.cache.lock().unwrap().get(url) {
             return Ok(cached.clone());
         }
-        let parsed = url::Url::parse(url).map_err(|e| Error::new_resolving_message(url, "", e.to_string()))?;
+        let parsed = url::Url::parse(url)
+            .map_err(|e| Error::new_resolving_message(url, "", e.to_string()))?;
         let top_site = brows12_storage::registrable_domain(parsed.host_str().unwrap_or(""));
         let request = brows12_net::NetRequest::get(url.to_string(), top_site);
         let response = self
@@ -68,7 +69,11 @@ impl HttpModuleLoader {
             .block_on(self.net.send(request))
             .map_err(|e| Error::new_resolving_message(url, "", e.to_string()))?;
         if !response.is_success() {
-            return Err(Error::new_resolving_message(url, "", format!("status {}", response.status)));
+            return Err(Error::new_resolving_message(
+                url,
+                "",
+                format!("status {}", response.status),
+            ));
         }
         let body = String::from_utf8_lossy(&response.body).to_string();
         self.cache.lock().unwrap().insert(url.to_string(), body.clone());

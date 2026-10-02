@@ -95,8 +95,7 @@ impl GpuDevice {
         let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("brows12-webgpu-buffer"),
             size: size.max(4),
-            usage: wgpu::BufferUsages::from_bits_truncate(usage)
-                | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::from_bits_truncate(usage) | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
         let id = self.alloc_id();
@@ -127,9 +126,8 @@ impl GpuDevice {
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let mut enc = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        let mut enc =
+            self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
         enc.copy_buffer_to_buffer(&b.buffer, 0, &stage, 0, b.size);
         self.queue.submit([enc.finish()]);
         let slice = stage.slice(..);
@@ -164,16 +162,14 @@ impl GpuDevice {
             label: Some("brows12-webgpu-compute-shader"),
             source: wgpu::ShaderSource::Wgsl(code.to_string().into()),
         });
-        let pipeline = self
-            .device
-            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                label: Some("brows12-webgpu-compute-pipeline"),
-                layout: None,
-                module: &module,
-                entry_point: Some(entry),
-                compilation_options: Default::default(),
-                cache: None,
-            });
+        let pipeline = self.device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("brows12-webgpu-compute-pipeline"),
+            layout: None,
+            module: &module,
+            entry_point: Some(entry),
+            compilation_options: Default::default(),
+            cache: None,
+        });
         let id = self.alloc_id();
         self.pipelines.lock().unwrap().insert(id, Arc::new(pipeline));
         Ok(id)
@@ -181,10 +177,7 @@ impl GpuDevice {
 
     /// Bind group layout from JS entries: [{binding, visibility, type}]
     /// where type ∈ "uniform" | "storage" | "read-only-storage".
-    pub fn create_bind_group_layout(
-        &self,
-        entries: &[(u32, u32, &str)],
-    ) -> Result<u64, String> {
+    pub fn create_bind_group_layout(&self, entries: &[(u32, u32, &str)]) -> Result<u64, String> {
         let mapped: Vec<wgpu::BindGroupLayoutEntry> = entries
             .iter()
             .map(|(binding, visibility, ty)| {
@@ -192,20 +185,13 @@ impl GpuDevice {
                 let ty = wgpu::BindingType::Buffer {
                     ty: match *ty {
                         "storage" => wgpu::BufferBindingType::Storage { read_only: false },
-                        "read-only-storage" => {
-                            wgpu::BufferBindingType::Storage { read_only: true }
-                        }
+                        "read-only-storage" => wgpu::BufferBindingType::Storage { read_only: true },
                         _ => wgpu::BufferBindingType::Uniform,
                     },
                     has_dynamic_offset: false,
                     min_binding_size: None,
                 };
-                wgpu::BindGroupLayoutEntry {
-                    binding: *binding,
-                    visibility,
-                    ty,
-                    count: None,
-                }
+                wgpu::BindGroupLayoutEntry { binding: *binding, visibility, ty, count: None }
             })
             .collect();
         let layout = self.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -231,10 +217,8 @@ impl GpuDevice {
             .cloned()
             .ok_or_else(|| "unknown bind group layout".to_string())?;
         // Collect buffers first so handles outlive the entries slice.
-        let buffers: Vec<Arc<GpuBuffer>> = entries
-            .iter()
-            .filter_map(|(_, buffer_id, ..)| self.buffer(*buffer_id))
-            .collect();
+        let buffers: Vec<Arc<GpuBuffer>> =
+            entries.iter().filter_map(|(_, buffer_id, ..)| self.buffer(*buffer_id)).collect();
         let mut bufs = buffers.iter();
         let mapped: Vec<wgpu::BindGroupEntry> = entries
             .iter()
@@ -245,10 +229,7 @@ impl GpuDevice {
                     offset: *offset,
                     size: size.map(std::num::NonZeroU64::new).flatten(),
                 });
-                Some(wgpu::BindGroupEntry {
-                    binding: *binding,
-                    resource,
-                })
+                Some(wgpu::BindGroupEntry { binding: *binding, resource })
             })
             .collect();
         let group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -265,11 +246,9 @@ impl GpuDevice {
     pub fn submit_compute_steps(&self, steps: &[(String, u64, u32, u32, u32)]) {
         let pipelines = self.pipelines.lock().unwrap();
         let groups = self.bind_groups.lock().unwrap();
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("brows12-webgpu-encoder"),
-            });
+        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("brows12-webgpu-encoder"),
+        });
         {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("brows12-webgpu-compute"),
@@ -311,11 +290,9 @@ pub enum ComputeStep {
 
 /// Encode + submit the recorded plan.
 pub fn submit_compute(device: &GpuDevice, plan: ComputePlan) {
-    let mut encoder = device
-        .device
-        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("brows12-webgpu-encoder"),
-        });
+    let mut encoder = device.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("brows12-webgpu-encoder"),
+    });
     {
         let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some("brows12-webgpu-compute"),

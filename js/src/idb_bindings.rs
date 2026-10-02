@@ -24,7 +24,11 @@ fn key_to_json(key: f64, is_string: bool, raw: &str) -> serde_json::Value {
 }
 
 /// Install the `__brows12` IndexedDB natives.
-pub fn install<'js>(ctx: &Ctx<'js>, env: &Arc<JsEnvironment>, ns: &Object<'js>) -> rquickjs::Result<()> {
+pub fn install<'js>(
+    ctx: &Ctx<'js>,
+    env: &Arc<JsEnvironment>,
+    ns: &Object<'js>,
+) -> rquickjs::Result<()> {
     let kv = env.kv.clone();
 
     ns.set(
@@ -66,7 +70,14 @@ pub fn install<'js>(ctx: &Ctx<'js>, env: &Arc<JsEnvironment>, ns: &Object<'js>) 
         "idbPut",
         Function::new(ctx.clone(), {
             let env = env.clone();
-            move |db: String, store: String, key_path: String, key: f64, is_string: bool, raw_key: String, value_json: String| -> bool {
+            move |db: String,
+                  store: String,
+                  key_path: String,
+                  key: f64,
+                  is_string: bool,
+                  raw_key: String,
+                  value_json: String|
+                  -> bool {
                 let reg = env.idb_registry.lock().unwrap();
                 let Some(database) = reg.get(&db) else { return false };
                 let Ok(mut value) = serde_json::from_str::<serde_json::Value>(&value_json) else {
@@ -86,7 +97,12 @@ pub fn install<'js>(ctx: &Ctx<'js>, env: &Arc<JsEnvironment>, ns: &Object<'js>) 
         "idbGet",
         Function::new(ctx.clone(), {
             let env = env.clone();
-            move |db: String, store: String, key: f64, is_string: bool, raw_key: String| -> Option<String> {
+            move |db: String,
+                  store: String,
+                  key: f64,
+                  is_string: bool,
+                  raw_key: String|
+                  -> Option<String> {
                 let reg = env.idb_registry.lock().unwrap();
                 let database = reg.get(&db)?;
                 let idb_key = if is_string {
@@ -94,11 +110,7 @@ pub fn install<'js>(ctx: &Ctx<'js>, env: &Arc<JsEnvironment>, ns: &Object<'js>) 
                 } else {
                     brows12_storage::idb::IdbKey::Number(key)
                 };
-                database
-                    .get(&store, &idb_key)
-                    .ok()
-                    .flatten()
-                    .map(|v| v.to_string())
+                database.get(&store, &idb_key).ok().flatten().map(|v| v.to_string())
             }
         }),
     )?;

@@ -761,7 +761,9 @@ impl Tab {
             } else if *is_module {
                 Script::InlineModule {
                     source: source.clone(),
-                    name: base.join(&format!("inline-module-{executed}.js")).map(|u| u.to_string())
+                    name: base
+                        .join(&format!("inline-module-{executed}.js"))
+                        .map(|u| u.to_string())
                         .unwrap_or_else(|_| format!("inline-module-{executed}.js")),
                 }
             } else {

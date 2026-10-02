@@ -154,7 +154,8 @@ impl JsRuntime {
             | crate::Script::ExternalModule { content: source, name } => {
                 self.eval_module(source, name)
             }
-            crate::Script::Inline { source, name } | crate::Script::External { content: source, name } => {
+            crate::Script::Inline { source, name }
+            | crate::Script::External { content: source, name } => {
                 self.eval_raw(source).map(|_| ()).map_err(|e| match e {
                     JsExecutionError::Script(msg) => {
                         JsExecutionError::Script(format!("{name}: {msg}"))
