@@ -234,6 +234,16 @@ pub(crate) fn apply_property(
                 s.max_width = a;
             }
         }
+        Property::MinWidth(v) => {
+            if let Some(a) = min_size(v, &lctx) {
+                s.min_width = a;
+            }
+        }
+        Property::MinHeight(v) => {
+            if let Some(a) = min_size(v, &lctx) {
+                s.min_height = a;
+            }
+        }
         // `border` shorthand: width + style + color on all four sides.
         Property::Border(b) => {
             let w = side_width(&b.width, &lctx);
@@ -777,6 +787,17 @@ fn size(v: &Size, lctx: &LengthContext) -> Option<AutoPx> {
             crate::computed::length_percentage_to_len(lp, lctx).map(AutoPx::Len)
         }
         _ => None,
+    }
+}
+
+/// `min-width`/`min-height`: `auto` (content-based minimum) or a
+/// length/percentage. An explicit 0 lets flex/grid items shrink below
+/// their content size — the `min-width: 0` idiom real skins depend on.
+fn min_size(v: &Size, lctx: &LengthContext) -> Option<AutoPx> {
+    match v {
+        Size::Auto | Size::MinContent(_) | Size::MaxContent(_) | Size::FitContent(_)
+        | Size::FitContentFunction(_) | Size::Stretch(_) | Size::Contain => Some(AutoPx::Auto),
+        Size::LengthPercentage(lp) => length_percentage_to_len(lp, lctx).map(AutoPx::Len),
     }
 }
 

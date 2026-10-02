@@ -29,6 +29,11 @@ pub struct ComputedStyle {
     pub border_radius: f32,
     pub width: AutoPx,
     pub height: AutoPx,
+    /// `min-width` / `min-height`: `auto` (default) = content-based minimum;
+    /// an explicit 0 lets flex/grid items shrink below their content size,
+    /// exactly the `min-width: 0` idiom real skins depend on.
+    pub min_width: AutoPx,
+    pub min_height: AutoPx,
     pub max_width: AutoPx,
     pub overflow: OverflowKeyword,
     pub position: Position,
@@ -97,6 +102,8 @@ impl Default for ComputedStyle {
             border_radius: 0.0,
             width: AutoPx::Auto,
             height: AutoPx::Auto,
+            min_width: AutoPx::Auto,
+            min_height: AutoPx::Auto,
             max_width: AutoPx::Auto,
             overflow: OverflowKeyword::Visible,
             position: Position::Static,

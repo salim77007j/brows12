@@ -1,0 +1,22 @@
+{
+  "console": [],
+  "engine": "brows12 v0.2.0",
+  "error": null,
+  "final_url": "https://rust-lang.org/",
+  "input": "https://www.rust-lang.org",
+  "loaded": true,
+  "render": {
+    "compositor": null,
+    "png_bytes": 52869,
+    "scroll_y": 0.0
+  },
+  "screenshot": "validation/run/final/rust_lang_org.png",
+  "timing": {
+    "full_pipeline_ms": 8256
+  },
+  "title": "\n            Rust Programming Language\n        ",
+  "viewport": {
+    "height": 800,
+    "width": 1280
+  }
+}

@@ -298,7 +298,9 @@ pub fn layout_inline_banded(
     let mut lines_out: Vec<BrokenLine> = Vec::new();
     let mut cur: Vec<Token> = Vec::new();
     let mut cur_w = 0.0f32;
-    let limit = if pre_any || nowrap { None } else { max_width.filter(|w| *w > 0.0) };
+    // A zero limit is valid (MinContent intrinsic sizing): wrap at every
+    // opportunity so the widest token defines the min-content width.
+    let limit = if pre_any || nowrap { None } else { max_width.filter(|w| *w >= 0.0) };
     let mut completed_y = 0.0f32;
     let (mut line_left, mut line_right) = insets_at(bands, completed_y);
     // Height of one line by the same formula the assembly phase uses.

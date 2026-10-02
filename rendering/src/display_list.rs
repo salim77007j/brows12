@@ -187,12 +187,15 @@ pub fn build_display_list(
         if style.display == brows12_css::values::Display::None {
             return;
         }
-        let Some(mut rect) = layout.rect(node) else {
-            return;
-        };
+        // Structural nodes without a laid-out box (e.g. table rows skipped
+        // by the grid-table mapping) still relay paint to their children;
+        // only their own background/border/text are skipped below.
+        let mut rect = layout.rect(node);
         // Compositor scroll: content moves up; fixed layers stay anchored.
         if !is_fixed && scroll_y != 0.0 {
-            rect.y -= scroll_y;
+            if let Some(r) = rect.as_mut() {
+                r.y -= scroll_y;
+            }
         }
 
         // Inline flow groups: emit one item at the group's first member,
@@ -201,13 +204,34 @@ pub fn build_display_list(
             return;
         }
         if let Some(flow) = layout.inline_flows.get(&node) {
-            list.tagged.push((z, DisplayItem::InlineFlow { rect, flow: flow.clone() }));
+            if let Some(r) = rect {
+                list.tagged.push((z, DisplayItem::InlineFlow { rect: r, flow: flow.clone() }));
+            }
             return;
         }
 
         match &doc.node(node).data {
             NodeData::Element { .. } => {
                 let child_fixed = in_fixed_subtree;
+                let Some(rect) = rect else {
+                    // No box (structural node): recurse only.
+                    for &c in &doc.node(node).children {
+                        emit(
+                            doc,
+                            styles,
+                            layout,
+                            list,
+                            images,
+                            scroll_y,
+                            fixed_subtrees,
+                            child_fixed,
+                            z,
+                            c,
+                            scope,
+                        );
+                    }
+                    return;
+                };
                 // Background: gradient paint wins over flat color (the
                 // color still renders beneath as fallback where possible).
                 if let Some(g) = &style.background_gradient {
@@ -308,6 +332,7 @@ pub fn build_display_list(
                 }
             }
             NodeData::Text(_) => {
+                let Some(rect) = rect else { return };
                 if style.display == brows12_css::values::Display::None || rect.height <= 0.0 {
                     return;
                 }

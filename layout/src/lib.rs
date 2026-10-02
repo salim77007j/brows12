@@ -328,6 +328,15 @@ fn taffy_dimension(v: AutoPx) -> taffy::Dimension {
     }
 }
 
+/// `min-width/height`: auto = taffy's content-based auto minimum.
+fn taffy_auto_min(v: AutoPx) -> taffy::LengthPercentageAuto {
+    match v {
+        AutoPx::Auto => taffy::LengthPercentageAuto::auto(),
+        AutoPx::Len(Len::Px(px)) => taffy::LengthPercentageAuto::length(px),
+        AutoPx::Len(Len::Percent(p)) => taffy::LengthPercentageAuto::percent(p),
+    }
+}
+
 fn taffy_len_or_percent(v: Len) -> taffy::LengthPercentage {
     match v {
         Len::Px(px) => taffy::LengthPercentage::length(px),
@@ -382,6 +391,7 @@ fn build_taffy_style(
     style: &ComputedStyle,
     spans: &TableSpans,
     node: NodeId,
+    parent_display: Option<Display>,
 ) -> taffy::Style {
     let display = match style.display {
         Display::None => taffy::Display::None,
@@ -396,6 +406,22 @@ fn build_taffy_style(
         size: taffy::Size {
             width: taffy_dimension(style.width),
             height: taffy_dimension(style.height),
+        },
+        min_size: {
+            // CSS: the automatic minimum size (min-width:auto flooring at
+            // content) applies to flex/grid ITEMS only. Block children have
+            // min-width 0 and simply overflow their parent. taffy applies
+            // the content floor to block children too, which blew up the
+            // Vector-2022 containers to max-content widths, so floor at 0
+            // outside flex/grid parents (an explicit min-width still wins).
+            let item = matches!(parent_display, Some(Display::Flex) | Some(Display::Grid));
+            let conv = |v: &AutoPx| -> taffy::LengthPercentageAuto {
+                if !item && matches!(v, AutoPx::Auto) {
+                    return taffy::LengthPercentageAuto::length(0.0);
+                }
+                taffy_auto_min(*v)
+            };
+            taffy::Size { width: conv(&style.min_width), height: conv(&style.min_height) }
         },
         margin: taffy::Rect {
             top: taffy_auto_len(style.margin.top),
@@ -440,6 +466,18 @@ fn build_taffy_style(
         taffy_style.flex_grow = 0.0;
         taffy_style.flex_shrink = 1.0;
     }
+    // Shrink-to-fit boxes (floats, absolutes) size to their max-content in
+    // taffy, which can exceed the containing block. Chrome caps fit-content
+    // at the available space (CSS2 §10.3.7): apply the same cap via
+    // max-width: 100% so wide content wraps instead of exploding the box.
+    if (style.float != FloatSide::None
+        || style.position == CssPosition::Absolute
+        || style.position == CssPosition::Fixed)
+        && style.width == AutoPx::Auto
+    {
+        taffy_style.max_size.width = taffy::LengthPercentageAuto::percent(1.0);
+    }
+
     // ---- CSS grid: templates, auto tracks, flow, item placement ----
     if style.display == Display::Grid {
         let tf = |t: &brows12_css::values::GridTrackSize| -> taffy::style::TrackSizingFunction {
@@ -666,6 +704,8 @@ pub fn compute_layout(
         inline_ctx: &mut HashMap<NodeId, (Arc<Vec<InlineItem>>, TextAlign)>,
         covered: &mut HashSet<NodeId>,
         spans: &TableSpans,
+        shrink_ctx: &HashSet<NodeId>,
+        parent_display: Option<Display>,
         node: NodeId,
     ) -> Option<taffy::NodeId> {
         let style = styles.get(node)?;
@@ -679,8 +719,9 @@ pub fn compute_layout(
                     return None;
                 }
                 let ctx = leaf_context(style, text);
-                let tnode =
-                    tree.new_leaf_with_context(build_taffy_style(style, spans, node), ctx).ok()?;
+                let tnode = tree
+                    .new_leaf_with_context(build_taffy_style(style, spans, node, parent_display), ctx)
+                    .ok()?;
                 node_ids.insert(node, tnode);
                 Some(tnode)
             }
@@ -688,7 +729,7 @@ pub fn compute_layout(
                 // Leaf elements with intrinsic size (img).
                 if doc.node(node).children.is_empty() {
                     if let Some(&(w, h)) = image_sizes.get(&node) {
-                        let taffy_style = build_taffy_style(style, spans, node);
+                        let taffy_style = build_taffy_style(style, spans, node, parent_display);
                         let ctx = LeafContext::Image { intrinsic_width: w, intrinsic_height: h };
                         let tnode = tree.new_leaf_with_context(taffy_style, ctx).ok()?;
                         node_ids.insert(node, tnode);
@@ -700,9 +741,15 @@ pub fn compute_layout(
                 // direct grid items with explicit slot placement (row boxes
                 // are skipped); the slot algorithm ran in compute_table_spans.
                 if style.display == Display::Table {
-                    if let Some(&max_cols) = spans.tables.get(&node) {
-                        use taffy::prelude::TaffyAuto;
-                        let mut taffy_style = build_taffy_style(style, spans, node);
+                    // Grid-map spanning tables, EXCEPT width-less tables
+                    // inside shrink-to-fit contexts (floats/absolutes): an
+                    // auto-width grid there sizes to a huge max-content and
+                    // explodes the float. Width-less shrink-context tables
+                    // keep the flex mapping (content-sized columns).
+                    if !shrink_ctx.contains(&node) || style.width != AutoPx::Auto {
+                        if let Some(&max_cols) = spans.tables.get(&node) {
+                            use taffy::prelude::TaffyAuto;
+                        let mut taffy_style = build_taffy_style(style, spans, node, parent_display);
                         taffy_style.display = taffy::Display::Grid;
                         taffy_style.grid_template_columns = (0..max_cols)
                             .map(|_| {
@@ -728,6 +775,8 @@ pub fn compute_layout(
                                     inline_ctx,
                                     covered,
                                     spans,
+                                    shrink_ctx,
+                                    Some(style.display),
                                     cell,
                                 ) {
                                     children.push(t);
@@ -741,10 +790,11 @@ pub fn compute_layout(
                         };
                         node_ids.insert(node, tnode);
                         return Some(tnode);
+                        }
                     }
                 }
 
-                let taffy_style = build_taffy_style(style, spans, node);
+                let taffy_style = build_taffy_style(style, spans, node, parent_display);
                 // Partition children into inline runs and block children
                 // (CSS anonymous block boxes).
                 let pieces = group_children(doc, styles, image_sizes, node);
@@ -761,6 +811,8 @@ pub fn compute_layout(
                                 inline_ctx,
                                 covered,
                                 spans,
+                                shrink_ctx,
+                                Some(style.display),
                                 c,
                             ) {
                                 children.push(t);
@@ -804,6 +856,8 @@ pub fn compute_layout(
                         inline_ctx,
                         covered,
                         spans,
+                        shrink_ctx,
+                        parent_display,
                         c,
                     ) {
                         return Some(t);
@@ -1034,6 +1088,32 @@ pub fn compute_layout(
     let mut inline_ctx: HashMap<NodeId, (Arc<Vec<InlineItem>>, TextAlign)> = HashMap::new();
     let mut covered: HashSet<NodeId> = HashSet::new();
     let table_spans = compute_table_spans(doc, styles);
+    // Nodes inside float/absolute/fixed subtrees (shrink-to-fit contexts).
+    let mut shrink_ctx: HashSet<NodeId> = HashSet::new();
+    fn collect_shrink(
+        doc: &Document,
+        styles: &brows12_css::StyleMap,
+        node: NodeId,
+        inside: bool,
+        out: &mut HashSet<NodeId>,
+    ) {
+        let inside = inside
+            || styles
+                .get(node)
+                .map(|s| {
+                    s.float != FloatSide::None
+                        || s.position == CssPosition::Absolute
+                        || s.position == CssPosition::Fixed
+                })
+                .unwrap_or(false);
+        if inside {
+            out.insert(node);
+        }
+        for &c in &doc.node(node).children {
+            collect_shrink(doc, styles, c, inside, out);
+        }
+    }
+    collect_shrink(doc, styles, start, false, &mut shrink_ctx);
     let Some(root_taffy) = build(
         doc,
         styles,
@@ -1043,6 +1123,8 @@ pub fn compute_layout(
         &mut inline_ctx,
         &mut covered,
         &table_spans,
+        &shrink_ctx,
+        None,
         start,
     ) else {
         return LayoutResult::default();
@@ -1061,9 +1143,15 @@ pub fn compute_layout(
                       _style: &taffy::Style|
      -> taffy::LayoutOutput {
         if let Some(leaf) = ctx {
+            // Intrinsic sizing requests must be honoured exactly: MaxContent
+            // measures unwrapped; MinContent wraps at every opportunity
+            // (widest token). Returning max-content for MinContent requests
+            // made `1fr` (= minmax(auto, 1fr)) grid/flex tracks explode to
+            // the full unwrapped line width (10625px on Wikipedia).
             let max_width = input.known_dimensions.width.or(match input.available_space.width {
                 taffy::AvailableSpace::Definite(w) => Some(w),
-                _ => None,
+                taffy::AvailableSpace::MaxContent => None,
+                taffy::AvailableSpace::MinContent => Some(0.0),
             });
             let (w, h) = match leaf {
                 LeafContext::Inline { items, .. } => {
@@ -1117,7 +1205,11 @@ pub fn compute_layout(
     // Extract absolute rects via depth-first accumulation.
     let taffy_to_dom: HashMap<taffy::NodeId, NodeId> =
         node_ids.iter().map(|(d, t)| (*t, *d)).collect();
+    #[allow(clippy::too_many_arguments)]
     fn extract(
+        doc: &Document,
+        styles: &brows12_css::StyleMap,
+        parent_of: &HashMap<NodeId, NodeId>,
         taffy_to_dom: &HashMap<taffy::NodeId, NodeId>,
         tree: &taffy::TaffyTree<LeafContext>,
         rects: &mut HashMap<NodeId, Rect>,
@@ -1139,6 +1231,30 @@ pub fn compute_layout(
                     layout.size.width,
                     layout.size.height
                 );
+                if layout.size.width > 4000.0 && std::env::var("BROWS_TRACE").is_ok() {
+                    let mut cur = Some(*dom);
+                    let mut chain = Vec::new();
+                    while let Some(c) = cur {
+                        let desc = match &doc.node(c).data {
+                            NodeData::Element { name, .. } => {
+                                let cls = doc.attr(c, "class").unwrap_or("");
+                                let st = styles.get(c);
+                                format!(
+                                    "<{name} .{cls}> display={:?} pos={:?} float={:?} ws={:?} w={:?}",
+                                    st.map(|s| s.display),
+                                    st.map(|s| s.position),
+                                    st.map(|s| s.float),
+                                    st.map(|s| s.white_space),
+                                    st.map(|s| s.width)
+                                )
+                            }
+                            _ => "?".into(),
+                        };
+                        chain.push(desc);
+                        cur = parent_of.get(&c).copied();
+                    }
+                    eprintln!("WIDE-CHAIN: {chain:?}");
+                }
             }
         }
         let x = offset.0 + layout.location.x;
@@ -1149,7 +1265,7 @@ pub fn compute_layout(
         }
         if let Ok(children) = tree.children(taffy_node) {
             for child in children {
-                extract(taffy_to_dom, tree, rects, child, (x, y));
+                extract(doc, styles, parent_of, taffy_to_dom, tree, rects, child, (x, y));
             }
         }
     }
@@ -1194,7 +1310,7 @@ pub fn compute_layout(
 
     // ---- Pass 1 rects (no bands) → place floats → derive bands ----
     let mut rects1: HashMap<NodeId, Rect> = HashMap::new();
-    extract(&taffy_to_dom, &tree, &mut rects1, root_taffy, (0.0, 0.0));
+    extract(doc, styles, &parent_of, &taffy_to_dom, &tree, &mut rects1, root_taffy, (0.0, 0.0));
     let floats1 = place_floats(doc, styles, &mut rects1, &children_of, &parent_of, &all_elements);
     {
         let mut bmap = bands_cell.borrow_mut();
@@ -1222,7 +1338,7 @@ pub fn compute_layout(
 
     // ---- Final extraction + float placement on final rects ----
     let mut result = LayoutResult::default();
-    extract(&taffy_to_dom, &tree, &mut result.rects, root_taffy, (0.0, 0.0));
+    extract(doc, styles, &parent_of, &taffy_to_dom, &tree, &mut result.rects, root_taffy, (0.0, 0.0));
     result.floats =
         place_floats(doc, styles, &mut result.rects, &children_of, &parent_of, &all_elements);
 
@@ -1257,6 +1373,15 @@ pub fn compute_layout(
         result.inline_flows.insert(*dom_id, flow);
     }
     result.inline_covered = covered;
+    if std::env::var("BROWS_DEBUG").is_ok() {
+        eprintln!(
+            "FLOWS {} groups, {} flows, {} covered, {} rects",
+            inline_ctx.len(),
+            result.inline_flows.len(),
+            result.inline_covered.len(),
+            result.rects.len()
+        );
+    }
 
     // ---- v0.2 post-pass: fixed anchoring + transforms + content bounds ----
     // (children_of / parent_of / shift_subtree are defined above, shared

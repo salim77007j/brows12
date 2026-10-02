@@ -423,6 +423,21 @@ impl Tab {
             Default::default(),
         );
         if std::env::var("BROWS_DEBUG").is_ok() {
+            let mut kinds: HashMap<&'static str, usize> = HashMap::new();
+            for item in &display_list.items {
+                let k = match item {
+                    brows12_render::display_list::DisplayItem::Rect { .. } => "rect",
+                    brows12_render::display_list::DisplayItem::Border { .. } => "border",
+                    brows12_render::display_list::DisplayItem::Text { .. } => "text",
+                    brows12_render::display_list::DisplayItem::InlineFlow { .. } => "inlineflow",
+                    brows12_render::display_list::DisplayItem::GradientRect { .. } => "gradient",
+                    brows12_render::display_list::DisplayItem::Image { .. } => "image",
+                    brows12_render::display_list::DisplayItem::PushClip { .. } => "pushclip",
+                    brows12_render::display_list::DisplayItem::PopClip => "popclip",
+                };
+                *kinds.entry(k).or_insert(0) += 1;
+            }
+            eprintln!("DL_KINDS {:?}", kinds);
             for item in &display_list.items {
                 match item {
                     brows12_render::display_list::DisplayItem::Rect { rect, color, .. } => {

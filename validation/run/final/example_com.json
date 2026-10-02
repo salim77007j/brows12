@@ -1,0 +1,24 @@
+{
+  "console": [
+    "script error: script threw: /s.js: not a function\n--- JS stack ---\n    at <eval> (eval_script:1:38)\n"
+  ],
+  "engine": "brows12 v0.2.0",
+  "error": null,
+  "final_url": "https://example.com",
+  "input": "https://example.com",
+  "loaded": true,
+  "render": {
+    "compositor": null,
+    "png_bytes": 15147,
+    "scroll_y": 0.0
+  },
+  "screenshot": "validation/run/final/example_com.png",
+  "timing": {
+    "full_pipeline_ms": 3418
+  },
+  "title": "Example Domain",
+  "viewport": {
+    "height": 800,
+    "width": 1280
+  }
+}
