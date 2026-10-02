@@ -69,7 +69,12 @@ impl CanvasStore {
         Self::default()
     }
 
-    pub fn get_or_create(&self, node_id: i32, width: u32, height: u32) -> std::sync::Arc<CanvasSurface> {
+    pub fn get_or_create(
+        &self,
+        node_id: i32,
+        width: u32,
+        height: u32,
+    ) -> std::sync::Arc<CanvasSurface> {
         let mut map = self.canvases.lock().unwrap();
         if let Some(existing) = map.get(&node_id) {
             // Same size: reuse. Resize resets the surface (spec behaviour).
@@ -77,21 +82,20 @@ impl CanvasStore {
                 return existing.clone();
             }
         }
-        let surface = {
 
-                let surface = std::sync::Arc::new(CanvasSurface {
-                    width,
-                    height,
-                    pixmap: Mutex::new(
-                        Pixmap::new(width.max(1), height.max(1))
-                            .unwrap_or_else(|| Pixmap::new(1, 1).unwrap()),
-                    ),
-                    state: Mutex::new(CanvasState::default()),
-                });
-                map.insert(node_id, surface.clone());
-                surface
-        };
-        surface
+        {
+            let surface = std::sync::Arc::new(CanvasSurface {
+                width,
+                height,
+                pixmap: Mutex::new(
+                    Pixmap::new(width.max(1), height.max(1))
+                        .unwrap_or_else(|| Pixmap::new(1, 1).unwrap()),
+                ),
+                state: Mutex::new(CanvasState::default()),
+            });
+            map.insert(node_id, surface.clone());
+            surface
+        }
     }
 
     pub fn remove(&self, node_id: i32) {
@@ -100,12 +104,7 @@ impl CanvasStore {
 
     /// Snapshot of all surfaces for engine harvesting.
     pub fn snapshot(&self) -> Vec<(i32, std::sync::Arc<CanvasSurface>)> {
-        self.canvases
-            .lock()
-            .unwrap()
-            .iter()
-            .map(|(k, v)| (*k, v.clone()))
-            .collect()
+        self.canvases.lock().unwrap().iter().map(|(k, v)| (*k, v.clone())).collect()
     }
 }
 
@@ -172,11 +171,34 @@ pub fn parse_css_color(s: &str) -> Option<[u8; 4]> {
     let b = f(parts[2])? as u8;
     let a = if parts.len() >= 4 {
         let av = f(parts[3])?;
-        if parts[3].trim().ends_with('%') { (av / 100.0 * 255.0) as u8 } else { (av * 255.0) as u8 }
+        if parts[3].trim().ends_with('%') {
+            (av / 100.0 * 255.0) as u8
+        } else {
+            (av * 255.0) as u8
+        }
     } else {
         255
     };
     Some([r, g, b, a])
+}
+
+/// Premultiplied -> straight alpha RGBA8 (engine image pipeline contract).
+pub fn canvas_unpremultiply(data: &[u8]) -> Vec<u8> {
+    let mut out = data.to_vec();
+    for px in out.chunks_exact_mut(4) {
+        let a = px[3];
+        if a == 0 {
+            px[0] = 0;
+            px[1] = 0;
+            px[2] = 0;
+        } else if a != 255 {
+            let a16 = a as u16;
+            px[0] = ((px[0] as u16 * 255 + a16 / 2) / a16).min(255) as u8;
+            px[1] = ((px[1] as u16 * 255 + a16 / 2) / a16).min(255) as u8;
+            px[2] = ((px[2] as u16 * 255 + a16 / 2) / a16).min(255) as u8;
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -202,23 +224,4 @@ mod tests {
         let again = store.get_or_create(7, 640, 480);
         assert_eq!(again.width, 640);
     }
-}
-
-/// Premultiplied -> straight alpha RGBA8 (engine image pipeline contract).
-pub fn canvas_unpremultiply(data: &[u8]) -> Vec<u8> {
-    let mut out = data.to_vec();
-    for px in out.chunks_exact_mut(4) {
-        let a = px[3];
-        if a == 0 {
-            px[0] = 0;
-            px[1] = 0;
-            px[2] = 0;
-        } else if a != 255 {
-            let a16 = a as u16;
-            px[0] = ((px[0] as u16 * 255 + a16 / 2) / a16).min(255) as u8;
-            px[1] = ((px[1] as u16 * 255 + a16 / 2) / a16).min(255) as u8;
-            px[2] = ((px[2] as u16 * 255 + a16 / 2) / a16).min(255) as u8;
-        }
-    }
-    out
 }

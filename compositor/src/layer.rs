@@ -87,9 +87,7 @@ impl Layer {
 
     /// Texture bytes this layer occupies.
     pub fn texture_bytes(&self) -> usize {
-        (self.pixmap.width() as usize)
-            * (self.pixmap.height() as usize)
-            * 4
+        (self.pixmap.width() as usize) * (self.pixmap.height() as usize) * 4
     }
 
     /// Total placement including scroll (unless fixed).

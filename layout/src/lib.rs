@@ -409,7 +409,13 @@ pub fn compute_layout(
         };
         if std::env::var("BROWS_DEBUG").is_ok() {
             if let Some(dom) = taffy_to_dom.get(&taffy_node) {
-                eprintln!("EXTRACT taffy={taffy_node:?} dom={dom:?} at ({:.0},{:.0} {}x{})", offset.0 + layout.location.x, offset.1 + layout.location.y, layout.size.width, layout.size.height);
+                eprintln!(
+                    "EXTRACT taffy={taffy_node:?} dom={dom:?} at ({:.0},{:.0} {}x{})",
+                    offset.0 + layout.location.x,
+                    offset.1 + layout.location.y,
+                    layout.size.width,
+                    layout.size.height
+                );
             }
         }
         let x = offset.0 + layout.location.x;

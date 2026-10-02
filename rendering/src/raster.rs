@@ -60,6 +60,7 @@ impl Rasterizer {
 
     /// Render text into a tightly-fitted premultiplied pixmap.
     /// Public seam for Canvas2D `fillText` (js crate) and tests.
+    #[allow(clippy::too_many_arguments)]
     pub fn rasterize_text(
         &mut self,
         text: &str,
@@ -81,7 +82,7 @@ impl Rasterizer {
             white_space_pre: false,
             align: brows12_css::values::TextAlign::Start,
         };
-        let mut measurer = brows12_layout::TextMeasurer::new(self.font_system.clone());
+        let measurer = brows12_layout::TextMeasurer::new(self.font_system.clone());
         let leaf = brows12_layout::LeafContext::Text {
             text: text.to_string(),
             font_size,
@@ -140,7 +141,13 @@ impl Rasterizer {
                 rect.x, rect.y, rect.width, rect.height, style.font_size, style.line_height_px
             );
             for run in buffer.layout_runs() {
-                eprintln!("  run line_y={:.1} line_h={:.1} w={:.1} glyphs={}", run.line_y, run.line_height, run.line_w, run.glyphs.len());
+                eprintln!(
+                    "  run line_y={:.1} line_h={:.1} w={:.1} glyphs={}",
+                    run.line_y,
+                    run.line_height,
+                    run.line_w,
+                    run.glyphs.len()
+                );
             }
         }
 
@@ -518,7 +525,12 @@ mod tests {
             &HashMap::new(),
         );
         let list = build_display_list(
-            &doc, &styles, &layout, (1280.0, 720.0), &HashMap::new(), 0.0,
+            &doc,
+            &styles,
+            &layout,
+            (1280.0, 720.0),
+            &HashMap::new(),
+            0.0,
             Default::default(),
         );
         assert!(list.items.iter().any(|i| matches!(i, DisplayItem::Text { .. })));

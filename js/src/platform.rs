@@ -8,7 +8,7 @@
 use crate::canvas::{parse_css_color, CanvasState, CanvasStore, CanvasSurface, PathSeg};
 use crate::environment::JsEnvironment;
 use rquickjs::{Ctx, Function, Object};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tiny_skia::Pixmap;
 
 impl CanvasSurface {
@@ -33,7 +33,11 @@ impl CanvasSurface {
                     let steps = 32.max(((end - start).abs() / 0.2) as usize);
                     for i in 0..=steps {
                         let t = i as f32 / steps as f32;
-                        let ang = if *ccw { *end + t * (*start - *end) } else { *start + t * (*end - *start) };
+                        let ang = if *ccw {
+                            *end + t * (*start - *end)
+                        } else {
+                            *start + t * (*end - *start)
+                        };
                         let (px, py) = (cx + r * ang.cos(), cy + r * ang.sin());
                         let (tx, ty) = Self::map_point(state, px, py);
                         if i == 0 {
@@ -51,7 +55,11 @@ impl CanvasSurface {
 }
 
 /// Install the `__brows12` canvas + platform natives.
-pub fn install<'js>(ctx: &Ctx<'js>, env: &Arc<JsEnvironment>, ns: &Object<'js>) -> rquickjs::Result<()> {
+pub fn install<'js>(
+    ctx: &Ctx<'js>,
+    env: &Arc<JsEnvironment>,
+    ns: &Object<'js>,
+) -> rquickjs::Result<()> {
     let store = env.canvas_store.clone();
 
     // ---- surface lifecycle -------------------------------------------------
@@ -139,8 +147,16 @@ pub fn install<'js>(ctx: &Ctx<'js>, env: &Arc<JsEnvironment>, ns: &Object<'js>) 
                 let Ok(v) = serde_json::from_str::<Value>(&json) else { return };
                 let g = |k: &str| v.get(k).and_then(Value::as_f64).unwrap_or(0.0);
                 let s = (
-                    g("lineWidth"), g("alpha"), g("a"), g("b"), g("c"), g("d"), g("e"), g("f"),
-                    g("fontSize"), g("fontWeight"),
+                    g("lineWidth"),
+                    g("alpha"),
+                    g("a"),
+                    g("b"),
+                    g("c"),
+                    g("d"),
+                    g("e"),
+                    g("f"),
+                    g("fontSize"),
+                    g("fontWeight"),
                     v.get("italic").and_then(Value::as_bool).unwrap_or(false),
                     v.get("family").and_then(Value::as_str).unwrap_or("sans-serif").to_string(),
                 );
@@ -148,7 +164,9 @@ pub fn install<'js>(ctx: &Ctx<'js>, env: &Arc<JsEnvironment>, ns: &Object<'js>) 
                     if let Ok(mut st) = surface.state.lock() {
                         st.line_width = s.0.max(0.0) as f32;
                         st.global_alpha = s.1.clamp(0.0, 1.0) as f32;
-                        st.transform = [s.2 as f32, s.3 as f32, s.4 as f32, s.5 as f32, s.6 as f32, s.7 as f32];
+                        st.transform = [
+                            s.2 as f32, s.3 as f32, s.4 as f32, s.5 as f32, s.6 as f32, s.7 as f32,
+                        ];
                         st.font_size = s.8.max(1.0) as f32;
                         st.font_weight = (s.9 as i32).clamp(1, 1000) as u16;
                         st.font_italic = s.10;
@@ -209,7 +227,17 @@ pub fn install<'js>(ctx: &Ctx<'js>, env: &Arc<JsEnvironment>, ns: &Object<'js>) 
                         let (x, y, w, h) = (x as f32, y as f32, w as f32, h as f32);
                         let r = tiny_skia::Rect::from_xywh(x, y, w.max(0.0), h.max(0.0));
                         if let Some(r) = r {
-                            pm.fill_rect(r, &tiny_skia::Paint { shader: tiny_skia::Shader::SolidColor(tiny_skia::Color::TRANSPARENT), ..Default::default() }, tiny_skia::Transform::identity(), None);
+                            pm.fill_rect(
+                                r,
+                                &tiny_skia::Paint {
+                                    shader: tiny_skia::Shader::SolidColor(
+                                        tiny_skia::Color::TRANSPARENT,
+                                    ),
+                                    ..Default::default()
+                                },
+                                tiny_skia::Transform::identity(),
+                                None,
+                            );
                         }
                     }
                 }
@@ -234,7 +262,14 @@ pub fn install<'js>(ctx: &Ctx<'js>, env: &Arc<JsEnvironment>, ns: &Object<'js>) 
             let store = store.clone();
             move |id: i32, text: String, x: f64, y: f64, max_width: f64| {
                 if let Some(surface) = find(&store, id) {
-                    draw_text(&env, &surface, &text, x as f32, y as f32, if max_width > 0.0 { Some(max_width as f32) } else { None });
+                    draw_text(
+                        &env,
+                        &surface,
+                        &text,
+                        x as f32,
+                        y as f32,
+                        if max_width > 0.0 { Some(max_width as f32) } else { None },
+                    );
                 }
             }
         })?,
@@ -292,19 +327,13 @@ fn draw_rect(surface: &CanvasSurface, x: f32, y: f32, w: f32, h: f32, stroke: bo
     let Ok(state) = surface.state.lock() else { return };
     let color = if stroke { state.stroke } else { state.fill };
     let alpha = state.global_alpha;
-    let c = tiny_skia::Color::from_rgba8(
-        color[0],
-        color[1],
-        color[2],
-        (color[3] as f32 * alpha) as u8,
-    );
-    let paint = tiny_skia::Paint {
-        shader: tiny_skia::Shader::SolidColor(c),
-        ..Default::default()
-    };
+    let c =
+        tiny_skia::Color::from_rgba8(color[0], color[1], color[2], (color[3] as f32 * alpha) as u8);
+    let paint = tiny_skia::Paint { shader: tiny_skia::Shader::SolidColor(c), ..Default::default() };
     // Transform the four corners, then build a polygon.
     let corners = [(x, y), (x + w, y), (x + w, y + h), (x, y + h)];
-    let mapped: Vec<(f32, f32)> = corners.iter().map(|(cx, cy)| CanvasSurface::map_point(&state, *cx, *cy)).collect();
+    let mapped: Vec<(f32, f32)> =
+        corners.iter().map(|(cx, cy)| CanvasSurface::map_point(&state, *cx, *cy)).collect();
     let mut pb = tiny_skia::PathBuilder::new();
     pb.move_to(mapped[0].0, mapped[0].1);
     for p in &mapped[1..] {
@@ -313,10 +342,17 @@ fn draw_rect(surface: &CanvasSurface, x: f32, y: f32, w: f32, h: f32, stroke: bo
     pb.close();
     if let Some(path) = pb.finish() {
         if stroke {
-            let stroke = tiny_skia::Stroke { width: state.line_width.max(0.1), ..Default::default() };
+            let stroke =
+                tiny_skia::Stroke { width: state.line_width.max(0.1), ..Default::default() };
             pm.stroke_path(&path, &paint, &stroke, tiny_skia::Transform::identity(), None);
         } else {
-            pm.fill_path(&path, &paint, tiny_skia::FillRule::Winding, tiny_skia::Transform::identity(), None);
+            pm.fill_path(
+                &path,
+                &paint,
+                tiny_skia::FillRule::Winding,
+                tiny_skia::Transform::identity(),
+                None,
+            );
         }
     }
 }
@@ -334,10 +370,17 @@ fn draw_path(surface: &CanvasSurface, stroke: bool) {
     let paint = tiny_skia::Paint { shader: tiny_skia::Shader::SolidColor(c), ..Default::default() };
     if let Some(path) = CanvasSurface::build_path(&state) {
         if stroke {
-            let stroke = tiny_skia::Stroke { width: state.line_width.max(0.1), ..Default::default() };
+            let stroke =
+                tiny_skia::Stroke { width: state.line_width.max(0.1), ..Default::default() };
             pm.stroke_path(&path, &paint, &stroke, tiny_skia::Transform::identity(), None);
         } else {
-            pm.fill_path(&path, &paint, tiny_skia::FillRule::Winding, tiny_skia::Transform::identity(), None);
+            pm.fill_path(
+                &path,
+                &paint,
+                tiny_skia::FillRule::Winding,
+                tiny_skia::Transform::identity(),
+                None,
+            );
         }
     }
 }
@@ -372,7 +415,14 @@ fn draw_text(
             opacity: state.global_alpha.clamp(0.0, 1.0),
             ..Default::default()
         };
-        pm.draw_pixmap(tx as i32, ty as i32, glyphs.as_ref(), &paint, tiny_skia::Transform::identity(), None);
+        pm.draw_pixmap(
+            tx as i32,
+            ty as i32,
+            glyphs.as_ref(),
+            &paint,
+            tiny_skia::Transform::identity(),
+            None,
+        );
     }
 }
 

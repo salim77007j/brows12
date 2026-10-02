@@ -79,8 +79,9 @@ impl CompositeOutput {
         for (dst, px) in pm.pixels_mut().iter_mut().zip(self.pixels.chunks_exact(4)) {
             let a = px[3] as u16;
             let premul = |c: u8| ((c as u16 * a + 127) / 255) as u8;
-            *dst = tiny_skia::ColorU8::from_rgba(premul(px[0]), premul(px[1]), premul(px[2]), px[3])
-                .premultiply();
+            *dst =
+                tiny_skia::ColorU8::from_rgba(premul(px[0]), premul(px[1]), premul(px[2]), px[3])
+                    .premultiply();
         }
         Some(pm)
     }
@@ -88,7 +89,12 @@ impl CompositeOutput {
 
 /// A shared rendering contract for both backends.
 pub trait Compositor {
-    fn composite(&self, width: u32, height: u32, layers: &[Layer]) -> Result<CompositeOutput, CompositorError>;
+    fn composite(
+        &self,
+        width: u32,
+        height: u32,
+        layers: &[Layer],
+    ) -> Result<CompositeOutput, CompositorError>;
 }
 
 /// Auto-select: GPU when an adapter is available, CPU otherwise.

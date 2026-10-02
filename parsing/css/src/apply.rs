@@ -1,5 +1,6 @@
 //! Application of lightningcss `Property` values to [`ComputedStyle`].
 
+use crate::atr::EasingKeyword;
 use crate::computed::*;
 use crate::values::*;
 use lightningcss::properties::border::{BorderSideWidth, LineStyle};
@@ -12,7 +13,6 @@ use lightningcss::properties::size::{MaxSize, Size};
 use lightningcss::properties::text::{TextAlign as LcTextAlign, WhiteSpace as LcWhiteSpace};
 use lightningcss::properties::Property;
 use lightningcss::values::color::CssColor;
-use crate::atr::EasingKeyword;
 
 /// Apply one declaration onto `s`.
 pub(crate) fn apply_property(
@@ -510,12 +510,10 @@ pub(crate) fn apply_property(
     }
 }
 
-fn map_animation(
-    a: &lightningcss::properties::animation::Animation,
-) -> AnimationSpec {
+fn map_animation(a: &lightningcss::properties::animation::Animation) -> AnimationSpec {
     use lightningcss::properties::animation::{
-        AnimationDirection as LAD, AnimationFillMode as LAF, AnimationName as AN,
-        AnimationIterationCount as LIC,
+        AnimationDirection as LAD, AnimationFillMode as LAF, AnimationIterationCount as LIC,
+        AnimationName as AN,
     };
     let name = match &a.name {
         AN::Ident(id) => id.0.to_string(),
@@ -547,10 +545,7 @@ fn map_animation(
 }
 
 /// Resolve a LengthPercentage to px (percentages resolve to 0 without box info).
-fn lp_px(
-    lp: &lightningcss::values::length::LengthPercentage,
-    lctx: &LengthContext,
-) -> f32 {
+fn lp_px(lp: &lightningcss::values::length::LengthPercentage, lctx: &LengthContext) -> f32 {
     use lightningcss::values::percentage::DimensionPercentage as DP;
     match lp {
         DP::Dimension(l) => crate::computed::length_to_px(l, lctx).unwrap_or(0.0),

@@ -32,19 +32,16 @@ pub fn collect_custom_defs(css: &str, out: &mut HashMap<String, String>) {
             i += 1;
             continue;
         }
-        match in_string {
-            Some(q) => {
-                if b == b'\\' {
-                    i += 2;
-                    continue;
-                }
-                if b == q {
-                    in_string = None;
-                }
-                i += 1;
+        if let Some(q) = in_string {
+            if b == b'\\' {
+                i += 2;
                 continue;
             }
-            None => {}
+            if b == q {
+                in_string = None;
+            }
+            i += 1;
+            continue;
         }
         match b {
             b'/' if i + 1 < bytes.len() && bytes[i + 1] == b'*' => {
@@ -71,7 +68,9 @@ pub fn collect_custom_defs(css: &str, out: &mut HashMap<String, String>) {
         {
             let name_start = i;
             let mut j = i + 2;
-            while j < bytes.len() && (bytes[j].is_ascii_alphanumeric() || bytes[j] == b'-' || bytes[j] == b'_') {
+            while j < bytes.len()
+                && (bytes[j].is_ascii_alphanumeric() || bytes[j] == b'-' || bytes[j] == b'_')
+            {
                 j += 1;
             }
             let name_end = j;
@@ -92,9 +91,7 @@ pub fn collect_custom_defs(css: &str, out: &mut HashMap<String, String>) {
                         d2 += 1;
                     } else if c == b')' {
                         d2 -= 1;
-                    } else if c == b';' && d2 == 0 {
-                        break;
-                    } else if c == b'}' && d2 == 0 {
+                    } else if (c == b';' || c == b'}') && d2 == 0 {
                         break;
                     }
                     v += 1;
@@ -130,8 +127,7 @@ pub fn substitute_vars_text(css: &str, vars: &HashMap<String, String>) -> String
             && chars.get(i + 1) == Some(&'a')
             && chars.get(i + 2) == Some(&'r')
             && chars.get(i + 3) == Some(&'(');
-        let prev_ok = i == 0
-            || !(chars[i - 1].is_ascii_alphabetic() || chars[i - 1] == '-');
+        let prev_ok = i == 0 || !(chars[i - 1].is_ascii_alphabetic() || chars[i - 1] == '-');
         if starts_var && prev_ok {
             let start = i + 4;
             let mut depth = 1i32;

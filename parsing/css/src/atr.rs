@@ -6,11 +6,11 @@
 //! engine's device/container environment matches.
 
 use lightningcss::media_query::{
-    MediaCondition, MediaFeatureComparison, MediaFeatureId, MediaFeatureValue, MediaList,
-    MediaType, Operator, Qualifier, QueryFeature,
+    MediaCondition, MediaFeatureComparison, MediaFeatureValue, MediaList, MediaType, Operator,
+    Qualifier, QueryFeature,
 };
 use lightningcss::properties::Property;
-use lightningcss::rules::container::{ContainerCondition, ContainerSizeFeatureId};
+use lightningcss::rules::container::ContainerCondition;
 use lightningcss::rules::supports::SupportsCondition;
 use lightningcss::stylesheet::ParserOptions;
 use lightningcss::traits::ToCss;
@@ -59,7 +59,9 @@ impl DeviceEnv {
         Some(match name.as_str() {
             "width" | "inline-size" => FeatureVal::Px(self.viewport_width),
             "height" | "block-size" => FeatureVal::Px(self.viewport_height),
-            "aspect-ratio" => FeatureVal::Ratio(self.viewport_width / self.viewport_height.max(1.0)),
+            "aspect-ratio" => {
+                FeatureVal::Ratio(self.viewport_width / self.viewport_height.max(1.0))
+            }
             "orientation" => FeatureVal::Ident(
                 if self.viewport_height >= self.viewport_width { "portrait" } else { "landscape" }
                     .into(),
@@ -159,8 +161,7 @@ where
         match n {
             lightningcss::media_query::MediaFeatureName::Standard(id) => {
                 let mut out = String::new();
-                let mut printer =
-                    lightningcss::printer::Printer::new(&mut out, Default::default());
+                let mut printer = lightningcss::printer::Printer::new(&mut out, Default::default());
                 id.to_css(&mut printer).ok()?;
                 Some(out.trim().to_ascii_lowercase())
             }
@@ -172,9 +173,7 @@ where
             let Some(name) = name(n) else { return false };
             let Some(actual) = env(&name) else { return false };
             match (actual, value) {
-                (FeatureVal::Ident(a), v) => {
-                    value_to_ident(v).map(|b| a == b).unwrap_or(false)
-                }
+                (FeatureVal::Ident(a), v) => value_to_ident(v).map(|b| a == b).unwrap_or(false),
                 (FeatureVal::Px(a), v) => {
                     value_to_number(v).map(|b| (a - b).abs() < 0.01).unwrap_or(false)
                 }
@@ -199,7 +198,9 @@ where
         QueryFeature::Range { name: n, operator, value } => {
             let Some(name) = name(n) else { return false };
             let actual = match env(&name) {
-                Some(FeatureVal::Px(x)) | Some(FeatureVal::Num(x)) | Some(FeatureVal::Ratio(x)) => x,
+                Some(FeatureVal::Px(x)) | Some(FeatureVal::Num(x)) | Some(FeatureVal::Ratio(x)) => {
+                    x
+                }
                 _ => return false,
             };
             let Some(wanted) = value_to_number(value) else { return false };
@@ -208,7 +209,9 @@ where
         QueryFeature::Interval { name: n, start, start_operator, end, end_operator } => {
             let Some(name) = name(n) else { return false };
             let actual = match env(&name) {
-                Some(FeatureVal::Px(x)) | Some(FeatureVal::Num(x)) | Some(FeatureVal::Ratio(x)) => x,
+                Some(FeatureVal::Px(x)) | Some(FeatureVal::Num(x)) | Some(FeatureVal::Ratio(x)) => {
+                    x
+                }
                 _ => return false,
             };
             let (Some(s), Some(e)) = (value_to_number(start), value_to_number(end)) else {
@@ -413,12 +416,12 @@ pub fn container_condition_matches(
             !container_condition_matches(c, container_inline_size, container_block_size)
         }
         ContainerCondition::Operation { operator, conditions } => match operator {
-            lightningcss::media_query::Operator::And => conditions
-                .iter()
-                .all(|c| container_condition_matches(c, container_inline_size, container_block_size)),
-            lightningcss::media_query::Operator::Or => conditions
-                .iter()
-                .any(|c| container_condition_matches(c, container_inline_size, container_block_size)),
+            lightningcss::media_query::Operator::And => conditions.iter().all(|c| {
+                container_condition_matches(c, container_inline_size, container_block_size)
+            }),
+            lightningcss::media_query::Operator::Or => conditions.iter().any(|c| {
+                container_condition_matches(c, container_inline_size, container_block_size)
+            }),
         },
         ContainerCondition::Style(_) => false, // style queries: not supported
         ContainerCondition::ScrollState(_) => false,
@@ -475,8 +478,20 @@ impl EasingKeyword {
             EasingKeyword::EaseIn => cubic_bezier(0.42, 0.0, 1.0, 1.0, t),
             EasingKeyword::EaseOut => cubic_bezier(0.0, 0.0, 0.58, 1.0, t),
             EasingKeyword::EaseInOut => cubic_bezier(0.42, 0.0, 0.58, 1.0, t),
-            EasingKeyword::StepStart => if t >= 1.0 { 1.0 } else { 0.0 },
-            EasingKeyword::StepEnd => t.floor().min(1.0).max(0.0).mul_add(0.0, 0.0).max(if t >= 1.0 { 1.0 } else { 0.0 }),
+            EasingKeyword::StepStart => {
+                if t >= 1.0 {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
+            EasingKeyword::StepEnd => {
+                if t >= 1.0 {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
         }
     }
 }
@@ -490,8 +505,10 @@ pub fn cubic_bezier(x1: f32, y1: f32, x2: f32, y2: f32, t: f32) -> f32 {
     if t >= 1.0 {
         return 1.0;
     }
-    let bez_x = |u: f32| 3.0 * u * (1.0 - u) * (1.0 - u) * x1 + 3.0 * u * u * (1.0 - u) * x2 + u * u * u;
-    let bez_y = |u: f32| 3.0 * u * (1.0 - u) * (1.0 - u) * y1 + 3.0 * u * u * (1.0 - u) * y2 + u * u * u;
+    let bez_x =
+        |u: f32| 3.0 * u * (1.0 - u) * (1.0 - u) * x1 + 3.0 * u * u * (1.0 - u) * x2 + u * u * u;
+    let bez_y =
+        |u: f32| 3.0 * u * (1.0 - u) * (1.0 - u) * y1 + 3.0 * u * u * (1.0 - u) * y2 + u * u * u;
     // Newton-Raphson on x(u) = t, fall back to bisection.
     let mut u = t;
     for _ in 0..8 {
@@ -549,12 +566,9 @@ impl LayerRegistry {
     pub fn rank_normal(&self, layer: &Option<String>) -> u32 {
         match layer {
             None => u32::MAX,
-            Some(p) => self
-                .order
-                .iter()
-                .position(|o| o == p)
-                .map(|i| i as u32)
-                .unwrap_or(u32::MAX - 1),
+            Some(p) => {
+                self.order.iter().position(|o| o == p).map(|i| i as u32).unwrap_or(u32::MAX - 1)
+            }
         }
     }
 

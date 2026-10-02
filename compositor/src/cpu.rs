@@ -44,8 +44,7 @@ impl Compositor for CpuCompositor {
         if layers.is_empty() {
             return Err(CompositorError::Empty);
         }
-        let mut surface =
-            tiny_skia::Pixmap::new(width, height).ok_or(CompositorError::TooLarge)?;
+        let mut surface = tiny_skia::Pixmap::new(width, height).ok_or(CompositorError::TooLarge)?;
         let paint = tiny_skia::PixmapPaint {
             opacity: 1.0,
             blend_mode: tiny_skia::BlendMode::SourceOver,
@@ -72,11 +71,6 @@ impl Compositor for CpuCompositor {
             layer_count: layers.len(),
             texture_bytes: layers.iter().map(Layer::texture_bytes).sum(),
         };
-        Ok(CompositeOutput {
-            width,
-            height,
-            pixels: premul_to_straight(surface.data()),
-            stats,
-        })
+        Ok(CompositeOutput { width, height, pixels: premul_to_straight(surface.data()), stats })
     }
 }

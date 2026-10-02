@@ -6,9 +6,9 @@
 //! transforms), with step fallback for non-interpolable pairs.
 
 use crate::apply::apply_property;
-use crate::atr::{cubic_bezier, EasingKeyword, KeyframesMap, OwnedKeyframes};
+use crate::atr::{EasingKeyword, KeyframesMap, OwnedKeyframes};
 use crate::computed::{CascadeCtx, ComputedStyle};
-use crate::values::{AnimationFill, AnimationSpec, Len, LineHeight, Transform};
+use crate::values::{AnimationFill, AnimationSpec, Len, Transform};
 use brows12_html::{Document, NodeId};
 use std::collections::HashMap;
 
@@ -44,6 +44,7 @@ pub fn apply_keyframes(
     let delay = spec.delay_s.max(0.0);
     let local = elapsed_s - delay;
 
+    #[allow(clippy::float_cmp)]
     if duration <= 0.0 {
         // Zero-duration: jump to the final frame (respecting fill).
         if matches!(spec.fill, AnimationFill::Forwards | AnimationFill::Both) && local >= 0.0 {
@@ -116,11 +117,7 @@ fn eased_progress(kf: &OwnedKeyframes, pos: f32) -> f32 {
         }
     }
     if !found {
-        // Past the last keyframe.
-        let last = kf.frames.last();
-        if let Some(l) = last {
-            start_easing = l.easing;
-        }
+        // Past the last keyframe: hold position.
         return pos;
     }
     let span = (seg_end - seg_start).max(f32::EPSILON);
@@ -155,13 +152,9 @@ fn apply_progress(
         // Build the declaration sequence for this property.
         let mut decls: Vec<(f32, &lightningcss::properties::Property)> = Vec::new();
         for f in &kf.frames {
-            let found = f
-                .declarations
-                .iter()
-                .chain(f.important.iter())
-                .find(|p| {
-                    crate::atr::to_css_string(&p.property_id()).as_deref() == Some(name.as_str())
-                });
+            let found = f.declarations.iter().chain(f.important.iter()).find(|p| {
+                crate::atr::to_css_string(&p.property_id()).as_deref() == Some(name.as_str())
+            });
             if let Some(p) = found {
                 decls.push((f.offset, p));
             }
@@ -182,7 +175,7 @@ fn apply_progress(
             let (a_off, a) = (w[0].0, w[0].1);
             let (b_off, b) = (w[1].0, w[1].1);
             if pos >= a_off && pos <= b_off {
-                let t = if b_off - a_off < f32::EPSILON {
+                let t = if (b_off - a_off).abs() < f32::EPSILON {
                     1.0
                 } else {
                     ((pos - a_off) / (b_off - a_off)).clamp(0.0, 1.0)
@@ -231,7 +224,7 @@ pub fn lerp_pair(
 ) -> Option<lightningcss::properties::Property<'static>> {
     use lightningcss::properties::Property as P;
     let lerp_f32 = |x: f32, y: f32| x + (y - x) * t;
-    let lerp_len = |x: Len, y: Len| -> Option<Len> {
+    let _lerp_len = |x: Len, y: Len| -> Option<Len> {
         match (x, y) {
             (Len::Px(a), Len::Px(b)) => Some(Len::Px(lerp_f32(a, b))),
             _ => None,
@@ -240,7 +233,6 @@ pub fn lerp_pair(
     let lerp_lp = |x: &lightningcss::values::length::LengthPercentage,
                    y: &lightningcss::values::length::LengthPercentage|
      -> Option<lightningcss::values::length::LengthPercentage> {
-        use lightningcss::values::length::LengthPercentage as LP;
         use lightningcss::values::length::LengthValue as LV;
         use lightningcss::values::percentage::DimensionPercentage as DP;
         match (x, y) {
@@ -258,10 +250,9 @@ pub fn lerp_pair(
             lerp_f32(x[3] as f32, y[3] as f32).round() as u8,
         ]
     };
-    let rgba_color =
-        |c: &lightningcss::values::color::CssColor| -> Option<crate::values::Rgba> {
-            crate::stylesheet::resolve_color(c, [0, 0, 0, 255])
-        };
+    let rgba_color = |c: &lightningcss::values::color::CssColor| -> Option<crate::values::Rgba> {
+        crate::stylesheet::resolve_color(c, [0, 0, 0, 255])
+    };
     let mk_rgba = |r: crate::values::Rgba| -> lightningcss::values::color::CssColor {
         use lightningcss::values::color::{CssColor, RGBA};
         CssColor::RGBA(RGBA { red: r[0], green: r[1], blue: r[2], alpha: r[3] })
@@ -269,9 +260,7 @@ pub fn lerp_pair(
 
     match (a, b) {
         (P::Opacity(x), P::Opacity(y)) => {
-            Some(P::Opacity(lightningcss::values::alpha::AlphaValue(
-                lerp_f32(x.0, y.0),
-            )))
+            Some(P::Opacity(lightningcss::values::alpha::AlphaValue(lerp_f32(x.0, y.0))))
         }
         (P::Color(x), P::Color(y)) => {
             let (Some(xr), Some(yr)) = (rgba_color(x), rgba_color(y)) else { return None };
@@ -303,13 +292,11 @@ pub fn lerp_pair(
             use lightningcss::properties::font::FontSize as FS;
             match (x, y) {
                 (FS::Length(a), FS::Length(b)) => {
-                    use lightningcss::values::percentage::DimensionPercentage as DP;
                     use lightningcss::values::length::LengthValue as LV;
+                    use lightningcss::values::percentage::DimensionPercentage as DP;
                     match (a, b) {
                         (DP::Dimension(LV::Px(pa)), DP::Dimension(LV::Px(pb))) => {
-                            Some(P::FontSize(FS::Length(DP::Dimension(
-                                LV::Px(lerp_f32(*pa, *pb)),
-                            ))))
+                            Some(P::FontSize(FS::Length(DP::Dimension(LV::Px(lerp_f32(*pa, *pb))))))
                         }
                         _ => None,
                     }
@@ -328,7 +315,7 @@ pub fn lerp_pair(
                 _ => None,
             }
         }
-        (P::Transform(x, _), P::Transform(y, _)) => {
+        (P::Transform(_x, _), P::Transform(_y, _)) => {
             // Decompose both, lerp the compound, rebuild a translate+scale+rotate matrix.
             let mut sa = ComputedStyle::default();
             let mut sb = ComputedStyle::default();
@@ -390,31 +377,24 @@ fn snapshot_property(
     use lightningcss::properties::Property as P;
     use lightningcss::values::color::{CssColor, RGBA};
     use lightningcss::values::length::LengthValue;
-    let mk = |r: crate::values::Rgba| CssColor::RGBA(RGBA {
-        red: r[0],
-        green: r[1],
-        blue: r[2],
-        alpha: r[3],
-    });
+    let mk = |r: crate::values::Rgba| {
+        CssColor::RGBA(RGBA { red: r[0], green: r[1], blue: r[2], alpha: r[3] })
+    };
     match name {
         "color" => Some(P::Color(mk(style.color))),
         "background-color" => Some(P::BackgroundColor(mk(style.background_color))),
-        "opacity" => Some(P::Opacity(lightningcss::values::alpha::AlphaValue(
-            style.opacity,
-        ))),
+        "opacity" => Some(P::Opacity(lightningcss::values::alpha::AlphaValue(style.opacity))),
         "font-size" => Some(P::FontSize(lightningcss::properties::font::FontSize::Length(
-            lightningcss::values::percentage::DimensionPercentage::Dimension(
-                LengthValue::Px(style.font_size),
-            ),
+            lightningcss::values::percentage::DimensionPercentage::Dimension(LengthValue::Px(
+                style.font_size,
+            )),
         ))),
-        "width" if !matches!(style.width, crate::values::AutoPx::Auto) => {
-            match style.width {
-                crate::values::AutoPx::Len(Len::Px(px)) => {
-                    Some(P::Width(crate::values::AutoPx::Len(Len::Px(px)).into_width()))
-                }
-                _ => None,
+        "width" if !matches!(style.width, crate::values::AutoPx::Auto) => match style.width {
+            crate::values::AutoPx::Len(Len::Px(px)) => {
+                Some(P::Width(crate::values::AutoPx::Len(Len::Px(px)).into_width()))
             }
-        }
+            _ => None,
+        },
         "transform" => {
             let m = &style.transform;
             if m.is_identity() {
@@ -451,11 +431,9 @@ impl crate::values::AutoPx {
             crate::values::AutoPx::Len(Len::Px(px)) => {
                 Size::LengthPercentage(DP::Dimension(LengthValue::Px(px)))
             }
-            crate::values::AutoPx::Len(Len::Percent(p)) => {
-                Size::LengthPercentage(DP::Percentage(
-                    lightningcss::values::percentage::Percentage(p / 100.0),
-                ))
-            }
+            crate::values::AutoPx::Len(Len::Percent(p)) => Size::LengthPercentage(DP::Percentage(
+                lightningcss::values::percentage::Percentage(p / 100.0),
+            )),
             crate::values::AutoPx::Auto => Size::Auto,
         }
     }
@@ -528,8 +506,7 @@ impl TransitionEngine {
             match lerp_pair(&t.from, &t.to, eased) {
                 Some(p) => apply_property(style, &p, parent, ctx),
                 None => {
-                    let chosen =
-                        if eased >= 0.5 { t.to.clone() } else { t.from.clone() };
+                    let chosen = if eased >= 0.5 { t.to.clone() } else { t.from.clone() };
                     apply_property(style, &chosen, parent, ctx);
                 }
             }

@@ -250,8 +250,11 @@ fn canvas2d_and_platform_apis() {
     )
     .unwrap();
     assert_eq!(rt.eval("globalThis.__ctxType").unwrap(), "object", "getContext('2d') must work");
-    assert_eq!(rt.eval("globalThis.__log.join(',')").unwrap(),
-        "number,object,function,function,function", "platform globals present");
+    assert_eq!(
+        rt.eval("globalThis.__log.join(',')").unwrap(),
+        "number,object,function,function,function",
+        "platform globals present"
+    );
 }
 
 #[test]

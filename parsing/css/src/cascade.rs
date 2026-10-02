@@ -80,11 +80,7 @@ fn rule_applies(
                 matched_any_container = true;
                 let size = container_sizes.get(&a).copied();
                 let block = None; // block-size containers: not tracked yet
-                if !rule
-                    .containers
-                    .iter()
-                    .all(|c| container_condition_matches(c, size, block))
-                {
+                if !rule.containers.iter().all(|c| container_condition_matches(c, size, block)) {
                     return false;
                 }
                 // Only the nearest container counts.
@@ -101,11 +97,7 @@ fn rule_applies(
     true
 }
 
-fn has_container_ancestor(
-    doc: &Document,
-    node: NodeId,
-    prev_styles: Option<&StyleMap>,
-) -> bool {
+fn has_container_ancestor(doc: &Document, node: NodeId, prev_styles: Option<&StyleMap>) -> bool {
     let mut ancestor = doc.parent(node).filter(|&p| doc.is_element(p));
     while let Some(a) = ancestor {
         if let Some(s) = prev_styles.and_then(|s| s.get(a)) {
@@ -119,6 +111,7 @@ fn has_container_ancestor(
 }
 
 /// Compute styles with an optional container environment.
+#[allow(clippy::too_many_arguments)]
 fn compute_inner(
     doc: &Document,
     engine: &StyleEngine,
@@ -222,7 +215,6 @@ fn compute_inner(
 
 /// Custom properties from stylesheet rules are registered into the element's
 /// map (document-global scope approximation; inline declarations win).
-
 fn apply_inline(
     style: &mut ComputedStyle,
     css: &str,
@@ -286,7 +278,8 @@ mod tests {
     #[test]
     fn author_rules_override_ua() {
         let doc = parse_document("<html><body><p class=\"big\">x</p></body></html>");
-        let engine = StyleEngine::with_author_sheets(&[author("p.big { font-size: 32px; color: red; }")]);
+        let engine =
+            StyleEngine::with_author_sheets(&[author("p.big { font-size: 32px; color: red; }")]);
         let styles = compute_styles(&doc, &engine, &CascadeCtx::default());
         let p = doc.get_elements_by_tag_name("p")[0];
         let s = styles.get(p).unwrap();
@@ -343,7 +336,11 @@ mod tests {
         let p = doc.get_elements_by_tag_name("p")[0];
         let s = styles.get(p).unwrap();
         assert_eq!(s.font_size, 20.0, "fallback applies when var missing");
-        assert_eq!(s.line_height, crate::values::LineHeight::Normal, "invalid var drops declaration");
+        assert_eq!(
+            s.line_height,
+            crate::values::LineHeight::Normal,
+            "invalid var drops declaration"
+        );
     }
 
     #[test]
@@ -384,5 +381,3 @@ mod tests {
 }
 
 // Re-export for downstream crates.
-use crate::computed::LengthContext;
-pub(crate) use crate::computed::length_percentage_to_len;

@@ -1,6 +1,6 @@
 {
   "count": 25,
-  "engine": "0.1.0",
+  "engine": "0.2.0",
   "results": [
     {
       "compositor": null,
@@ -9,7 +9,7 @@
       "png_bytes": 14494,
       "screenshot": "example_com.png",
       "title": "Example Domain",
-      "total_ms": 3439,
+      "total_ms": 3435,
       "url": "https://example.com"
     },
     {
@@ -19,7 +19,7 @@
       "png_bytes": 79380,
       "screenshot": "www_wikipedia_org.png",
       "title": "Wikipedia",
-      "total_ms": 4149,
+      "total_ms": 4157,
       "url": "https://www.wikipedia.org"
     },
     {
@@ -29,7 +29,7 @@
       "png_bytes": 77366,
       "screenshot": "en_wikipedia_org_wiki_Rust__programming_language.png",
       "title": "Rust (programming language) - Wikipedia",
-      "total_ms": 28026,
+      "total_ms": 26375,
       "url": "https://en.wikipedia.org/wiki/Rust_(programming_language)"
     },
     {
@@ -39,17 +39,17 @@
       "png_bytes": 51254,
       "screenshot": "github_com.png",
       "title": "GitHub · Change is constant. GitHub keeps you ahead. · GitHub",
-      "total_ms": 54066,
+      "total_ms": 45642,
       "url": "https://github.com"
     },
     {
       "compositor": null,
       "error": null,
       "loaded": true,
-      "png_bytes": 39319,
+      "png_bytes": 39324,
       "screenshot": "news_ycombinator_com.png",
       "title": "Hacker News",
-      "total_ms": 4870,
+      "total_ms": 4900,
       "url": "https://news.ycombinator.com"
     },
     {
@@ -59,7 +59,7 @@
       "png_bytes": 47836,
       "screenshot": "www_rust_lang_org.png",
       "title": "\n            Rust Programming Language\n        ",
-      "total_ms": 7981,
+      "total_ms": 7703,
       "url": "https://www.rust-lang.org"
     },
     {
@@ -69,7 +69,7 @@
       "png_bytes": 37328,
       "screenshot": "www_mozilla_org.png",
       "title": "Client Challenge",
-      "total_ms": 3705,
+      "total_ms": 3623,
       "url": "https://www.mozilla.org"
     },
     {
@@ -79,7 +79,7 @@
       "png_bytes": 29238,
       "screenshot": "www_google_com.png",
       "title": "Google",
-      "total_ms": 3575,
+      "total_ms": 3625,
       "url": "https://www.google.com"
     },
     {
@@ -99,7 +99,7 @@
       "png_bytes": 5883,
       "screenshot": "www_youtube_com.png",
       "title": "YouTube",
-      "total_ms": 4991,
+      "total_ms": 4681,
       "url": "https://www.youtube.com"
     },
     {
@@ -109,7 +109,7 @@
       "png_bytes": 358669,
       "screenshot": "threejs_org.png",
       "title": "Three.js – JavaScript 3D Library",
-      "total_ms": 12302,
+      "total_ms": 12434,
       "url": "https://threejs.org"
     },
     {
@@ -119,7 +119,7 @@
       "png_bytes": 30883,
       "screenshot": "webgpu_github_io.png",
       "title": "Site not found · GitHub Pages",
-      "total_ms": 471,
+      "total_ms": 292,
       "url": "https://webgpu.github.io"
     },
     {
@@ -129,7 +129,7 @@
       "png_bytes": 22763,
       "screenshot": "developer_mozilla_org.png",
       "title": "MDN Web Docs",
-      "total_ms": 9095,
+      "total_ms": 5011,
       "url": "https://developer.mozilla.org"
     },
     {
@@ -139,7 +139,7 @@
       "png_bytes": 5780,
       "screenshot": "stackoverflow_com.png",
       "title": "Just a moment...",
-      "total_ms": 3425,
+      "total_ms": 3382,
       "url": "https://stackoverflow.com"
     },
     {
@@ -149,7 +149,7 @@
       "png_bytes": 53804,
       "screenshot": "www_bbc_com.png",
       "title": "BBC Home - Breaking News, World News, US News, Sports, Business, Innovation, Climate, Culture, Travel, Video & Audio",
-      "total_ms": 6690,
+      "total_ms": 6545,
       "url": "https://www.bbc.com"
     },
     {
@@ -159,7 +159,7 @@
       "png_bytes": 18289,
       "screenshot": "www_reddit_com.png",
       "title": "",
-      "total_ms": 133,
+      "total_ms": 130,
       "url": "https://www.reddit.com"
     },
     {
@@ -169,17 +169,17 @@
       "png_bytes": 11472,
       "screenshot": "arxiv_org.png",
       "title": "arXiv.org e-Print archive",
-      "total_ms": 3928,
+      "total_ms": 4103,
       "url": "https://arxiv.org"
     },
     {
       "compositor": null,
       "error": null,
       "loaded": true,
-      "png_bytes": 44078,
+      "png_bytes": 46112,
       "screenshot": "docs_rs.png",
       "title": "Docs.rs",
-      "total_ms": 5564,
+      "total_ms": 4611,
       "url": "https://docs.rs"
     },
     {
@@ -189,7 +189,7 @@
       "png_bytes": 5780,
       "screenshot": "crates_io.png",
       "title": "crates.io: Rust Package Registry",
-      "total_ms": 5256,
+      "total_ms": 4041,
       "url": "https://crates.io"
     },
     {
@@ -199,7 +199,7 @@
       "png_bytes": 54664,
       "screenshot": "www_w3_org.png",
       "title": "W3C",
-      "total_ms": 4622,
+      "total_ms": 4877,
       "url": "https://www.w3.org"
     },
     {
@@ -209,7 +209,7 @@
       "png_bytes": 10982,
       "screenshot": "caniuse_com.png",
       "title": "Can I use... Support tables for HTML5, CSS3, etc",
-      "total_ms": 7930,
+      "total_ms": 7136,
       "url": "https://caniuse.com"
     },
     {
@@ -219,7 +219,7 @@
       "png_bytes": 18858,
       "screenshot": "webglfundamentals_org.png",
       "title": "WebGL Fundamentals",
-      "total_ms": 7471,
+      "total_ms": 7539,
       "url": "https://webglfundamentals.org"
     },
     {
@@ -229,7 +229,7 @@
       "png_bytes": 114525,
       "screenshot": "http3_is.png",
       "title": "",
-      "total_ms": 549,
+      "total_ms": 678,
       "url": "https://http3.is"
     },
     {
@@ -239,7 +239,7 @@
       "png_bytes": 6118,
       "screenshot": "www_bing_com.png",
       "title": "Search - Microsoft Bing",
-      "total_ms": 4368,
+      "total_ms": 4330,
       "url": "https://www.bing.com"
     },
     {

@@ -3,7 +3,7 @@
 //! opacity never re-rasterize layer contents — that is the entire point.
 
 use crate::layer::Layer;
-use crate::{Backend, CompositeOutput, Compositor, CompositorError, CompositeStats};
+use crate::{Backend, CompositeOutput, CompositeStats, Compositor, CompositorError};
 
 /// WGSL: textured quad, premultiplied-alpha blending, per-layer affine
 /// matrix + opacity uniform.
@@ -203,9 +203,18 @@ impl GpuCompositor {
         let m13 = 1.0 - (f / target_h * 2.0);
         LayerUniforms {
             m: [
-                m00, m10, 0.0, 0.0, // column 0 (x basis)
-                m01, m11, 0.0, 0.0, // column 1 (y basis)
-                m03, m13, 0.0, 0.0, // column 2 (translation)
+                m00,
+                m10,
+                0.0,
+                0.0, // column 0 (x basis)
+                m01,
+                m11,
+                0.0,
+                0.0, // column 1 (y basis)
+                m03,
+                m13,
+                0.0,
+                0.0, // column 2 (translation)
                 layer.opacity.clamp(0.0, 1.0),
                 0.0,
                 0.0,
@@ -289,10 +298,7 @@ impl GpuCompositor {
                 label: Some("brows12-layer-bind-group"),
                 layout: &self.bind_group_layout,
                 entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: ubuf.as_entire_binding(),
-                    },
+                    wgpu::BindGroupEntry { binding: 0, resource: ubuf.as_entire_binding() },
                     wgpu::BindGroupEntry {
                         binding: 1,
                         resource: wgpu::BindingResource::TextureView(&view_t),
@@ -332,15 +338,13 @@ impl Compositor for GpuCompositor {
             view_formats: &[],
         });
         let view = target.create_view(&wgpu::TextureViewDescriptor::default());
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("brows12-composite-encoder"),
-            });
+        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("brows12-composite-encoder"),
+        });
         self.draw_layers(width, height, layers, &mut encoder, &view)?;
 
         // Readback: 256-aligned staging buffer, map, de-pad rows.
-        let bytes_per_row = ((width * 4 + 255) / 256) * 256;
+        let bytes_per_row = (width * 4).div_ceil(256) * 256;
         let stage_size = (bytes_per_row * height) as u64;
         let stage = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("brows12-readback"),

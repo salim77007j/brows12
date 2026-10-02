@@ -82,7 +82,11 @@ pub fn build_display_list(
     // Subtrees rooted at fixed nodes ignore the scroll offset.
     let mut fixed_subtrees: std::collections::HashSet<NodeId> = Default::default();
     for &root in &layout.fixed_nodes {
-        fn collect_fixed(doc: &Document, node: NodeId, out: &mut std::collections::HashSet<NodeId>) {
+        fn collect_fixed(
+            doc: &Document,
+            node: NodeId,
+            out: &mut std::collections::HashSet<NodeId>,
+        ) {
             out.insert(node);
             for &c in &doc.node(node).children {
                 collect_fixed(doc, c, out);
@@ -174,7 +178,15 @@ pub fn build_display_list(
                 }
                 for &c in &doc.node(node).children {
                     emit(
-                        doc, styles, layout, list, images, scroll_y, fixed_subtrees, child_fixed, c,
+                        doc,
+                        styles,
+                        layout,
+                        list,
+                        images,
+                        scroll_y,
+                        fixed_subtrees,
+                        child_fixed,
+                        c,
                         scope,
                     );
                 }
@@ -205,7 +217,15 @@ pub fn build_display_list(
             _ => {
                 for &c in &doc.node(node).children {
                     emit(
-                        doc, styles, layout, list, images, scroll_y, fixed_subtrees, is_fixed, c,
+                        doc,
+                        styles,
+                        layout,
+                        list,
+                        images,
+                        scroll_y,
+                        fixed_subtrees,
+                        is_fixed,
+                        c,
                         scope,
                     );
                 }
@@ -213,9 +233,7 @@ pub fn build_display_list(
         }
     }
 
-    emit(
-        doc, styles, layout, &mut list, images, scroll_y, &fixed_subtrees, false, start, scope,
-    );
+    emit(doc, styles, layout, &mut list, images, scroll_y, &fixed_subtrees, false, start, scope);
     list
 }
 

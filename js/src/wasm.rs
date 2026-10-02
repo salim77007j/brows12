@@ -16,6 +16,7 @@ use rquickjs::{Ctx, Function, Object};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+#[allow(dead_code)]
 struct WasmHandle {
     store: wasmi::Store<()>,
     instance: wasmi::Instance,
@@ -52,7 +53,7 @@ fn val_to_f64(v: &wasmi::Val) -> Option<f64> {
         wasmi::Val::I32(x) => Some(*x as f64),
         wasmi::Val::I64(x) => Some(*x as f64),
         wasmi::Val::F32(x) => Some(f64::from(f32::from(*x))),
-        wasmi::Val::F64(x) => Some(f64::from(f64::from(*x))),
+        wasmi::Val::F64(x) => Some(f64::from(*x)),
         _ => None,
     }
 }
@@ -103,7 +104,7 @@ pub fn install<'js>(
                 for export in instance.exports(&wasm_store) {
                     let name = export.name().to_string();
                     match export.into_extern() {
-                        wasmi::Extern::Func(f) => funcs.push(name),
+                        wasmi::Extern::Func(_f) => funcs.push(name),
                         wasmi::Extern::Memory(m) => memory = Some(m),
                         _ => {}
                     }
@@ -128,10 +129,8 @@ pub fn install<'js>(
                 let Some(handle) = map.get_mut(&id) else {
                     return r#"{"ok":false,"error":"no instance"}"#.into();
                 };
-                let Some(func) = handle
-                    .instance
-                    .get_export(&handle.store, &name)
-                    .and_then(|e| e.into_func())
+                let Some(func) =
+                    handle.instance.get_export(&handle.store, &name).and_then(|e| e.into_func())
                 else {
                     return format!(r#"{{"ok":false,"error":"no export {name}"}}"#);
                 };
@@ -145,24 +144,19 @@ pub fn install<'js>(
                         ty.params().len()
                     );
                 }
-                let inputs: Vec<wasmi::Val> = args
-                    .iter()
-                    .zip(ty.params().iter())
-                    .map(|(v, t)| val_from_f64(*v, t))
-                    .collect();
+                let inputs: Vec<wasmi::Val> =
+                    args.iter().zip(ty.params().iter()).map(|(v, t)| val_from_f64(*v, t)).collect();
                 let mut outputs = vec![wasmi::Val::I32(0); ty.results().len()];
                 match func.call(&mut handle.store, &inputs, &mut outputs) {
                     Ok(()) => {
-                        let results: Vec<f64> =
-                            outputs.iter().filter_map(val_to_f64).collect();
+                        let results: Vec<f64> = outputs.iter().filter_map(val_to_f64).collect();
                         let results_json =
                             serde_json::to_string(&results).unwrap_or_else(|_| "[]".into());
                         format!(r#"{{"ok":true,"results":{results_json}}}"#)
                     }
-                    Err(e) => format!(
-                        r#"{{"ok":false,"error":"{}"}}"#,
-                        e.to_string().replace('"', "'")
-                    ),
+                    Err(e) => {
+                        format!(r#"{{"ok":false,"error":"{}"}}"#, e.to_string().replace('"', "'"))
+                    }
                 }
             }
         })?,
@@ -182,7 +176,6 @@ pub fn install<'js>(
                 let start = (offset.max(0) as usize).min(data.len());
                 let end = ((offset + len).max(0) as usize).min(data.len());
                 crate::glue_b64::encode(&data[start..end])
-
             }
         })?,
     )?;
@@ -196,7 +189,7 @@ pub fn install<'js>(
                 let Some(handle) = map.get_mut(&id) else { return false };
                 let Some(mem) = handle.memory else { return false };
                 let Some(bytes) = crate::glue_b64::decode(&bytes_b64) else { return false };
-                use wasmi::AsContextMut as _;
+
                 let start = offset.max(0) as usize;
                 let data = mem.data_mut(&mut handle.store);
                 if start + bytes.len() > data.len() {

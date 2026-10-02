@@ -20,6 +20,8 @@ fn realm() -> JsRuntime {
         top_level_site: "bench.test".into(),
         viewport: (1280, 720),
         console_log: Arc::new(Mutex::new(Vec::new())),
+        canvas_store: Arc::new(brows12_js::CanvasStore::new()),
+        fonts: Arc::new(Mutex::new(cosmic_text::FontSystem::new())),
     });
     let dom = DomHandle::new(Arc::new(Mutex::new(brows12_html::parse_document(
         "<html><body><div id=\"app\"></div></body></html>",

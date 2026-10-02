@@ -4,7 +4,7 @@ use crate::engine::{EngineEvent, EngineInner};
 use crate::EngineError;
 use brows12_css::computed::CascadeCtx;
 use brows12_css::values::Display;
-use brows12_css::{compute_styles, Stylesheet};
+use brows12_css::Stylesheet;
 use brows12_html::parse_document;
 use brows12_js::{DomHandle, JsEnvironment, JsRuntime, Script};
 use brows12_net::NetRequest;
@@ -302,28 +302,20 @@ impl Tab {
     /// in layout + paint like any decoded image).
     fn harvest_canvases(&self, page: &Arc<PageInner>) {
         use brows12_render::display_list::DecodedImage as DI;
-        for (node_id, width, height, pixels) in brows12_js::platform::harvest(&self.canvas_store)
-        {
+        for (node_id, width, height, pixels) in brows12_js::platform::harvest(&self.canvas_store) {
             let node = brows12_html::NodeId(node_id.max(0) as u32);
             let doc = page.document.lock().unwrap();
-            let is_canvas =
-                doc.is_element(node) && doc.local_name(node) == "canvas";
+            let is_canvas = doc.is_element(node) && doc.local_name(node) == "canvas";
             drop(doc);
             if !is_canvas || pixels.is_empty() {
                 continue;
             }
-            page.images
-                .lock()
-                .unwrap()
-                .insert(node, Arc::new(DI { width, height, pixels }));
+            page.images.lock().unwrap().insert(node, Arc::new(DI { width, height, pixels }));
         }
     }
 
     /// Fetch + decode images for the page's `<img>` elements into PageInner.
-    fn load_images_into(
-        &self,
-        page: &Arc<PageInner>,
-    ) -> Result<(), EngineError> {
+    fn load_images_into(&self, page: &Arc<PageInner>) -> Result<(), EngineError> {
         let base = url::Url::parse(&page.url)
             .map_err(|_| brows12_net::NetError::InvalidUrl(page.url.clone()))?;
         let top_site = brows12_storage::registrable_domain(base.host_str().unwrap_or(""));
@@ -358,11 +350,9 @@ impl Tab {
             };
             let Ok(resolved) = base.join(&src) else { continue };
             let resolved = resolved.to_string();
-            if let Ok(resp) = self
-                .engine
-                .tokio
-                .block_on(self.engine.net.send(brows12_net::NetRequest::get(resolved, top_site.clone())))
-            {
+            if let Ok(resp) = self.engine.tokio.block_on(
+                self.engine.net.send(brows12_net::NetRequest::get(resolved, top_site.clone())),
+            ) {
                 if resp.is_success() {
                     if let Ok(img) = decode_image(&resp.body) {
                         out.insert(node, Arc::new(img));
@@ -381,7 +371,7 @@ impl Tab {
         layout: &brows12_layout::LayoutResult,
     ) -> Result<(), EngineError> {
         let images = page.images.lock().unwrap().clone();
-        let scroll_y = page.scroll_y.lock().unwrap().clone();
+        let scroll_y = *page.scroll_y.lock().unwrap();
         let display_list = build_display_list(
             &page.document.lock().unwrap(),
             styles,
@@ -395,9 +385,14 @@ impl Tab {
             for item in &display_list.items {
                 match item {
                     brows12_render::display_list::DisplayItem::Rect { rect, color, .. } => {
-                        eprintln!("DL RECT ({:.0},{:.0} {}x{}) {:?}", rect.x, rect.y, rect.width, rect.height, color)
+                        eprintln!(
+                            "DL RECT ({:.0},{:.0} {}x{}) {:?}",
+                            rect.x, rect.y, rect.width, rect.height, color
+                        )
                     }
-                    brows12_render::display_list::DisplayItem::Text { rect, text, style, .. } => {
+                    brows12_render::display_list::DisplayItem::Text {
+                        rect, text, style, ..
+                    } => {
                         eprintln!(
                             "DL TEXT ({:.0},{:.0} {}x{}) fs={} '{:.24}'",
                             rect.x, rect.y, rect.width, rect.height, style.font_size, text
@@ -460,8 +455,7 @@ impl Tab {
                 .collect::<HashMap<_, _>>()
         };
 
-        let mut styles =
-            brows12_css::compute_styles(&doc.lock().unwrap(), &engine_sheet, &ctx);
+        let mut styles = brows12_css::compute_styles(&doc.lock().unwrap(), &engine_sheet, &ctx);
         let mut layout = brows12_layout::compute_layout(
             &doc.lock().unwrap(),
             &styles,
@@ -472,8 +466,7 @@ impl Tab {
 
         // Container queries: with sizes from the first layout, re-cascade and
         // re-layout once (converges for the common inline-size cases).
-        let has_container_rules =
-            engine_sheet.rules().iter().any(|r| !r.containers.is_empty());
+        let has_container_rules = engine_sheet.rules().iter().any(|r| !r.containers.is_empty());
         if has_container_rules {
             let sizes: HashMap<brows12_html::NodeId, f32> = styles
                 .styles
@@ -502,9 +495,10 @@ impl Tab {
         // CSS transitions: diff against previous styles.
         {
             let mut transitions = page.transitions.lock().unwrap();
-            let now = page.anim_clock_s.lock().unwrap().clone();
+            let now = *page.anim_clock_s.lock().unwrap();
             for (node, next) in styles.styles.iter() {
-                if let Some(prev) = page.styles.lock().unwrap().as_ref().and_then(|m| m.get(*node)) {
+                if let Some(prev) = page.styles.lock().unwrap().as_ref().and_then(|m| m.get(*node))
+                {
                     transitions.observe(*node, prev, next, now);
                 }
             }
@@ -595,6 +589,7 @@ impl Tab {
         Ok(sheets)
     }
 
+    #[allow(dead_code)]
     fn load_images(
         &self,
         document: &Arc<Mutex<brows12_html::Document>>,
@@ -784,9 +779,17 @@ impl Tab {
     /// Scroll the viewport to `y` (CSS px) and re-composite.
     pub fn set_scroll(&self, y: f32) -> Result<(), EngineError> {
         let page = self.live_page()?;
-        let max = page.layout.lock().unwrap().as_ref().map(|l| (l.content_height - self.engine.config.viewport.height).max(0.0)).unwrap_or(0.0);
+        let max = page
+            .layout
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|l| (l.content_height - self.engine.config.viewport.height).max(0.0))
+            .unwrap_or(0.0);
         *page.scroll_y.lock().unwrap() = y.clamp(0.0, max);
-        if let (Some(styles), Some(layout)) = (&*page.styles.lock().unwrap(), &*page.layout.lock().unwrap()) {
+        if let (Some(styles), Some(layout)) =
+            (&*page.styles.lock().unwrap(), &*page.layout.lock().unwrap())
+        {
             self.paint(&page, styles, layout)?;
         }
         Ok(())
@@ -874,7 +877,7 @@ impl Tab {
     /// blits). Produces the same visual result as `paint` but exercises the
     /// GPU path and reports backend/frame statistics.
     pub fn composite_frame(&self) -> Result<Frame, EngineError> {
-        use brows12_compositor::{Compositor as _, Layer};
+        use brows12_compositor::Layer;
         use brows12_render::display_list::ListScope;
 
         let page = self.live_page()?;
@@ -898,12 +901,9 @@ impl Tab {
             ListScope::Content,
         );
         let mut rasterizer = Rasterizer::new(self.engine.fonts.clone());
-        let (content_pm, _) =
-            rasterizer.paint(&content_list, vw, content_h.max(vh))?;
+        let (content_pm, _) = rasterizer.paint(&content_list, vw, content_h.max(vh))?;
 
-        let mut layers = vec![
-            Layer::from_pixmap(content_pm).with_scroll(0.0, -scroll_y),
-        ];
+        let mut layers = vec![Layer::from_pixmap(content_pm).with_scroll(0.0, -scroll_y)];
 
         // Fixed overlay layer: viewport-aligned, ignores scroll.
         let fixed_list = build_display_list(
@@ -942,9 +942,7 @@ impl Tab {
 
     /// Backend + timing stats of the most recent `composite_frame`.
     pub fn compositor_stats(&self) -> Option<brows12_compositor::CompositeStats> {
-        self.live_page()
-            .ok()
-            .and_then(|p| p.compositor_stats.lock().ok().and_then(|g| g.clone()))
+        self.live_page().ok().and_then(|p| p.compositor_stats.lock().ok().and_then(|g| g.clone()))
     }
 
     fn live_page(&self) -> Result<Arc<PageInner>, EngineError> {

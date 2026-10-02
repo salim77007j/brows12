@@ -241,7 +241,7 @@ dependencies = [
 
 [[package]]
 name = "brows12-api"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "brows12-engine",
  "brows12-layout",
@@ -254,7 +254,7 @@ dependencies = [
 
 [[package]]
 name = "brows12-benchmarks"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "brows12-css",
@@ -275,7 +275,7 @@ dependencies = [
 
 [[package]]
 name = "brows12-compositor"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "brows12-render",
  "bytemuck",
@@ -288,7 +288,7 @@ dependencies = [
 
 [[package]]
 name = "brows12-css"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "brows12-html",
  "lightningcss",
@@ -300,7 +300,7 @@ dependencies = [
 
 [[package]]
 name = "brows12-engine"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "brows12-compositor",
@@ -324,7 +324,7 @@ dependencies = [
 
 [[package]]
 name = "brows12-harness"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "brows12-api",
  "brows12-compositor",
@@ -336,7 +336,7 @@ dependencies = [
 
 [[package]]
 name = "brows12-html"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "html5ever",
  "markup5ever_rcdom",
@@ -347,7 +347,7 @@ dependencies = [
 
 [[package]]
 name = "brows12-js"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "base64",
  "brows12-css",
@@ -372,7 +372,7 @@ dependencies = [
 
 [[package]]
 name = "brows12-layout"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "brows12-css",
  "brows12-html",
@@ -384,7 +384,7 @@ dependencies = [
 
 [[package]]
 name = "brows12-net"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "base64",
  "brows12-storage",
@@ -410,7 +410,7 @@ dependencies = [
 
 [[package]]
 name = "brows12-privacy"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "adblock",
  "brows12-storage",
@@ -423,7 +423,7 @@ dependencies = [
 
 [[package]]
 name = "brows12-render"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "brows12-css",
  "brows12-html",
@@ -437,7 +437,7 @@ dependencies = [
 
 [[package]]
 name = "brows12-storage"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "blake3",
  "httpdate",
@@ -453,7 +453,7 @@ dependencies = [
 
 [[package]]
 name = "brows12-tests"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "brows12-css",

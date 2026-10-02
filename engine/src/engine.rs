@@ -65,6 +65,7 @@ pub struct Engine {
     pub(crate) inner: Arc<EngineInner>,
 }
 
+#[allow(clippy::arc_with_non_send_sync)]
 pub struct EngineInner {
     pub config: EngineConfig,
     pub tokio: Arc<tokio::runtime::Runtime>,
@@ -119,6 +120,7 @@ impl Engine {
         }
 
         Engine {
+            #[allow(clippy::arc_with_non_send_sync)]
             inner: Arc::new(EngineInner {
                 config,
                 tokio,
@@ -172,6 +174,7 @@ impl Engine {
     pub fn tab(&self) -> Arc<crate::tab::Tab> {
         let mut next = self.inner.next_tab_id.lock().unwrap();
         *next += 1;
+        #[allow(clippy::arc_with_non_send_sync)]
         let tab = Arc::new(crate::tab::Tab::new(*next, self.inner.clone()));
         self.inner.tabs.lock().unwrap().push(Arc::downgrade(&tab));
         tab

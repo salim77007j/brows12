@@ -32,6 +32,8 @@ fn bench_layout_render(c: &mut Criterion) {
         &layout,
         (1280.0, 720.0),
         &HashMap::new(),
+        0.0,
+        Default::default(),
     );
     let mut group = c.benchmark_group("render");
     group.bench_function("60_sections_raster_1280x720", |b| {

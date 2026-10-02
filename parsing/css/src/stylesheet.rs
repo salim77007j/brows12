@@ -8,14 +8,14 @@ use crate::atr::{
     EasingKeyword, KeyframesMap, LayerRegistry, OwnedFontFace, OwnedKeyframe, OwnedKeyframes,
 };
 use crate::values::Rgba;
+use lightningcss::media_query::MediaList as LcMediaList;
 use lightningcss::rules::container::{ContainerCondition, ContainerRule};
 use lightningcss::rules::font_face::{FontFaceProperty, Source};
 use lightningcss::rules::keyframes::{Keyframe as LcKeyframe, KeyframeSelector, KeyframesRule};
-use lightningcss::rules::layer::{LayerBlockRule, LayerName, LayerStatementRule};
-use lightningcss::media_query::MediaList as LcMediaList;
+use lightningcss::rules::layer::{LayerBlockRule, LayerName};
 use lightningcss::rules::media::MediaRule;
 use lightningcss::rules::style::StyleRule as LcStyleRule;
-use lightningcss::rules::supports::{SupportsRule, SupportsCondition as LcSupportsCondition};
+use lightningcss::rules::supports::{SupportsCondition as LcSupportsCondition, SupportsRule};
 use lightningcss::rules::CssRule;
 use lightningcss::selector::SelectorList;
 use lightningcss::stylesheet::{ParserOptions, StyleSheet as LcStyleSheet};
@@ -210,7 +210,9 @@ fn collect_rules(
             CssRule::Supports(supports) => {
                 collect_supports(supports, origin, ctx, out, counter, registry)
             }
-            CssRule::LayerBlock(layer) => collect_layer_block(layer, origin, ctx, out, counter, registry),
+            CssRule::LayerBlock(layer) => {
+                collect_layer_block(layer, origin, ctx, out, counter, registry)
+            }
             CssRule::LayerStatement(stmt) => {
                 for name in &stmt.names {
                     registry.layers.declare(&layer_path_string(name));
@@ -327,7 +329,7 @@ fn owned_keyframe(k: &LcKeyframe<'static>) -> Option<OwnedKeyframe> {
     let mut offset: Option<f32> = None;
     for sel in &k.selectors {
         let o = match sel {
-            KeyframeSelector::Percentage(p) => p.0 as f32,
+            KeyframeSelector::Percentage(p) => p.0,
             KeyframeSelector::From => 0.0,
             KeyframeSelector::To => 1.0,
             KeyframeSelector::TimelineRangePercentage(_) => continue,
@@ -359,7 +361,10 @@ fn extract_easing(
     }
 }
 
-fn collect_font_face(ff: &lightningcss::rules::font_face::FontFaceRule<'static>, registry: &mut Registry) {
+fn collect_font_face(
+    ff: &lightningcss::rules::font_face::FontFaceRule<'static>,
+    registry: &mut Registry,
+) {
     let mut family = String::new();
     let mut urls = Vec::new();
     let mut weight = None;

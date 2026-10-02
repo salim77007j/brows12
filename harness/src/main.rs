@@ -19,12 +19,14 @@ use brows12_compositor::{Backend, CompositeStats};
 
 #[derive(Debug, Clone)]
 struct Args {
+    #[allow(dead_code)]
     url: Option<String>,
     html: Option<String>,
     png: Option<String>,
     json: Option<String>,
     width: u32,
     height: u32,
+    #[allow(dead_code)]
     timeout_ms: u64,
     animate_ms: u64,
     scroll_y: f32,
@@ -78,7 +80,7 @@ struct LoadOutcome {
     scroll_y: f32,
 }
 
-fn engine_and_tab(width: u32, height: u32) -> (Browser, Arc<Tab>, tokio_broadcast_rx) {
+fn engine_and_tab(width: u32, height: u32) -> (Browser, Arc<Tab>, ConsoleRx) {
     let browser = Browser::builder()
         .viewport(width, height)
         .user_agent("Brows12/0.2 (brows harness)")
@@ -95,9 +97,9 @@ fn engine_and_tab(width: u32, height: u32) -> (Browser, Arc<Tab>, tokio_broadcas
 }
 
 // Type alias to keep the subscription receiver name readable.
-type tokio_broadcast_rx = tokio::sync::broadcast::Receiver<EngineEvent>;
+type ConsoleRx = tokio::sync::broadcast::Receiver<EngineEvent>;
 
-fn drain_console(rx: &mut tokio_broadcast_rx, tab_id: u64) -> Vec<String> {
+fn drain_console(rx: &mut ConsoleRx, tab_id: u64) -> Vec<String> {
     let mut out = Vec::new();
     while let Ok(event) = rx.try_recv() {
         if let EngineEvent::Console { tab, message } = event {
@@ -109,7 +111,7 @@ fn drain_console(rx: &mut tokio_broadcast_rx, tab_id: u64) -> Vec<String> {
     out
 }
 
-fn measure_load(tab: &Arc<Tab>, console_rx: &mut tokio_broadcast_rx, args: &Args) -> LoadOutcome {
+fn measure_load(tab: &Arc<Tab>, console_rx: &mut ConsoleRx, args: &Args) -> LoadOutcome {
     let t0 = Instant::now();
     let load_result = if let Some(ref html) = args.html {
         let content = std::fs::read_to_string(html)
@@ -130,7 +132,7 @@ fn measure_load(tab: &Arc<Tab>, console_rx: &mut tokio_broadcast_rx, args: &Args
     }
 
     let frame = tab.frame();
-    let png = frame.as_ref().map(|f| f.encode_png().ok()).flatten();
+    let png = frame.as_ref().and_then(|f| f.encode_png().ok());
     let stats = tab.compositor_stats();
 
     LoadOutcome {
@@ -200,11 +202,8 @@ fn write_json(path: &Option<String>, value: &serde_json::Value) {
         if let Some(parent) = std::path::Path::new(path).parent() {
             let _ = std::fs::create_dir_all(parent);
         }
-        std::fs::write(
-            path,
-            serde_json::to_string_pretty(value).unwrap_or_else(|_| "{}".into()),
-        )
-        .expect("write json");
+        std::fs::write(path, serde_json::to_string_pretty(value).unwrap_or_else(|_| "{}".into()))
+            .expect("write json");
     }
 }
 
