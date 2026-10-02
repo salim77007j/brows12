@@ -643,11 +643,7 @@ pub fn install<'js>(
                 let s = surface!(store, id);
                 let mut s = s.lock().unwrap();
                 // offset is in BYTES per spec; convert to element index.
-                let elem_size = if typ == gl::UNSIGNED_INT {
-                    4
-                } else {
-                    2
-                };
+                let elem_size = if typ == gl::UNSIGNED_INT { 4 } else { 2 };
                 let first = offset / elem_size;
                 s.draw(mode, first, count, true, typ);
             }

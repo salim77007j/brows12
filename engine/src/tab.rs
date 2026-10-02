@@ -799,10 +799,7 @@ impl Tab {
         let _ = self
             .engine
             .events
-            .send(EngineEvent::NavigationCommitted {
-                tab: self.id,
-                url: virtual_url.to_string(),
-            });
+            .send(EngineEvent::NavigationCommitted { tab: self.id, url: virtual_url.to_string() });
         let top_site = url::Url::parse(virtual_url)
             .ok()
             .and_then(|u| u.host_str().map(|h| h.to_string()))

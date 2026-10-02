@@ -58,7 +58,12 @@ pub fn gpu_shared() -> Option<Arc<GpuShared>> {
         }))
         .ok()?;
         let name = if info.name.is_empty() { "gpu-adapter".into() } else { info.name };
-        Some(Arc::new(GpuShared { adapter_name: name, backend: format!("{:?}", info.backend), device, queue }))
+        Some(Arc::new(GpuShared {
+            adapter_name: name,
+            backend: format!("{:?}", info.backend),
+            device,
+            queue,
+        }))
     })
     .clone()
 }
@@ -369,7 +374,12 @@ impl WebGlStore {
 
     /// Create (or resize) the WebGL context for a canvas. `None` when no GPU
     /// adapter exists — the JS side then returns `null` from getContext.
-    pub fn get_context(&self, node_id: i32, width: u32, height: u32) -> Option<(Arc<Mutex<WebGlSurface>>, String, String)> {
+    pub fn get_context(
+        &self,
+        node_id: i32,
+        width: u32,
+        height: u32,
+    ) -> Option<(Arc<Mutex<WebGlSurface>>, String, String)> {
         let gpu = gpu_shared()?;
         let mut map = self.surfaces.lock().unwrap();
         let surface = map.entry(node_id).or_insert_with(|| {
@@ -446,7 +456,8 @@ fn compile_shader(src: &str, stage: Stage, map: &BindingMap) -> Result<CompiledS
                     inner.scalar_kind(),
                     Some(naga::ScalarKind::Sint) | Some(naga::ScalarKind::Uint)
                 );
-                uniforms.insert(binding.binding, (gv.name.clone().unwrap_or_default(), size, is_int));
+                uniforms
+                    .insert(binding.binding, (gv.name.clone().unwrap_or_default(), size, is_int));
             }
             (naga::AddressSpace::Handle, naga::TypeInner::Image { .. }) => {
                 textures.insert(binding.binding, gv.name.clone().unwrap_or_default());
@@ -454,11 +465,8 @@ fn compile_shader(src: &str, stage: Stage, map: &BindingMap) -> Result<CompiledS
             _ => {}
         }
     }
-    let entry = module
-        .entry_points
-        .first()
-        .map(|e| e.name.clone())
-        .unwrap_or_else(|| "main".to_string());
+    let entry =
+        module.entry_points.first().map(|e| e.name.clone()).unwrap_or_else(|| "main".to_string());
 
     let mut out = String::new();
     let mut writer =
@@ -491,7 +499,10 @@ impl WebGlSurface {
     pub fn create_shader(&mut self, stage: u32) -> u32 {
         let id = self.objects.alloc();
         let st = if stage == gl::VERTEX_SHADER { Stage::Vertex } else { Stage::Fragment };
-        self.objects.shaders.insert(id, GlShader { stage: st, source: String::new(), compiled: Err("not compiled".into()) });
+        self.objects.shaders.insert(
+            id,
+            GlShader { stage: st, source: String::new(), compiled: Err("not compiled".into()) },
+        );
         id
     }
     pub fn delete_shader(&mut self, id: u32) {
@@ -570,11 +581,8 @@ impl WebGlSurface {
     /// re-normalizes with the merged map (see link_program).
     fn binding_map_for(&self, stage: Stage, src: &str) -> BindingMap {
         let other = String::new();
-        let (a, b): (&str, &str) = if stage == Stage::Vertex {
-            (src, other.as_str())
-        } else {
-            (other.as_str(), src)
-        };
+        let (a, b): (&str, &str) =
+            if stage == Stage::Vertex { (src, other.as_str()) } else { (other.as_str(), src) };
         glsl::collect_bindings(a, b).unwrap_or_default()
     }
 
@@ -665,7 +673,13 @@ impl WebGlSurface {
         self.objects
             .programs
             .get(&prog)
-            .map(|p| if p.linked.is_some() { String::new() } else { "link failed (see shader logs)".into() })
+            .map(|p| {
+                if p.linked.is_some() {
+                    String::new()
+                } else {
+                    "link failed (see shader logs)".into()
+                }
+            })
             .unwrap_or_else(|| "program not found".into())
     }
 
@@ -706,7 +720,8 @@ impl WebGlSurface {
     pub fn uniform_3f(&mut self, loc: i32, x: f64, y: f64, z: f64) {
         self.uniform_write(
             loc,
-            &[(x as f32).to_le_bytes(), (y as f32).to_le_bytes(), (z as f32).to_le_bytes()].concat(),
+            &[(x as f32).to_le_bytes(), (y as f32).to_le_bytes(), (z as f32).to_le_bytes()]
+                .concat(),
         );
     }
     pub fn uniform_4f(&mut self, loc: i32, x: f64, y: f64, z: f64, w: f64) {
@@ -786,7 +801,15 @@ impl WebGlSurface {
     }
 
     /// Captures the CURRENT ARRAY_BUFFER binding (GL semantics).
-    pub fn vertex_attrib_pointer(&mut self, idx: u32, size: i32, typ: u32, normalized: bool, stride: i32, offset: u32) {
+    pub fn vertex_attrib_pointer(
+        &mut self,
+        idx: u32,
+        size: i32,
+        typ: u32,
+        normalized: bool,
+        stride: i32,
+        offset: u32,
+    ) {
         let buf = self.st.array_buffer;
         let attrib = GlAttrib { buffer: buf, size, normalized, stride, offset, typ };
         if self.st.vao != 0 {
@@ -885,7 +908,9 @@ impl WebGlSurface {
                 }
             }
             gl::CULL_FACE => self.st.cull = true,
-            gl::SCISSOR_TEST => self.st.scissor = Some([0, 0, self.width as i32, self.height as i32]),
+            gl::SCISSOR_TEST => {
+                self.st.scissor = Some([0, 0, self.width as i32, self.height as i32])
+            }
             _ => {}
         }
     }
@@ -1014,11 +1039,8 @@ impl WebGlSurface {
                 err(&mut self.st, gl::INVALID_OPERATION);
                 return;
             };
-            let shadows: Vec<(u32, Vec<u8>)> = linked
-                .uniform_shadows
-                .iter()
-                .map(|(b, v)| (*b, v.clone()))
-                .collect();
+            let shadows: Vec<(u32, Vec<u8>)> =
+                linked.uniform_shadows.iter().map(|(b, v)| (*b, v.clone())).collect();
             let uniforms: Vec<u32> = linked.uniform_kinds.keys().copied().collect();
             let textures: Vec<(u32, ())> = linked
                 .vs
@@ -1219,23 +1241,19 @@ impl WebGlSurface {
         let pipeline = if let Some(p) = self.pipelines.get(&key) {
             p.clone()
         } else {
-            let bgl0 =
-                gpu.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    label: Some("brows12-webgl-bgl0"),
-                    entries: &bgl0_entries,
-                });
-            let bgl1 =
-                gpu.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    label: Some("brows12-webgl-bgl1"),
-                    entries: &bgl1_entries,
-                });
-            let layout = gpu
-                .device
-                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: Some("brows12-webgl-pl"),
-                    bind_group_layouts: &[Some(&bgl0), Some(&bgl1)],
-                    immediate_size: 0,
-                });
+            let bgl0 = gpu.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("brows12-webgl-bgl0"),
+                entries: &bgl0_entries,
+            });
+            let bgl1 = gpu.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("brows12-webgl-bgl1"),
+                entries: &bgl1_entries,
+            });
+            let layout = gpu.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("brows12-webgl-pl"),
+                bind_group_layouts: &[Some(&bgl0), Some(&bgl1)],
+                immediate_size: 0,
+            });
             let vs_mod = gpu.device.create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some("brows12-webgl-vs"),
                 source: wgpu::ShaderSource::Wgsl(vs_wgsl.into()),
@@ -1248,8 +1266,9 @@ impl WebGlSurface {
                 Some(wgpu::DepthStencilState {
                     format: wgpu::TextureFormat::Depth24Plus,
                     depth_write_enabled: Some(st.depth_mask),
-                    depth_compare: Some(Self::depth_compare(st.depth_func)
-                        .unwrap_or(wgpu::CompareFunction::Less)),
+                    depth_compare: Some(
+                        Self::depth_compare(st.depth_func).unwrap_or(wgpu::CompareFunction::Less),
+                    ),
                     stencil: wgpu::StencilState::default(),
                     bias: wgpu::DepthBiasState::default(),
                 })
@@ -1280,11 +1299,7 @@ impl WebGlSurface {
             let attr_arrays: Vec<[wgpu::VertexAttribute; 1]> = vbufs
                 .iter()
                 .map(|(_, _, fmt, off, loc)| {
-                    [wgpu::VertexAttribute {
-                        format: *fmt,
-                        offset: *off,
-                        shader_location: *loc,
-                    }]
+                    [wgpu::VertexAttribute { format: *fmt, offset: *off, shader_location: *loc }]
                 })
                 .collect();
             let layouts: Vec<Option<wgpu::VertexBufferLayout>> = vbufs
@@ -1298,42 +1313,40 @@ impl WebGlSurface {
                     })
                 })
                 .collect();
-            let pipeline = gpu
-                .device
-                .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                    label: Some("brows12-webgl-pipeline"),
-                    layout: Some(&layout),
-                    vertex: wgpu::VertexState {
-                        module: &vs_mod,
-                        entry_point: Some(&vs_entry),
-                        buffers: &layouts,
-                        compilation_options: Default::default(),
+            let pipeline = gpu.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("brows12-webgl-pipeline"),
+                layout: Some(&layout),
+                vertex: wgpu::VertexState {
+                    module: &vs_mod,
+                    entry_point: Some(&vs_entry),
+                    buffers: &layouts,
+                    compilation_options: Default::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &fs_mod,
+                    entry_point: Some(&fs_entry),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: wgpu::TextureFormat::Rgba8Unorm,
+                        blend,
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: Default::default(),
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: topo,
+                    cull_mode: cull,
+                    front_face: if st.front_face == gl::CW {
+                        wgpu::FrontFace::Cw
+                    } else {
+                        wgpu::FrontFace::Ccw
                     },
-                    fragment: Some(wgpu::FragmentState {
-                        module: &fs_mod,
-                        entry_point: Some(&fs_entry),
-                        targets: &[Some(wgpu::ColorTargetState {
-                            format: wgpu::TextureFormat::Rgba8Unorm,
-                            blend,
-                            write_mask: wgpu::ColorWrites::ALL,
-                        })],
-                        compilation_options: Default::default(),
-                    }),
-                    primitive: wgpu::PrimitiveState {
-                        topology: topo,
-                        cull_mode: cull,
-                        front_face: if st.front_face == gl::CW {
-                            wgpu::FrontFace::Cw
-                        } else {
-                            wgpu::FrontFace::Ccw
-                        },
-                        ..Default::default()
-                    },
-                    depth_stencil: depth,
-                    multisample: wgpu::MultisampleState::default(),
-                    multiview_mask: None,
-                    cache: None,
-                });
+                    ..Default::default()
+                },
+                depth_stencil: depth,
+                multisample: wgpu::MultisampleState::default(),
+                multiview_mask: None,
+                cache: None,
+            });
             self.pipelines.insert(key, pipeline.clone());
             pipeline
         };
@@ -1362,10 +1375,8 @@ impl WebGlSurface {
             ubufs.push(dev);
         }
         for (i, (b, _)) in uniform_shadows.iter().enumerate() {
-            bg0_entries.push(wgpu::BindGroupEntry {
-                binding: *b,
-                resource: ubufs[i].as_entire_binding(),
-            });
+            bg0_entries
+                .push(wgpu::BindGroupEntry { binding: *b, resource: ubufs[i].as_entire_binding() });
         }
         struct TexHandles {
             binding: u32,
@@ -1462,11 +1473,9 @@ impl WebGlSurface {
             st.viewport[2].max(1),
             st.viewport[3].max(1),
         );
-        let mut encoder = gpu
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("brows12-webgl-enc"),
-            });
+        let mut encoder = gpu.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("brows12-webgl-enc"),
+        });
         let depth_view = self.depth.as_ref().map(|d| d.create_view(&Default::default()));
         let clear_color = if st.pending_clear {
             wgpu::LoadOp::Clear(wgpu::Color {
@@ -1507,20 +1516,15 @@ impl WebGlSurface {
                 multiview_mask: None,
             });
             let (sw, sh, sx, sy) = match st.scissor {
-                Some([x, y, w, h]) => (w.max(0) as u32, h.max(0) as u32, x.max(0) as u32, y.max(0) as u32),
+                Some([x, y, w, h]) => {
+                    (w.max(0) as u32, h.max(0) as u32, x.max(0) as u32, y.max(0) as u32)
+                }
                 None => (self.width, self.height, 0, 0),
             };
             pass.set_scissor_rect(sx, sy, sw.max(1), sh.max(1));
             let vf = vw as f32;
             let _ = vf;
-            pass.set_viewport(
-                vx as f32,
-                vy as f32,
-                vw as f32,
-                vh as f32,
-                0.0,
-                1.0,
-            );
+            pass.set_viewport(vx as f32, vy as f32, vw as f32, vh as f32, 0.0, 1.0);
             pass.set_pipeline(&pipeline);
             // Always bind both groups (empty layouts are valid; the pipeline
             // expects a bind group at every index it declares).
@@ -1552,9 +1556,8 @@ impl WebGlSurface {
         if self.st.pending_clear {
             // Flush the clear through an empty pass.
             let view = self.color.create_view(&Default::default());
-            let mut enc = gpu
-                .device
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+            let mut enc =
+                gpu.device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
             let c = self.st.clear_color;
             enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("brows12-webgl-clear"),
@@ -1563,7 +1566,12 @@ impl WebGlSurface {
                     resolve_target: None,
                     depth_slice: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color { r: c[0], g: c[1], b: c[2], a: c[3] }),
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: c[0],
+                            g: c[1],
+                            b: c[2],
+                            a: c[3],
+                        }),
                         store: wgpu::StoreOp::Store,
                     },
                 })],
@@ -1584,9 +1592,7 @@ impl WebGlSurface {
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let mut enc = gpu
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+        let mut enc = gpu.device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
         enc.copy_texture_to_buffer(
             wgpu::TexelCopyTextureInfo {
                 texture: &self.color,
@@ -1652,5 +1658,3 @@ fn std140_size(inner: &naga::TypeInner) -> u32 {
         _ => 64, // conservative fallback for documented-unsupported types
     }
 }
-
-

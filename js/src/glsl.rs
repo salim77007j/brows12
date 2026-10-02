@@ -40,10 +40,7 @@ pub struct BindingMap {
 
 /// Predefined macros (GL_ES semantics) + user `#define`s.
 fn predefined() -> Vec<(String, String)> {
-    vec![
-        ("GL_ES".into(), "1".into()),
-        ("GL_FRAGMENT_PRECISION_HIGH".into(), "1".into()),
-    ]
+    vec![("GL_ES".into(), "1".into()), ("GL_FRAGMENT_PRECISION_HIGH".into(), "1".into())]
 }
 
 /// Replace comments with spaces (length- and newline-preserving).
@@ -122,14 +119,16 @@ fn preprocess(src: &str, defines: &mut Vec<(String, String)>) -> Result<Vec<Item
             let dir = toks.next().unwrap_or("").to_ascii_lowercase();
             match dir.as_str() {
                 "version" => {
-                    let ver: u32 =
-                        toks.next().unwrap_or("").parse().map_err(|_| "#version value".to_string())?;
+                    let ver: u32 = toks
+                        .next()
+                        .unwrap_or("")
+                        .parse()
+                        .map_err(|_| "#version value".to_string())?;
                     items.push(Item::Version(ver));
                 }
                 "define" => {
-                    let rest_def = rest.trim_start_matches(|c: char| {
-                        !(c.is_ascii_alphabetic() || c == '_')
-                    });
+                    let rest_def =
+                        rest.trim_start_matches(|c: char| !(c.is_ascii_alphabetic() || c == '_'));
                     let name: String = rest_def
                         .chars()
                         .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
@@ -159,9 +158,8 @@ fn preprocess(src: &str, defines: &mut Vec<(String, String)>) -> Result<Vec<Item
                 }
                 "else" => {
                     let (taken, parent_active) = {
-                        let last = cond_stack
-                            .last()
-                            .ok_or_else(|| "#else without #if".to_string())?;
+                        let last =
+                            cond_stack.last().ok_or_else(|| "#else without #if".to_string())?;
                         let parent = cond_stack[..cond_stack.len() - 1].iter().all(|(_, a)| *a);
                         (last.0, parent)
                     };
@@ -191,10 +189,7 @@ fn preprocess(src: &str, defines: &mut Vec<(String, String)>) -> Result<Vec<Item
         return Err("unbalanced #if/#endif".into());
     }
     // Merge code items into one text block (statements processed later).
-    Ok(items
-        .into_iter()
-        .filter(|i| !matches!(i, Item::Cond { .. }))
-        .collect())
+    Ok(items.into_iter().filter(|i| !matches!(i, Item::Cond { .. })).collect())
 }
 
 /// `#if` support: integer literals, defined(NAME), NAME (looking up
@@ -209,10 +204,8 @@ fn eval_const_if(expr: &str, defines: &[(String, String)]) -> Result<bool, Strin
             let end = stripped.find(')').ok_or("defined( without )")?;
             (stripped[..end].trim().to_string(), "(".len() + end + ")".len())
         } else {
-            let name: String = rest
-                .chars()
-                .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
-                .collect();
+            let name: String =
+                rest.chars().take_while(|c| c.is_ascii_alphanumeric() || *c == '_').collect();
             (name.clone(), name.len())
         };
         let val = if defines.iter().any(|(n, _)| n == &name) { "1" } else { "0" };
@@ -365,11 +358,7 @@ fn top_statements(code: &str) -> Vec<(String, bool)> {
 fn uniform_declarators(stmt: &str) -> Option<(String, Vec<String>)> {
     let s = stmt.trim();
     // Skip an existing layout(...) prefix if present.
-    let s = if s.starts_with("layout") {
-        s.split_once(") ")?.1
-    } else {
-        s
-    };
+    let s = if s.starts_with("layout") { s.split_once(") ")?.1 } else { s };
     let rest = s.strip_prefix("uniform").map(|r| r.trim())?;
     let mut words = rest.split_whitespace();
     let ty = words.next()?.to_string();
@@ -392,9 +381,10 @@ pub fn collect_bindings(vs: &str, fs: &str) -> Result<BindingMap, String> {
     let mut next_attrib = 0u32;
     let mut next_varying = 10u32;
 
-    let scan = |src: &str, stage: Stage,
-     map: &mut BindingMap,
-     counters: (&mut u32, &mut u32, &mut u32, &mut u32)|
+    let scan = |src: &str,
+                stage: Stage,
+                map: &mut BindingMap,
+                counters: (&mut u32, &mut u32, &mut u32, &mut u32)|
      -> Result<(), String> {
         let (nu, ns, na, nv) = counters;
         let items = preprocess(src, &mut predefined())?;
@@ -415,17 +405,16 @@ pub fn collect_bindings(vs: &str, fs: &str) -> Result<BindingMap, String> {
                 }
                 let in_stmt = s.starts_with("in ");
                 let out_stmt = s.starts_with("out ");
-                let kind: Option<Kind> = if s.starts_with("attribute ")
-                    || (in_stmt && stage == Stage::Vertex)
-                {
-                    Some(Kind::Attr)
-                } else if (s.starts_with("varying ") || out_stmt) && stage == Stage::Vertex
-                    || (in_stmt && stage == Stage::Fragment)
-                {
-                    Some(Kind::Var)
-                } else {
-                    None
-                };
+                let kind: Option<Kind> =
+                    if s.starts_with("attribute ") || (in_stmt && stage == Stage::Vertex) {
+                        Some(Kind::Attr)
+                    } else if (s.starts_with("varying ") || out_stmt) && stage == Stage::Vertex
+                        || (in_stmt && stage == Stage::Fragment)
+                    {
+                        Some(Kind::Var)
+                    } else {
+                        None
+                    };
                 if let Some(kind) = kind {
                     let kw_len = if s.starts_with("attribute ") {
                         "attribute ".len()
@@ -439,12 +428,7 @@ pub fn collect_bindings(vs: &str, fs: &str) -> Result<BindingMap, String> {
                     let rest = &s[kw_len..];
                     let words = rest.split_whitespace().collect::<Vec<_>>();
                     if words.len() >= 2 && !words[0].contains('(') {
-                        let name = words[1]
-                            .split(',')
-                            .next()
-                            .unwrap_or("")
-                            .trim()
-                            .to_string();
+                        let name = words[1].split(',').next().unwrap_or("").trim().to_string();
                         let valid = name
                             .chars()
                             .next()
@@ -455,7 +439,8 @@ pub fn collect_bindings(vs: &str, fs: &str) -> Result<BindingMap, String> {
                                 Kind::Attr => &mut map.attributes,
                                 Kind::Var => &mut map.varyings,
                             };
-                            if let std::collections::btree_map::Entry::Vacant(e) = table.entry(name) {
+                            if let std::collections::btree_map::Entry::Vacant(e) = table.entry(name)
+                            {
                                 let slot = match kind {
                                     Kind::Attr => &mut *na,
                                     Kind::Var => &mut *nv,
@@ -488,8 +473,18 @@ pub fn collect_bindings(vs: &str, fs: &str) -> Result<BindingMap, String> {
     };
 
     // VS first (attributes/varyings declared there define locations).
-    scan(vs, Stage::Vertex, &mut map, (&mut next_uniform, &mut next_sampler, &mut next_attrib, &mut next_varying))?;
-    scan(fs, Stage::Fragment, &mut map, (&mut next_uniform, &mut next_sampler, &mut next_attrib, &mut next_varying))?;
+    scan(
+        vs,
+        Stage::Vertex,
+        &mut map,
+        (&mut next_uniform, &mut next_sampler, &mut next_attrib, &mut next_varying),
+    )?;
+    scan(
+        fs,
+        Stage::Fragment,
+        &mut map,
+        (&mut next_uniform, &mut next_sampler, &mut next_attrib, &mut next_varying),
+    )?;
     Ok(map)
 }
 
@@ -646,10 +641,8 @@ fn rewrite_sampler_calls(s: &str, samplers: &std::collections::BTreeMap<String, 
             let pos = search_from + rel;
             let rest = &out[pos + needle.len()..];
             let trimmed = rest.trim_start();
-            let ident: String = trimmed
-                .chars()
-                .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
-                .collect();
+            let ident: String =
+                trimmed.chars().take_while(|c| c.is_ascii_alphanumeric() || *c == '_').collect();
             let rewrite = samplers.contains_key(&ident)
                 && trimmed[ident.len()..].trim_start().starts_with(',');
             if !rewrite {
@@ -674,10 +667,9 @@ fn convert_100(s: &str, stage: Stage) -> String {
     // Function-body texture calls.
     out = out.replace("texture2D(", "texture(").replace("textureCube(", "texture(");
     // Declaration keywords at statement start.
-    for (from, to) in [
-        ("attribute ", "in "),
-        ("varying ", if stage == Stage::Vertex { "out " } else { "in " }),
-    ] {
+    for (from, to) in
+        [("attribute ", "in "), ("varying ", if stage == Stage::Vertex { "out " } else { "in " })]
+    {
         if out.trim_start().starts_with(from) {
             out = out.replacen(from, to, 1);
         }
@@ -693,8 +685,7 @@ fn find_word(s: &str, w: &str) -> Option<usize> {
         let abs = start + pos;
         let before_ok = abs == 0 || !bytes[abs - 1].is_ascii_alphanumeric();
         let end = abs + w.len();
-        let after_ok =
-            end >= s.len() || !bytes[end].is_ascii_alphanumeric() && bytes[end] != b'_';
+        let after_ok = end >= s.len() || !bytes[end].is_ascii_alphanumeric() && bytes[end] != b'_';
         if before_ok && after_ok {
             return Some(abs);
         }

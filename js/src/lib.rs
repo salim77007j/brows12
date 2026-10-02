@@ -28,19 +28,19 @@ pub mod glue;
 pub mod glue_b64;
 pub mod platform;
 pub mod runtime;
+pub mod wasm;
 pub mod webgl;
 pub mod webgl_bindings;
-pub mod wasm;
 pub mod worker;
 
 pub use bindings::{WorkerRegistry, WsSenders};
 pub use canvas::{CanvasStore, CanvasSurface};
-pub use webgl::{WebGlStore, WebGlSurface, gpu_available};
 pub use dom_handle::DomHandle;
 pub use environment::JsEnvironment;
 pub use event_loop::JsTask;
 pub use runtime::Script;
 pub use runtime::{JsExecutionError, JsRuntime};
+pub use webgl::{gpu_available, WebGlStore, WebGlSurface};
 pub use worker::WorkerHandle;
 
 use thiserror::Error;
