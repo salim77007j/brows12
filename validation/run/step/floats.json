@@ -1,0 +1,22 @@
+{
+  "console": [],
+  "engine": "brows12 v0.2.0",
+  "error": null,
+  "final_url": "brows12://fixture/",
+  "input": "validation/run/fixtures/floats.html",
+  "loaded": true,
+  "render": {
+    "compositor": null,
+    "png_bytes": 86016,
+    "scroll_y": 0.0
+  },
+  "screenshot": "validation/run/step/floats_brows.png",
+  "timing": {
+    "full_pipeline_ms": 14
+  },
+  "title": "Float Test",
+  "viewport": {
+    "height": 800,
+    "width": 1280
+  }
+}

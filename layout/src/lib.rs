@@ -9,15 +9,16 @@
 //! Inline flow (mixed inline boxes on one line), floats and tables are
 //! tracked in docs/ROADMAP.md.
 
-use brows12_css::values::{AutoPx, Display, Len, Position as CssPosition, TextAlign};
+use brows12_css::values::{AutoPx, ClearSide, Display, FloatSide, Len, Position as CssPosition, TextAlign};
 use brows12_css::ComputedStyle;
 use brows12_html::{Document, NodeData, NodeId};
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 pub mod inline;
 pub use inline::{
-    apply_alignment, collapse_ws, InlineFlowLayout, InlineItem, InlineLine, InlineSegment,
+    apply_alignment, collapse_ws, FloatBand, InlineFlowLayout, InlineItem, InlineLine, InlineSegment,
 };
 
 /// Viewport the page lays out into.
@@ -66,6 +67,20 @@ pub enum LeafContext {
     },
 }
 
+/// A placed float box (CSS 2.1 §9.5): removed from normal flow, shifted
+/// left/right, with following line boxes shortened around it.
+#[derive(Debug, Clone, Copy)]
+pub struct PlacedFloat {
+    pub node: NodeId,
+    /// `true` for `float: left`, `false` for `float: right`.
+    pub left: bool,
+    /// Final absolute rectangle.
+    pub rect: Rect,
+    /// The containing block (parent element): floats only affect line
+    /// boxes and blocks inside this subtree.
+    pub cb: NodeId,
+}
+
 /// Result of a layout pass: absolute rects for every laid-out node.
 #[derive(Debug, Clone, Default)]
 pub struct LayoutResult {
@@ -83,6 +98,8 @@ pub struct LayoutResult {
     /// Nodes painted as part of an inline flow (must not emit their own
     /// display items). Includes every member except each group's first.
     pub inline_covered: HashSet<NodeId>,
+    /// Placed floats in document order (for line banding and paint).
+    pub floats: Vec<PlacedFloat>,
 }
 
 impl LayoutResult {
@@ -179,7 +196,16 @@ fn taffy_auto_len(v: AutoPx) -> taffy::LengthPercentageAuto {
 
 fn taffy_position(style: &ComputedStyle) -> taffy::Position {
     match style.position {
-        CssPosition::Static => taffy::Position::Relative, // taffy default is Relative
+        CssPosition::Static => {
+            // Floats are removed from normal flow: lay them out as taffy
+            // absolutes so sibling boxes ignore them; the float post-pass
+            // then positions them with the CSS 2.1 float rules.
+            if style.float != FloatSide::None {
+                taffy::Position::Absolute
+            } else {
+                taffy::Position::Relative // taffy default is Relative
+            }
+        }
         CssPosition::Relative => taffy::Position::Relative,
         // taffy positions absolute children against their parent box; the
         // post-pass below re-anchors `fixed` to the viewport.
@@ -681,8 +707,12 @@ pub fn compute_layout(
     // Collapse a single html>body chain so body fills the viewport root.
     let layout_root = root_taffy;
     let measurer_ref = &measurer;
+    // Shared band store for the two-pass compute: pass 1 measures inline
+    // groups at full width, the float pass derives per-group bands, pass 2
+    // re-measures with bands so wrapping heights flow to later siblings.
+    let bands_cell: RefCell<HashMap<taffy::NodeId, Vec<FloatBand>>> = RefCell::new(HashMap::new());
     let measure_fn = |input: taffy::LayoutInput,
-                      _node: taffy::NodeId,
+                      node: taffy::NodeId,
                       ctx: Option<&mut LeafContext>,
                       _style: &taffy::Style|
      -> taffy::LayoutOutput {
@@ -691,7 +721,23 @@ pub fn compute_layout(
                 taffy::AvailableSpace::Definite(w) => Some(w),
                 _ => None,
             });
-            let (w, h) = measurer_ref.measure(leaf, max_width);
+            let (w, h) = match leaf {
+                LeafContext::Inline { items, .. } => {
+                    let bands = bands_cell
+                        .borrow()
+                        .get(&node)
+                        .cloned()
+                        .unwrap_or_default();
+                    let flow = inline::layout_inline_banded(
+                        measurer_ref,
+                        items,
+                        max_width,
+                        &bands,
+                    );
+                    (flow.width, flow.height.max(0.0))
+                }
+                other => measurer_ref.measure(other, max_width),
+            };
             let size = taffy::Size { width: w, height: h };
             return taffy::LayoutOutput::from_sizes(
                 size,
@@ -704,17 +750,27 @@ pub fn compute_layout(
         )
     };
 
-    let _ = tree.compute_layout_with_measure(
-        layout_root,
-        taffy::Size {
-            width: taffy::AvailableSpace::Definite(viewport.width),
-            height: taffy::AvailableSpace::Definite(viewport.height),
-        },
-        measure_fn,
-    );
+    let run_compute = |tree: &mut taffy::TaffyTree<LeafContext>,
+                       root: taffy::NodeId,
+                       measure: &dyn Fn(
+        taffy::LayoutInput,
+        taffy::NodeId,
+        Option<&mut LeafContext>,
+        &taffy::Style,
+    ) -> taffy::LayoutOutput|
+     -> Result<(), taffy::TaffyError> {
+        tree.compute_layout_with_measure(
+            root,
+            taffy::Size {
+                width: taffy::AvailableSpace::Definite(viewport.width),
+                height: taffy::AvailableSpace::Definite(viewport.height),
+            },
+            measure,
+        )
+    };
+    let _ = run_compute(&mut tree, layout_root, &measure_fn);
 
     // Extract absolute rects via depth-first accumulation.
-    let mut result = LayoutResult::default();
     let taffy_to_dom: HashMap<taffy::NodeId, NodeId> =
         node_ids.iter().map(|(d, t)| (*t, *d)).collect();
     fn extract(
@@ -764,23 +820,8 @@ pub fn compute_layout(
             eprintln!("  dom={dom:?} {label} -> taffy={taf:?}");
         }
     }
-    extract(&taffy_to_dom, &tree, &mut result.rects, root_taffy, (0.0, 0.0));
 
-    // ---- Inline flows: final shape at each group's resolved box width ----
-    for (dom_id, (items, align)) in inline_ctx.iter() {
-        let Some(&tn) = node_ids.get(dom_id) else { continue };
-        let w = match tree.layout(tn) {
-            Ok(l) => l.size.width,
-            Err(_) => continue,
-        };
-        let mut flow = inline::layout_inline(measurer, items, Some(w));
-        apply_alignment(&mut flow, w, *align);
-        result.inline_flows.insert(*dom_id, flow);
-    }
-    result.inline_covered = covered;
-
-    // ---- v0.2 post-pass: fixed anchoring + transforms + content bounds ----
-    // Children map for subtree shifting.
+    // ---- Tree maps shared by all post-passes (pre-order doc order) ----
     let mut children_of: HashMap<NodeId, Vec<NodeId>> = HashMap::new();
     let mut all_elements: Vec<NodeId> = Vec::new();
     fn collect_children(
@@ -796,45 +837,92 @@ pub fn compute_layout(
         }
     }
     collect_children(doc, start, &mut children_of, &mut all_elements);
+    let mut parent_of: HashMap<NodeId, NodeId> = HashMap::new();
+    fn collect_parents(doc: &Document, node: NodeId, parent_of: &mut HashMap<NodeId, NodeId>) {
+        for &c in &doc.node(node).children {
+            parent_of.insert(c, node);
+            collect_parents(doc, c, parent_of);
+        }
+    }
+    collect_parents(doc, start, &mut parent_of);
+    let doc_order: HashMap<NodeId, usize> =
+        all_elements.iter().enumerate().map(|(i, &n)| (n, i)).collect();
 
-    // Shift every descendant of `node` by `dx`/`dy` (recursive, pre-order).
-    fn shift_subtree(
-        rects: &mut HashMap<NodeId, Rect>,
-        children_of: &HashMap<NodeId, Vec<NodeId>>,
-        node: NodeId,
-        dx: f32,
-        dy: f32,
-        depth: usize,
-    ) {
-        if depth > 256 {
-            return;
-        }
-        if let Some(r) = rects.get_mut(&node) {
-            r.x += dx;
-            r.y += dy;
-        }
-        if let Some(kids) = children_of.get(&node) {
-            for &k in kids {
-                shift_subtree(rects, children_of, k, dx, dy, depth + 1);
+    // ---- Pass 1 rects (no bands) → place floats → derive bands ----
+    let mut rects1: HashMap<NodeId, Rect> = HashMap::new();
+    extract(&taffy_to_dom, &tree, &mut rects1, root_taffy, (0.0, 0.0));
+    let floats1 = place_floats(doc, styles, &mut rects1, &children_of, &parent_of, &all_elements);
+    {
+        let mut bmap = bands_cell.borrow_mut();
+        for (dom_id, _) in inline_ctx.iter() {
+            let (Some(gr), Some(&tn)) = (rects1.get(dom_id), node_ids.get(dom_id)) else {
+                continue;
+            };
+            let leaf_w = tree.layout(tn).map(|l| l.size.width).unwrap_or(gr.width);
+            let w = container_content_width(styles, &parent_of, &rects1, *dom_id, leaf_w);
+            let bands = bands_for_group(&parent_of, *dom_id, *gr, w, &floats1);
+            if !bands.is_empty() {
+                bmap.insert(tn, bands);
             }
         }
     }
+
+    // ---- Pass 2: recompute with bands (wrapping heights reach siblings) ----
+    // taffy caches leaf measurements; identical inputs would return the
+    // pass-1 heights. Invalidate every node so measure runs again with the
+    // new bands.
+    for &tn in node_ids.values() {
+        let _ = tree.mark_dirty(tn);
+    }
+    let _ = run_compute(&mut tree, layout_root, &measure_fn);
+
+    // ---- Final extraction + float placement on final rects ----
+    let mut result = LayoutResult::default();
+    extract(&taffy_to_dom, &tree, &mut result.rects, root_taffy, (0.0, 0.0));
+    result.floats =
+        place_floats(doc, styles, &mut result.rects, &children_of, &parent_of, &all_elements);
+
+    // ---- clear + BFC float-avoidance (pushes blocks below floats) ----
+    apply_clear_and_bfc(
+        doc,
+        styles,
+        &mut result.rects,
+        &children_of,
+        &parent_of,
+        &doc_order,
+        &result.floats,
+    );
+
+    // ---- Inline flows: final shape at each group's resolved box width ----
+    for (dom_id, (items, align)) in inline_ctx.iter() {
+        let Some(&tn) = node_ids.get(dom_id) else { continue };
+        let w = match tree.layout(tn) {
+            Ok(l) => l.size.width,
+            Err(_) => continue,
+        };
+        let (Some(gr), Some(first)) = (result.rects.get(dom_id).copied(), Some(*dom_id)) else {
+            continue;
+        };
+        let _ = first;
+        // Lines span the containing block's content width (the leaf itself
+        // shrink-wraps), shortened by float bands.
+        let gw = container_content_width(styles, &parent_of, &result.rects, *dom_id, w);
+        let bands = bands_for_group(&parent_of, *dom_id, gr, gw, &result.floats);
+        let mut flow = inline::layout_inline_banded(measurer, items, Some(gw), &bands);
+        apply_alignment(&mut flow, gw, *align);
+        result.inline_flows.insert(*dom_id, flow);
+    }
+    result.inline_covered = covered;
+
+    // ---- v0.2 post-pass: fixed anchoring + transforms + content bounds ----
+    // (children_of / parent_of / shift_subtree are defined above, shared
+    // with the float passes)
 
     // position: absolute — resolve insets ourselves against the parent's
     // padding box (taffy does not resolve percentage top/bottom insets on
     // absolute children). Auto top+bottom keep the STATIC flow position
     // (CSS 2.1 §10.3.7); same for auto left+right on the x axis.
     {
-        // Parent map (walk from the layout start node).
-        let mut parent_of: HashMap<NodeId, NodeId> = HashMap::new();
-        fn collect_parents(doc: &Document, node: NodeId, parent_of: &mut HashMap<NodeId, NodeId>) {
-            for &c in &doc.node(node).children {
-                parent_of.insert(c, node);
-                collect_parents(doc, c, parent_of);
-            }
-        }
-        collect_parents(doc, start, &mut parent_of);
-
         let absolutes: Vec<NodeId> = all_elements
             .iter()
             .copied()
@@ -938,10 +1026,9 @@ pub fn compute_layout(
                 );
             }
             if dx != 0.0 || dy != 0.0 {
-                if let Some(rr) = result.rects.get_mut(&n) {
-                    rr.x = nx;
-                    rr.y = ny;
-                }
+                // Single application: the subtree shift alone moves the box
+                // and its descendants to the resolved position (assigning
+                // nx on top of the shift would double-apply the delta).
                 shift_subtree(&mut result.rects, &children_of, n, dx, dy, 0);
             }
         }
@@ -1002,6 +1089,386 @@ pub fn compute_layout(
     result.content_height = max_h.max(viewport.height);
     result.content_width = max_w.max(viewport.width);
     result
+}
+
+/// Shift every descendant of `node` by `dx`/`dy` (recursive, pre-order).
+fn shift_subtree(
+    rects: &mut HashMap<NodeId, Rect>,
+    children_of: &HashMap<NodeId, Vec<NodeId>>,
+    node: NodeId,
+    dx: f32,
+    dy: f32,
+    depth: usize,
+) {
+    if depth > 256 {
+        return;
+    }
+    if let Some(r) = rects.get_mut(&node) {
+        r.x += dx;
+        r.y += dy;
+    }
+    if let Some(kids) = children_of.get(&node) {
+        for &k in kids {
+            shift_subtree(rects, children_of, k, dx, dy, depth + 1);
+        }
+    }
+}
+
+/// Is `candidate` an ancestor-or-self of `node`?
+fn in_chain(parent_of: &HashMap<NodeId, NodeId>, node: NodeId, candidate: NodeId) -> bool {
+    let mut cur = Some(node);
+    while let Some(c) = cur {
+        if c == candidate {
+            return true;
+        }
+        cur = parent_of.get(&c).copied();
+    }
+    false
+}
+
+/// Content width of the block container that owns an inline group. The
+/// anonymous inline leaf shrink-wraps to its content, so float bands and
+/// line limits must be resolved against the CONTAINING block's content
+/// width (CSS 2.1 §9.5: line boxes span the containing block, shortened
+/// by floats) — otherwise short paragraphs beside floats never wrap.
+fn container_content_width(
+    styles: &brows12_css::StyleMap,
+    parent_of: &HashMap<NodeId, NodeId>,
+    rects: &HashMap<NodeId, Rect>,
+    dom_id: NodeId,
+    fallback: f32,
+) -> f32 {
+    let Some(&parent) = parent_of.get(&dom_id) else { return fallback };
+    let Some(pr) = rects.get(&parent) else { return fallback };
+    let mut w = pr.width;
+    if let Some(ps) = styles.get(parent) {
+        w -= len_px(&ps.padding.left)
+            + len_px(&ps.padding.right)
+            + len_px(&ps.border_width.left)
+            + len_px(&ps.border_width.right);
+    }
+    if w > 0.5 { w } else { fallback }
+}
+
+/// Place every floated element with the CSS 2.1 §9.5 float rules:
+/// left/right edge stacking against earlier floats of the same containing
+/// block, collision push-down, `clear`, and the "not above earlier float
+/// tops" constraint. Floats leave normal flow, so only their own rect and
+/// subtree move; the nearest block-formatting-context ancestor grows to
+/// contain them.
+fn place_floats(
+    doc: &Document,
+    styles: &brows12_css::StyleMap,
+    rects: &mut HashMap<NodeId, Rect>,
+    children_of: &HashMap<NodeId, Vec<NodeId>>,
+    parent_of: &HashMap<NodeId, NodeId>,
+    doc_order: &[NodeId],
+) -> Vec<PlacedFloat> {
+    let mut placed: Vec<PlacedFloat> = Vec::new();
+    let mut top_floor: HashMap<NodeId, f32> = HashMap::new();
+
+    for &n in doc_order {
+        let Some(style) = styles.get(n) else { continue };
+        if !doc.is_element(n) || style.float == FloatSide::None {
+            continue;
+        }
+        if std::env::var("BROWS_DEBUG").is_ok() {
+            let name = match &doc.node(n).data {
+                NodeData::Element { name, .. } => name.clone(),
+                _ => "?".into(),
+            };
+            eprintln!("FLOAT n={n:?} <{name}> side={:?} rect={:?}", style.float, rects.get(&n));
+        }
+        let Some(&parent) = parent_of.get(&n) else { continue };
+        let Some(r0) = rects.get(&n).copied() else { continue };
+        if r0.width <= 0.0 || r0.height <= 0.0 {
+            continue;
+        }
+        let Some(p_rect) = rects.get(&parent).copied() else { continue };
+        let p_style = styles.get(parent);
+
+        // Containing block: parent's padding box.
+        let (cb_x, cb_y, cb_w) = match p_style {
+            Some(ps) => (
+                p_rect.x + len_px(&ps.border_width.left),
+                p_rect.y + len_px(&ps.border_width.top),
+                (p_rect.width
+                    - len_px(&ps.border_width.left)
+                    - len_px(&ps.border_width.right))
+                .max(0.0),
+            ),
+            None => (p_rect.x, p_rect.y, p_rect.width),
+        };
+        let cb_right = cb_x + cb_w;
+
+        // Static position (where the box would have been in flow): after
+        // the previous in-flow siblings.
+        let mut y = cb_y + p_style.map(|ps| len_px(&ps.padding.top)).unwrap_or(0.0);
+        if let Some(sibs) = children_of.get(&parent) {
+            for &sib in sibs {
+                if sib == n {
+                    break;
+                }
+                let Some(ss) = styles.get(sib) else { continue };
+                if ss.display == Display::None
+                    || ss.float != FloatSide::None
+                    || ss.position == CssPosition::Absolute
+                    || ss.position == CssPosition::Fixed
+                {
+                    continue;
+                }
+                if let Some(sr) = rects.get(&sib) {
+                    let mb = match ss.margin.bottom {
+                        AutoPx::Len(Len::Px(px)) => px,
+                        _ => 0.0,
+                    };
+                    y = y.max(sr.y + sr.height + mb);
+                }
+            }
+        }
+        // Rule 5: not above the top of any earlier float in this CB.
+        if let Some(&tf) = top_floor.get(&parent) {
+            y = y.max(tf);
+        }
+        // `clear` on the float itself.
+        for pf in &placed {
+            if !in_chain(parent_of, n, pf.cb) {
+                continue;
+            }
+            let side_match = match style.clear {
+                ClearSide::Left => pf.left,
+                ClearSide::Right => !pf.left,
+                ClearSide::Both => true,
+                ClearSide::None => false,
+            };
+            if side_match {
+                y = y.max(pf.rect.y + pf.rect.height);
+            }
+        }
+
+        // Horizontal placement with collision push-down (§9.5.1 rules 2-4).
+        let w = r0.width;
+        let h = r0.height;
+        let mut x;
+        let mut guard = 0;
+        loop {
+            guard += 1;
+            let mut left_inner = cb_x;
+            let mut right_inner = cb_right;
+            let mut lowest = 0.0f32;
+            let mut any_overlap = false;
+            for pf in placed.iter().filter(|pf| pf.cb == parent) {
+                let fr = pf.rect;
+                if fr.y < y + h - 0.5 && fr.y + fr.height > y + 0.5 {
+                    any_overlap = true;
+                    lowest = lowest.max(fr.y + fr.height);
+                    if pf.left {
+                        left_inner = left_inner.max(fr.x + fr.width);
+                    } else {
+                        right_inner = right_inner.min(fr.x);
+                    }
+                }
+            }
+            x = if style.float == FloatSide::Left { left_inner } else { right_inner - w };
+            let collide = if style.float == FloatSide::Left {
+                x + w > right_inner + 0.5
+            } else {
+                x < left_inner - 0.5
+            };
+            if !collide || !any_overlap || guard > 48 || lowest <= y + 0.5 {
+                break;
+            }
+            y = lowest;
+        }
+
+        top_floor.insert(parent, top_floor.get(&parent).copied().unwrap_or(y).max(y));
+
+        if std::env::var("BROWS_DEBUG").is_ok() {
+            eprintln!(
+                "PLACE n={n:?} side={:?} cb=({cb_x:.0},{cb_y:.0} w={cb_w:.0}) r0=({:.0},{:.0} {}x{}) -> ({x:.0},{y:.0})",
+                style.float, r0.x, r0.y, r0.width, r0.height
+            );
+        }
+
+        let dx = x - r0.x;
+        let dy = y - r0.y;
+        if dx != 0.0 || dy != 0.0 {
+            // Single application: the subtree shift moves the float box and
+            // all descendants (never assign the absolute x on top of it —
+            // that would double-apply the delta).
+            shift_subtree(rects, children_of, n, dx, dy, 0);
+        }
+        placed.push(PlacedFloat {
+            node: n,
+            left: style.float == FloatSide::Left,
+            rect: Rect { x, y, width: w, height: h },
+            cb: parent,
+        });
+    }
+
+    // The nearest block-formatting-context ancestor contains its floats:
+    // grow its height to the float bottom (root, overflow != visible,
+    // flex/table boxes).
+    for pf in &placed {
+        let mut cur = parent_of.get(&pf.node).copied();
+        while let Some(a) = cur {
+            let is_root = !parent_of.contains_key(&a);
+            let bfc = is_root
+                || styles.get(a).map(|s| {
+                    s.overflow != brows12_css::values::OverflowKeyword::Visible
+                        || matches!(
+                            s.display,
+                            Display::Flex | Display::Table | Display::TableCell
+                        )
+                }) == Some(true);
+            if bfc {
+                if let Some(ar) = rects.get_mut(&a) {
+                    let bottom = pf.rect.y + pf.rect.height;
+                    if bottom > ar.y + ar.height {
+                        ar.height = bottom - ar.y;
+                    }
+                }
+                break;
+            }
+            cur = parent_of.get(&a).copied();
+        }
+    }
+
+    placed
+}
+
+/// Float bands for one inline group, in the group's LOCAL coordinates.
+/// A float governs the group when the float's containing block is an
+/// ancestor-or-self of the group's first member (CSS: floats shorten line
+/// boxes of content in their containing block subtree).
+fn bands_for_group(
+    parent_of: &HashMap<NodeId, NodeId>,
+    dom_id: NodeId,
+    group_rect: Rect,
+    group_width: f32,
+    floats: &[PlacedFloat],
+) -> Vec<FloatBand> {
+    let mut bands = Vec::new();
+    for pf in floats {
+        // A float never shortens the line boxes of its own subtree.
+        if in_chain(parent_of, dom_id, pf.node) {
+            continue;
+        }
+        if !in_chain(parent_of, dom_id, pf.cb) {
+            continue;
+        }
+        let y0 = pf.rect.y - group_rect.y;
+        let y1 = y0 + pf.rect.height;
+        if y1 <= 0.5 {
+            continue; // float entirely above this group
+        }
+        if pf.left {
+            let li = (pf.rect.x + pf.rect.width - group_rect.x).clamp(0.0, group_width);
+            if li > 0.5 {
+                bands.push(FloatBand { y0, y1, left: li, right: 0.0 });
+            }
+        } else {
+            let ri = (group_rect.x + group_width - pf.rect.x).clamp(0.0, group_width);
+            if ri > 0.5 {
+                bands.push(FloatBand { y0, y1, left: 0.0, right: ri });
+            }
+        }
+    }
+    bands
+}
+
+/// `clear` (§9.5.2) and BFC float-avoidance: push blocks below matching
+/// floats, shifting later siblings and growing ancestor heights so
+/// nothing stacks on top of the float region.
+fn apply_clear_and_bfc(
+    doc: &Document,
+    styles: &brows12_css::StyleMap,
+    rects: &mut HashMap<NodeId, Rect>,
+    children_of: &HashMap<NodeId, Vec<NodeId>>,
+    parent_of: &HashMap<NodeId, NodeId>,
+    doc_order: &HashMap<NodeId, usize>,
+    floats: &[PlacedFloat],
+) {
+    for &n in doc_order.keys() {
+        let Some(style) = styles.get(n) else { continue };
+        if !doc.is_element(n)
+            || style.display == Display::None
+            || style.float != FloatSide::None
+            || style.position == CssPosition::Absolute
+            || style.position == CssPosition::Fixed
+        {
+            continue;
+        }
+        let wants_clear = style.clear != ClearSide::None;
+        let is_bfc = matches!(
+            style.overflow,
+            brows12_css::values::OverflowKeyword::Hidden
+                | brows12_css::values::OverflowKeyword::Scroll
+                | brows12_css::values::OverflowKeyword::Auto
+        );
+        if !wants_clear && !is_bfc {
+            continue;
+        }
+        let Some(r) = rects.get(&n).copied() else { continue };
+        if r.width <= 0.0 || r.height <= 0.0 {
+            continue;
+        }
+        let self_order = doc_order.get(&n).copied().unwrap_or(usize::MAX);
+        let mut floor = 0.0f32;
+        for pf in floats {
+            if doc_order.get(&pf.node).copied().unwrap_or(0) >= self_order {
+                continue; // only earlier floats constrain
+            }
+            if !in_chain(parent_of, n, pf.cb) {
+                continue;
+            }
+            let h_overlap = pf.rect.x + pf.rect.width > r.x + 0.5
+                && pf.rect.x < r.x + r.width - 0.5;
+            let v_overlap = pf.rect.y < r.y + r.height && pf.rect.y + pf.rect.height > r.y;
+            let bottom = pf.rect.y + pf.rect.height;
+            if wants_clear {
+                let side_match = match style.clear {
+                    ClearSide::Left => pf.left,
+                    ClearSide::Right => !pf.left,
+                    ClearSide::Both => true,
+                    ClearSide::None => false,
+                };
+                // clear ignores horizontal position (CSS 2.1 §9.5.2)
+                if side_match && v_overlap {
+                    floor = floor.max(bottom);
+                }
+            }
+            if is_bfc && h_overlap && v_overlap && pf.rect.y < r.y + r.height {
+                // a BFC box must not overlap floats at all
+                floor = floor.max(bottom);
+            }
+        }
+        if floor > r.y + 0.5 {
+            let dy = floor - r.y;
+            shift_subtree(rects, children_of, n, 0.0, dy, 0);
+            if let Some(&parent) = parent_of.get(&n) {
+                if let Some(sibs) = children_of.get(&parent) {
+                    let mut after = false;
+                    for &s in sibs {
+                        if s == n {
+                            after = true;
+                            continue;
+                        }
+                        if after {
+                            shift_subtree(rects, children_of, s, 0.0, dy, 0);
+                        }
+                    }
+                }
+                let mut cur = Some(parent);
+                while let Some(a) = cur {
+                    if let Some(ar) = rects.get_mut(&a) {
+                        ar.height += dy;
+                    }
+                    cur = parent_of.get(&a).copied();
+                }
+            }
+        }
+    }
 }
 
 /// Extract a px value from a resolved `Len` (percent contributes 0 here;

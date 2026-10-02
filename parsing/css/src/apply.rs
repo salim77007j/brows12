@@ -28,6 +28,32 @@ pub(crate) fn apply_property(
         viewport_height: ctx.viewport_height,
     };
     match prop {
+        // Author-defined `--*` declarations (including the `float`/`clear`
+        // rewrites from `stylesheet::rewrite_float_decls`) land in the
+        // element's custom map; the cascade resolves `--brows-float` /
+        // `--brows-clear` into typed fields afterwards.
+        Property::Custom(cp) => {
+            let name = match &cp.name {
+                lightningcss::properties::custom::CustomPropertyName::Custom(d) => {
+                    d.0.to_string()
+                }
+                lightningcss::properties::custom::CustomPropertyName::Unknown(i) => {
+                    i.0.to_string()
+                }
+            };
+            if name.starts_with("--brows-") {
+                // Reserved values are simple keywords (left/right/none/both);
+                // take the first ident token from the raw token list.
+                for tov in cp.value.0.iter() {
+                    if let lightningcss::properties::custom::TokenOrValue::Token(t) = tov {
+                        if let lightningcss::properties::custom::Token::Ident(word) = t {
+                            s.custom.insert(name, word.to_string());
+                        }
+                        break;
+                    }
+                }
+            }
+        }
         Property::BackgroundColor(c) => {
             if let Some(rgba) = color(c, s.color) {
                 s.background_color = rgba;

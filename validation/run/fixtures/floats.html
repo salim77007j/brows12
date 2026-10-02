@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Float Test</title>
+<style>
+  body { margin: 0; font-family: sans-serif; color: #202122; }
+  .content { padding: 10px; }
+  h1 { margin: 0 0 10px 0; font-size: 28px; }
+  .infobox {
+    float: right;
+    width: 280px;
+    border: 1px solid #a2a9b1;
+    background: #f8f9fa;
+    padding: 8px;
+    margin: 0 0 10px 14px;
+    font-size: 13px;
+  }
+  .infobox h2 { margin: 0 0 6px 0; font-size: 16px; text-align: center; }
+  .leftbox {
+    float: left;
+    width: 120px;
+    background: #eaf3ff;
+    border: 1px solid #72777d;
+    padding: 6px;
+    margin: 0 10px 8px 0;
+    font-size: 12px;
+  }
+  p { margin: 0 0 10px 0; line-height: 1.5; }
+  .cleared { clear: both; background: #fff2cc; padding: 6px; border: 1px dashed #b8860b; }
+</style>
+</head>
+<body>
+<div class="content">
+  <h1>Ferris the Crab</h1>
+  <div class="infobox">
+    <h2>Rust</h2>
+    <p><b>Paradigm:</b> multi-paradigm</p>
+    <p><b>First appeared:</b> 2010</p>
+    <p><b>Developer:</b> Rust Foundation</p>
+  </div>
+  <div class="leftbox">This box floats left, so text must wrap around BOTH boxes at once when the line is long enough to reach from the right edge all the way here.</div>
+  <p>Rust is a multi-paradigm, general-purpose programming language that emphasizes performance, type safety, and concurrency. It enforces memory safety without a garbage collector by means of an ownership system where each value has a unique owner.</p>
+  <p>The compiler checks these ownership rules statically and refuses programs that would create dangling pointers or data races. This design allows predictable, low-latency performance comparable to C and C++ while preventing entire classes of memory bugs at compile time.</p>
+  <p class="cleared">This paragraph has clear:both, so it must start BELOW both floating boxes, not beside them.</p>
+  <p>After the cleared block, normal full-width flow resumes. The text here should once again span the entire content width without any wrapping constraints applied by earlier floats, because the cleared element established a new position below them.</p>
+</div>
+</body>
+</html>

@@ -118,21 +118,110 @@ struct AtCtx {
     layer: Option<String>,
 }
 
+/// Rewrite `float:` / `clear:` declarations into reserved custom
+/// properties (`--brows-float` / `--brows-clear`) so lightningcss keeps
+/// them. Only declaration-name positions are rewritten: the name must be
+/// preceded by `{`, `;`, or the start of the text (optionally with
+/// whitespace), which selectors (`a.float:hover`), values
+/// (`animation-name: float`) and function arguments never match.
+pub(crate) fn rewrite_float_decls(css: &str) -> String {
+    let lower_has = css.to_ascii_lowercase();
+    if !lower_has.contains("float") && !lower_has.contains("clear") {
+        return css.to_string();
+    }
+    let bytes = css.as_bytes();
+    let mut out = String::with_capacity(css.len() + 16);
+    let mut i = 0usize;
+    // At a declaration position? (start / after '{' / after ';')
+    let mut decl_pos = true;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if b == b'{' || b == b';' {
+            decl_pos = true;
+            out.push(b as char);
+            i += 1;
+            continue;
+        }
+        if b == b'}' {
+            decl_pos = false;
+            out.push(b as char);
+            i += 1;
+            continue;
+        }
+        if b.is_ascii_whitespace() {
+            out.push(b as char);
+            i += 1;
+            continue;
+        }
+        if !decl_pos {
+            // Copy a run up to the next structural boundary verbatim.
+            let start = i;
+            while i < bytes.len() && bytes[i] != b'{' && bytes[i] != b';' {
+                i += 1;
+            }
+            out.push_str(&css[start..i]);
+            decl_pos = false;
+            continue;
+        }
+        // Declaration name position: try to match `float:` / `clear:`.
+        let rest = &css[i..];
+        let lower = rest.to_ascii_lowercase();
+        let (keyword, replacement) = if lower.starts_with("float") {
+            ("float", "--brows-float")
+        } else if lower.starts_with("clear") {
+            ("clear", "--brows-clear")
+        } else {
+            ("", "")
+        };
+        if !keyword.is_empty() {
+            let after = &lower[keyword.len()..];
+            let ws = after.len() - after.trim_start().len();
+            // `after` starts right after the keyword; the colon (if any)
+            // follows the optional whitespace.
+            if after[ws..].starts_with(':') {
+                out.push_str(replacement);
+                // Copy `keyword` + whitespace + ':' verbatim from the input.
+                out.push_str(&rest[keyword.len()..keyword.len() + ws + 1]);
+                i += keyword.len() + ws + 1;
+                decl_pos = false;
+                continue;
+            }
+        }
+        // Not float/clear: copy the name up to ':' or structural char.
+        let start = i;
+        while i < bytes.len() && bytes[i] != b':' && bytes[i] != b'{' && bytes[i] != b';' {
+            i += 1;
+        }
+        out.push_str(&css[start..i]);
+        if i < bytes.len() && bytes[i] == b':' {
+            out.push(':');
+            i += 1;
+            decl_pos = false;
+        }
+    }
+    out
+}
+
 impl Stylesheet {
     /// Parse CSS source into a stylesheet. Rules keep their source order.
     /// Custom properties are resolved at the text level before parsing
     /// (see `vartext`): this makes `var()` design tokens work for the
     /// document-global scope model v0.2 ships.
     pub fn parse(css: &str, origin: Origin) -> Result<Self, crate::CssError> {
+        // lightningcss does not model `float`/`clear`; rewrite them into
+        // reserved custom properties (declaration-position only) so they
+        // survive parsing and reach the cascade.
+        let css = rewrite_float_decls(css);
+
         // Harvest custom property definitions from the raw text.
         let mut custom_defs = std::collections::HashMap::new();
-        crate::vartext::collect_custom_defs(css, &mut custom_defs);
+        crate::vartext::collect_custom_defs(&css, &mut custom_defs);
 
         // If the sheet references vars, substitute and re-parse.
         let effective = if css.contains("var(") {
-            crate::vartext::substitute_vars_text(css, &custom_defs)
+            crate::vartext::substitute_vars_text(&css, &custom_defs)
         } else {
-            css.to_string()
+            css
         };
 
         let sheet = LcStyleSheet::parse(&effective, ParserOptions::default())
@@ -453,3 +542,38 @@ pub fn resolve_color(
 
 /// A very small helper used by the UA stylesheet builder.
 pub const UA_RESET: &str = include_str!("ua.css");
+
+#[cfg(test)]
+mod rewrite_tests {
+    use super::*;
+
+    #[test]
+    fn rewrite_basic() {
+        let out = rewrite_float_decls(".infobox { float: right; }");
+        println!("OUT1: {out}");
+        assert!(out.contains("--brows-float: right"), "got: {out}");
+        let out2 = rewrite_float_decls("a { clear: both; float:left; color: red }");
+        println!("OUT2: {out2}");
+        assert!(out2.contains("--brows-clear: both"));
+        assert!(out2.contains("--brows-float:left"));
+        assert!(out2.contains("color: red"));
+        let out3 = rewrite_float_decls("a.float:hover { color: blue }");
+        println!("OUT3: {out3}");
+        assert!(!out3.contains("--brows-float"), "selector must not be rewritten");
+    }
+
+    #[test]
+    fn custom_prop_survives_parse() {
+        let sheet = Stylesheet::parse(".infobox { --brows-float: right; }", Origin::Author).unwrap();
+        let mut found = false;
+        for r in &sheet.rules {
+            for p in &r.declarations {
+                println!("DECL: {p:?}");
+                if matches!(p, lightningcss::properties::Property::Custom(_)) {
+                    found = true;
+                }
+            }
+        }
+        assert!(found, "custom property must survive lightningcss parse");
+    }
+}

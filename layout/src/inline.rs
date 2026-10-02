@@ -83,6 +83,10 @@ pub struct InlineLine {
     /// Baseline y within the flow box.
     pub baseline: f32,
     pub width: f32,
+    /// Float insets for this line: content starts at `left_inset` and the
+    /// line's right limit is `box_width - right_inset`.
+    pub left_inset: f32,
+    pub right_inset: f32,
     pub segments: Vec<InlineSegment>,
 }
 
@@ -94,6 +98,39 @@ pub struct InlineFlowLayout {
     pub width: f32,
     /// Total height of all lines.
     pub height: f32,
+}
+
+/// One horizontal obstacle band for float-aware line wrapping, in the
+/// flow box's LOCAL coordinates (y measured from the flow top, left/right
+/// measured from the flow's left edge).
+///
+/// Lines overlapping [y0, y1) must start after `left` and end before
+/// `width - right` (the caller passes the flow width separately).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct FloatBand {
+    pub y0: f32,
+    pub y1: f32,
+    /// How far the line's left edge is pushed right by left floats.
+    pub left: f32,
+    /// How far the line's right edge is pulled in by right floats.
+    pub right: f32,
+}
+
+/// Left/right insets at local `y` from all bands overlapping the line's
+/// height (CSS 2.1 §9.5: a line box shortens around every float whose
+/// top edge is above the line's top and whose bottom edge is below it;
+/// we use the line's top edge as the reference, the standard simple
+/// approximation).
+fn insets_at(bands: &[FloatBand], y: f32) -> (f32, f32) {
+    let mut left = 0.0f32;
+    let mut right = 0.0f32;
+    for b in bands {
+        if b.y0 <= y + 0.5 && b.y1 > y + 0.5 {
+            left = left.max(b.left);
+            right = right.max(b.right);
+        }
+    }
+    (left, right)
 }
 
 const ASCENT_FACTOR: f32 = 0.80;
@@ -174,6 +211,19 @@ pub fn layout_inline(
     items: &[InlineItem],
     max_width: Option<f32>,
 ) -> InlineFlowLayout {
+    layout_inline_banded(measurer, items, max_width, &[])
+}
+
+/// Float-aware variant: every line box is shortened by the float bands
+/// overlapping its vertical position, and line content is offset by the
+/// left inset (text wraps around floats exactly like the block engines
+/// of major browsers).
+pub fn layout_inline_banded(
+    measurer: &TextMeasurer,
+    items: &[InlineItem],
+    max_width: Option<f32>,
+    bands: &[FloatBand],
+) -> InlineFlowLayout {
     if items.is_empty() {
         return InlineFlowLayout::default();
     }
@@ -237,34 +287,77 @@ pub fn layout_inline(
         }
     }
 
-    // Break tokens into lines.
-    let mut line_tokens: Vec<Vec<Token>> = Vec::new();
+    // Break tokens into lines. Band-aware: each line's available width is
+    // the box width minus the float insets at the line's start y, and line
+    // content starts at the left inset (text flows around floats).
+    struct BrokenLine<'a> {
+        toks: Vec<Token<'a>>,
+        left: f32,
+        right: f32,
+    }
+    let mut lines_out: Vec<BrokenLine> = Vec::new();
     let mut cur: Vec<Token> = Vec::new();
     let mut cur_w = 0.0f32;
     let limit = if pre_any || nowrap { None } else { max_width.filter(|w| *w > 0.0) };
+    let mut completed_y = 0.0f32;
+    let (mut line_left, mut line_right) = insets_at(bands, completed_y);
+    // Height of one line by the same formula the assembly phase uses.
+    fn line_h_of(toks: &[Token], items: &[InlineItem]) -> f32 {
+        let mut max_ascent = 0.0f32;
+        let mut max_descent = 0.0f32;
+        let mut lh = 0.0f32;
+        for t in toks {
+            let it = &items[t.item];
+            max_ascent = max_ascent.max(it.font_size * ASCENT_FACTOR);
+            max_descent = max_descent.max(it.font_size * DESCENT_FACTOR);
+            lh = lh.max(it.line_height_px);
+        }
+        lh.max(max_ascent + max_descent)
+    }
+    // Flush the current line at a break point: drop trailing spaces,
+    // record the line with its insets, advance the y cursor, re-query the
+    // float insets for the next line.
+    fn break_line<'a>(
+        cur: &mut Vec<Token<'a>>,
+        items: &[InlineItem],
+        bands: &[FloatBand],
+        lines_out: &mut Vec<BrokenLine<'a>>,
+        cur_w: &mut f32,
+        completed_y: &mut f32,
+        line_left: &mut f32,
+        line_right: &mut f32,
+    ) {
+        while cur.last().map(|t| t.is_space).unwrap_or(false) {
+            cur.pop();
+        }
+        let h = line_h_of(cur, items);
+        lines_out.push(BrokenLine { toks: std::mem::take(cur), left: *line_left, right: *line_right });
+        *completed_y += h;
+        *cur_w = 0.0;
+        let ins = insets_at(bands, *completed_y);
+        *line_left = ins.0;
+        *line_right = ins.1;
+    }
     for tok in tokens {
         if tok.is_break {
-            line_tokens.push(std::mem::take(&mut cur));
-            cur_w = 0.0;
+            // Hard break (<br>): flush the current line even if empty.
+            break_line(&mut cur, items, bands, &mut lines_out, &mut cur_w, &mut completed_y, &mut line_left, &mut line_right);
             continue;
         }
         if tok.is_space && cur.is_empty() {
             continue; // drop leading spaces
         }
-        let fits = match limit {
-            None => true,
-            Some(w) => cur_w + tok.width <= w + 0.5,
+        let avail = match limit {
+            None => f32::INFINITY,
+            Some(w) => (w - line_left - line_right).max(0.0),
         };
+        let fits = cur_w + tok.width <= avail + 0.5;
         if fits || cur.is_empty() {
             cur.push(tok);
             cur_w += tok.width;
         } else {
             // Break: drop trailing spaces of the finished line.
-            while cur.last().map(|t| t.is_space).unwrap_or(false) {
-                cur.pop();
-            }
-            line_tokens.push(std::mem::take(&mut cur));
-            cur_w = 0.0;
+            break_line(&mut cur, items, bands, &mut lines_out, &mut cur_w, &mut completed_y, &mut line_left, &mut line_right);
             if tok.is_space {
                 continue; // drop the space at the break
             }
@@ -273,13 +366,14 @@ pub fn layout_inline(
         }
     }
     if !cur.is_empty() {
-        line_tokens.push(cur);
+        lines_out.push(BrokenLine { toks: cur, left: line_left, right: line_right });
     }
 
     // Assemble line boxes.
     let mut flow = InlineFlowLayout::default();
     let mut y = 0.0f32;
-    for toks in line_tokens {
+    for bl in lines_out {
+        let toks = &bl.toks;
         if toks.is_empty() {
             continue;
         }
@@ -287,7 +381,7 @@ pub fn layout_inline(
         let mut max_ascent = 0.0f32;
         let mut max_descent = 0.0f32;
         let mut line_h = 0.0f32;
-        for t in &toks {
+        for t in toks {
             let it = &items[t.item];
             max_ascent = max_ascent.max(it.font_size * ASCENT_FACTOR);
             max_descent = max_descent.max(it.font_size * DESCENT_FACTOR);
@@ -301,8 +395,8 @@ pub fn layout_inline(
         // (fewer paint buffers; style identical by construction), tracking
         // the running x position of each token within the line.
         let mut segments: Vec<InlineSegment> = Vec::new();
-        let mut x = 0.0f32;
-        for t in &toks {
+        let mut x = bl.left;
+        for t in toks {
             let it = &items[t.item];
             if let Some(last) = segments.last_mut() {
                 if last.item == t.item {
@@ -333,7 +427,15 @@ pub fn layout_inline(
             });
             x += t.width;
         }
-        flow.lines.push(InlineLine { y, height: line_h, baseline, width, segments });
+        flow.lines.push(InlineLine {
+            y,
+            height: line_h,
+            baseline,
+            width,
+            left_inset: bl.left,
+            right_inset: bl.right,
+            segments,
+        });
         y += line_h;
     }
     flow.width = flow.lines.iter().map(|l| l.width).fold(0.0f32, f32::max);
@@ -341,14 +443,18 @@ pub fn layout_inline(
     flow
 }
 
-/// Apply text-align: shift each line's segments within `box_width`.
+/// Apply text-align: shift each line's segments within `box_width`,
+/// honouring per-line float insets (lines align inside their shortened
+/// band, like Chrome).
 pub fn apply_alignment(flow: &mut InlineFlowLayout, box_width: f32, align: TextAlign) {
     for line in &mut flow.lines {
+        let avail = (box_width - line.left_inset - line.right_inset).max(0.0);
         let dx = match align {
-            TextAlign::Center => ((box_width - line.width) / 2.0).max(0.0),
-            TextAlign::Right => (box_width - line.width).max(0.0),
-            _ => 0.0,
+            TextAlign::Center => line.left_inset + ((avail - line.width) / 2.0).max(0.0),
+            TextAlign::Right => line.left_inset + (avail - line.width).max(0.0),
+            _ => line.left_inset,
         };
+        let dx = dx - line.left_inset; // segments already start at left_inset
         if dx > 0.0 {
             for seg in &mut line.segments {
                 seg.x += dx;

@@ -54,6 +54,29 @@ pub enum Display {
     TableCell,
 }
 
+/// `float` — takes a box out of normal flow and shifts it left/right
+/// (CSS 2.1 §9.5). lightningcss does not model this property, so the
+/// declaration is rewritten to `--brows-float` at parse time and resolved
+/// from the custom-property map during cascade.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FloatSide {
+    #[default]
+    None,
+    Left,
+    Right,
+}
+
+/// `clear` — forbid boxes with matching floats beside an element
+/// (CSS 2.1 §9.5.2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ClearSide {
+    #[default]
+    None,
+    Left,
+    Right,
+    Both,
+}
+
 /// Box positioning scheme. v1 performs static flow layout only.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Position {

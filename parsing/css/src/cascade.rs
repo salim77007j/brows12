@@ -184,6 +184,26 @@ fn compute_inner(
                     apply_inline(&mut style, inline, Some(parent_style), ctx, engine);
                 }
 
+                // Resolve the float/clear rewrite (declaration positions
+                // only; plain `--brows-*` customs are left for inheritance).
+                // The keys are removed so descendants do not inherit them
+                // (float/clear are not inherited properties).
+                if let Some(v) = style.custom.remove("--brows-float") {
+                    style.float = match v.trim().to_ascii_lowercase().as_str() {
+                        "left" => crate::values::FloatSide::Left,
+                        "right" => crate::values::FloatSide::Right,
+                        _ => crate::values::FloatSide::None,
+                    };
+                }
+                if let Some(v) = style.custom.remove("--brows-clear") {
+                    style.clear = match v.trim().to_ascii_lowercase().as_str() {
+                        "left" => crate::values::ClearSide::Left,
+                        "right" => crate::values::ClearSide::Right,
+                        "both" | "all" => crate::values::ClearSide::Both,
+                        _ => crate::values::ClearSide::None,
+                    };
+                }
+
                 map.styles.insert(node, style.clone());
 
                 let children = doc.node(node).children.clone();
@@ -223,13 +243,16 @@ fn apply_inline(
     engine: &StyleEngine,
 ) {
     // Inline custom properties + inherited/global vars resolve at text level.
+    // `float`/`clear` declarations are rewritten into reserved customs first
+    // (lightningcss does not model them) — see `rewrite_float_decls`.
+    let css = crate::stylesheet::rewrite_float_decls(css);
     let mut vars: HashMap<String, String> = HashMap::new();
     if let Some(p) = parent {
         vars.extend(p.custom.iter().map(|(k, v)| (k.clone(), v.clone())));
     }
     vars.extend(engine.global_vars.iter().map(|(k, v)| (k.clone(), v.clone())));
-    crate::vartext::collect_custom_defs(css, &mut vars);
-    let resolved = crate::vartext::substitute_vars_text(css, &vars);
+    crate::vartext::collect_custom_defs(&css, &mut vars);
+    let resolved = crate::vartext::substitute_vars_text(&css, &vars);
 
     // Parse the substituted text as a borrowed block, then convert to an
     // owned 'static block. `IntoOwned::into_owned` copies every borrowed
@@ -252,7 +275,7 @@ fn apply_inline(
     // The raw declaration text may define --custom props descendants inherit.
     if css.contains("--") {
         let mut own = HashMap::new();
-        crate::vartext::collect_custom_defs(css, &mut own);
+        crate::vartext::collect_custom_defs(&css, &mut own);
         for (k, v) in own {
             style.custom.entry(k).or_insert(v);
         }

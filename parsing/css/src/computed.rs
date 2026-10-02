@@ -32,6 +32,10 @@ pub struct ComputedStyle {
     pub max_width: AutoPx,
     pub overflow: OverflowKeyword,
     pub position: Position,
+    /// `float: left/right` — box is removed from normal flow (layout).
+    pub float: FloatSide,
+    /// `clear: left/right/both` — push below matching floats.
+    pub clear: ClearSide,
     pub z_index: ZIndex,
     pub flex_direction: FlexDirection,
     pub flex_wrap: FlexWrap,
@@ -83,6 +87,8 @@ impl Default for ComputedStyle {
             max_width: AutoPx::Auto,
             overflow: OverflowKeyword::Visible,
             position: Position::Static,
+            float: FloatSide::None,
+            clear: ClearSide::None,
             z_index: ZIndex::Auto,
             flex_direction: FlexDirection::Row,
             flex_wrap: FlexWrap::NoWrap,
