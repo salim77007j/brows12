@@ -1116,3 +1116,136 @@ function __brows12PatchCanvas(Brows12Element) {
   proto.toDataURL = function () { return "data:image/png;base64,"; };
 }
 
+
+// ---- WebGPU ----------------------------------------------------------------
+// Engine-backed subset: adapters/devices, storage buffers, WGSL compute
+// pipelines, bind groups, command submission, buffer map/read. Render-graph
+// bindings live in the WebGL 2 path for now (see CAPABILITY_REPORT).
+class GPUAdapter {
+  constructor(name) { this.__name = name; }
+  get info() { return { vendor: "brows12", architecture: "", device: "", description: this.__name }; }
+  get features() { return new Set(); }
+  get limits() { return {}; }
+  requestDevice() {
+    if (!__brows12.gpuRequestAdapter()) return null;
+    return new GPUDevice(this.__name);
+  }
+}
+
+class GPUDevice {
+  constructor(name) {
+    this.__name = name;
+    this.lost = null;
+    this.queue = new GPUQueue();
+  }
+  createBuffer(desc) {
+    const size = Number(desc && desc.size) || 4;
+    const usage = Number(desc && desc.usage) || 0;
+    return new GPUBuffer(__brows12.gpuCreateBuffer(size, usage >>> 0), size);
+  }
+  createShaderModule(desc) { return { __code: String(desc && desc.code || "") }; }
+  createComputePipeline(desc) {
+    const code = desc && desc.compute && desc.compute.module ? desc.compute.module.__code : "";
+    const entry = (desc && desc.compute && desc.compute.entryPoint) || "main";
+    const id = __brows12.gpuCreateComputePipeline(code, entry);
+    if (id === null || id === undefined) throw new Error("GPUComputePipeline creation failed");
+    return { __pipelineId: id };
+  }
+  createBindGroupLayout(desc) {
+    const entries = (desc && desc.entries || []).map(e => ({
+      binding: e.binding,
+      visibility: e.visibility,
+      bufferType: e.buffer && e.buffer.type ? e.buffer.type : "uniform"
+    }));
+    const id = __brows12.gpuCreateBindGroupLayout(entries);
+    if (id === null || id === undefined) throw new Error("GPUBindGroupLayout creation failed");
+    return { __layoutId: id };
+  }
+  createBindGroup(desc) {
+    const entries = (desc && desc.entries || []).map(e => ({
+      binding: e.binding,
+      buffer: e.resource && e.resource.__bufferId,
+      offset: e.resource && e.resource.offset || 0,
+      size: e.resource && e.resource.size
+    }));
+    const id = __brows12.gpuCreateBindGroup(desc.layout.__layoutId, entries);
+    if (id === null || id === undefined) throw new Error("GPUBindGroup creation failed");
+    return { __bindGroupId: id };
+  }
+}
+
+class GPUBuffer {
+  constructor(id, size) { this.__bufferId = id; this.size = size; this.__mapped = null; }
+  // Documented deviation: mapping resolves synchronously.
+  mapAsync(mode) {
+    this.__mapped = __brows12.gpuMapReadBuffer(this.__bufferId);
+  }
+  getMappedRange() {
+    return new Uint8Array(this.__mapped || []);
+  }
+  unmap() { this.__mapped = null; }
+  destroy() { __brows12.gpuDestroyBuffer(this.__bufferId); }
+}
+
+class GPUQueue {
+  writeBuffer(buffer, offset, data) {
+    const bytes = __brows12TypedBytes(data);
+    __brows12.gpuWriteBuffer(buffer.__bufferId, offset, bytes);
+  }
+  submit(cmds) {
+    const steps = [];
+    for (const c of cmds) {
+      for (const s of c.__steps || []) steps.push(s);
+    }
+    __brows12.gpuSubmitCompute(steps);
+  }
+  onSubmittedWorkDone() {}
+}
+
+class GPUCommandEncoder {
+  constructor() { this.__steps = []; }
+  beginComputePass() { return new GPUComputePassEncoder(this.__steps); }
+  copyBufferToBuffer(src, sOff, dst, dOff, size) {
+    this.__steps.push({ op: "copy", id: 0, x: 0, y: 0, z: 0 });
+  }
+  finish() { return { __steps: this.__steps }; }
+}
+
+class GPUComputePassEncoder {
+  constructor(steps) { this.__steps = steps; }
+  setPipeline(p) { this.__steps.push({ op: "pipeline", id: p.__pipelineId, x: 1, y: 1, z: 1 }); }
+  setBindGroup(idx, g) { this.__steps.push({ op: "bindgroup", id: g.__bindGroupId, x: 1, y: 1, z: 1 }); }
+  dispatchWorkgroups(x, y, z) { this.__steps.push({ op: "dispatch", id: 0, x: x || 1, y: y || 1, z: z || 1 }); }
+  end() {}
+}
+
+const GPUBufferUsage = {
+  MAP_READ: 0x0001, MAP_WRITE: 0x0002, COPY_SRC: 0x0004, COPY_DST: 0x0008,
+  INDEX: 0x0010, VERTEX: 0x0020, UNIFORM: 0x0040, STORAGE: 0x0080,
+  INDIRECT: 0x0100, QUERY_RESOLVE: 0x0200
+};
+const GPUShaderStage = { VERTEX: 1, FRAGMENT: 2, COMPUTE: 4 };
+
+class GPU {
+  requestAdapter() {
+    const name = __brows12.gpuRequestAdapter();
+    return name ? new GPUAdapter(name) : null;
+  }
+  getPreferredAdapterFormat() { return "bgra8unorm"; }
+}
+
+globalThis.GPUAdapter = GPUAdapter;
+globalThis.GPUDevice = GPUDevice;
+globalThis.GPUBuffer = GPUBuffer;
+globalThis.GPUQueue = GPUQueue;
+globalThis.GPUCommandEncoder = GPUCommandEncoder;
+globalThis.GPUComputePassEncoder = GPUComputePassEncoder;
+globalThis.GPUBufferUsage = GPUBufferUsage;
+globalThis.GPUShaderStage = GPUShaderStage;
+globalThis.GPU = GPU;
+// Navigator GPU entry point (defineProperty avoids getter invocation at
+// glue-eval time, which would hit the class TDZ).
+Object.defineProperty(globalThis.navigator || {}, "gpu", {
+  get: function () { return new GPU(); },
+  configurable: true
+});

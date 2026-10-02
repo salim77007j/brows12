@@ -159,6 +159,7 @@ pub fn install(
 
     crate::platform::install(ctx, &env, &ns)?;
     crate::webgl_bindings::install(ctx, &env, &ns)?;
+    crate::webgpu_bindings::install(ctx, &env, &ns)?;
     crate::wasm::install(ctx, &env, &ns)?;
 
     // performance.now (ms since realm creation)

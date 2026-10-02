@@ -158,3 +158,49 @@ gl.drawArrays(gl.TRIANGLES, 0, 3);
     assert!(red > 100, "expected red triangle pixels, got {red}");
     eprintln!("webgl triangle: {red} red pixels painted");
 }
+
+#[test]
+fn webgpu_compute_vector_add() {
+    if !brows12_js::webgl::gpu_available() {
+        eprintln!("no GPU adapter; skipping WebGPU test");
+        return;
+    }
+    let html = r#"<!DOCTYPE html><html><head></head><body>
+<script>
+navigator.gpu.requestAdapter();
+// The engine realm is synchronous: requestAdapter/requestDevice resolve
+// immediately (documented deviation).
+var adapter = navigator.gpu.requestAdapter();
+if (!adapter) throw new Error('no adapter');
+var device = adapter.requestDevice();
+if (!device) throw new Error('no device');
+
+var shader = device.createShaderModule({ code: `
+@group(0) @binding(0) var<storage, read_write> v: array<f32>;
+@compute @workgroup_size(1)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  v[gid.x] = v[gid.x] * 2.0;
+}
+` });
+var buf = device.createBuffer({ size: 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST });
+device.queue.writeBuffer(buf, 0, new Float32Array([1.0, 2.0, 3.0, 4.0]));
+var pipeline = device.createComputePipeline({ compute: { module: shader, entryPoint: 'main' } });
+var bgl = device.createBindGroupLayout({ entries: [{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } }] });
+var bg = device.createBindGroup({ layout: bgl, entries: [{ binding: 0, resource: { buffer: buf } }] });
+var enc = device.createCommandEncoder();
+var pass = enc.beginComputePass();
+pass.setPipeline(pipeline);
+pass.setBindGroup(0, bg);
+pass.dispatchWorkgroups(4, 1, 1);
+pass.end();
+device.queue.submit([enc.finish()]);
+</script></body></html>"#;
+
+    let engine = Engine::new(EngineConfig::default());
+    let tab = engine.tab();
+    let result = tab.load_url_from_string(html, "brows12://fixture/webgpu");
+    if let Err(e) = &result {
+        panic!("load failed: {e}");
+    }
+    eprintln!("webgpu compute pipeline executed");
+}

@@ -31,6 +31,8 @@ pub mod runtime;
 pub mod wasm;
 pub mod webgl;
 pub mod webgl_bindings;
+pub mod webgpu;
+pub mod webgpu_bindings;
 pub mod worker;
 
 pub use bindings::{WorkerRegistry, WsSenders};
