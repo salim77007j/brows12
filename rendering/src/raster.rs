@@ -49,6 +49,10 @@ impl Rasterizer {
                     self.paint_text(&mut pixmap, *rect, text, style, *underline, *line_through);
                     stats.text_runs += 1;
                 }
+                DisplayItem::InlineFlow { rect, flow } => {
+                    self.paint_inline_flow(&mut pixmap, *rect, flow);
+                    stats.text_runs += 1;
+                }
                 DisplayItem::Image { rect, image, radius } => {
                     draw_image(&mut pixmap, rect, image, *radius);
                     stats.images += 1;
@@ -99,6 +103,96 @@ impl Rasterizer {
         let rect = brows12_layout::Rect { x: 0.0, y: 0.0, width: pw as f32, height: ph as f32 };
         self.paint_text(&mut pm, rect, text, &measure_style, false, false);
         Some(pm)
+    }
+
+    /// Paint a laid-out inline flow: per line, segment backgrounds, then
+    /// glyphs, then decorations. Segments carry their own style; the
+    /// rasterizer never re-wraps (positions come from layout).
+    fn paint_inline_flow(
+        &mut self,
+        pixmap: &mut Pixmap,
+        rect: brows12_layout::Rect,
+        flow: &brows12_layout::InlineFlowLayout,
+    ) {
+        let mut fs = self.font_system.lock().unwrap();
+        let mut cache = self.swash_cache.lock().unwrap();
+
+        for line in &flow.lines {
+            // Segment backgrounds first (behind all glyphs of the line).
+            for seg in &line.segments {
+                if let Some(bg) = seg.background {
+                    if bg[3] > 0 {
+                        fill_pixel_rect(
+                            pixmap,
+                            (rect.x + seg.x) as i32,
+                            (rect.y + line.y) as i32,
+                            seg.width.ceil() as u32,
+                            line.height.ceil() as u32,
+                            tiny_skia::Color::from_rgba8(bg[0], bg[1], bg[2], bg[3]),
+                        );
+                    }
+                }
+            }
+            // Glyphs per segment.
+            for seg in &line.segments {
+                let metrics = cosmic_text::Metrics::new(seg.font_size, seg.line_height_px);
+                let mut buffer = cosmic_text::Buffer::new(&mut fs, metrics);
+                buffer.set_size(None, None);
+                let mut attrs = cosmic_text::Attrs::new();
+                attrs = match seg.font_family.as_deref() {
+                    Some("monospace") => attrs.family(cosmic_text::Family::Monospace),
+                    Some("serif") => attrs.family(cosmic_text::Family::Serif),
+                    Some(name) => attrs.family(cosmic_text::Family::Name(name)),
+                    None => attrs.family(cosmic_text::Family::SansSerif),
+                };
+                attrs = attrs.weight(cosmic_text::Weight(seg.font_weight));
+                if seg.italic {
+                    attrs = attrs.style(cosmic_text::Style::Italic);
+                }
+                buffer.set_text(&seg.text, &attrs, cosmic_text::Shaping::Advanced, None);
+                buffer.shape_until_scroll(&mut fs, false);
+
+                let tint = tiny_skia::Color::from_rgba8(
+                    seg.color[0], seg.color[1], seg.color[2], 255,
+                );
+                let origin_x = rect.x + seg.x;
+                let baseline_y = rect.y + line.baseline;
+                for run in buffer.layout_runs() {
+                    for glyph in run.glyphs {
+                        let physical = glyph.physical((origin_x, baseline_y), 1.0);
+                        if let Some(image) = cache.get_image(&mut fs, physical.cache_key) {
+                            let x = physical.x + image.placement.left;
+                            let y = physical.y - image.placement.top;
+                            blit_swash_image(pixmap, image, x, y, tint);
+                        }
+                    }
+                }
+                // Decorations for this segment.
+                let thickness = ((seg.font_size / 16.0) as u32).max(1);
+                if seg.underline {
+                    let y = (baseline_y + seg.font_size * 0.12) as i32;
+                    fill_pixel_rect(
+                        pixmap,
+                        origin_x as i32,
+                        y,
+                        seg.width.ceil() as u32,
+                        thickness,
+                        tint,
+                    );
+                }
+                if seg.line_through {
+                    let y = (baseline_y - seg.font_size * 0.30) as i32;
+                    fill_pixel_rect(
+                        pixmap,
+                        origin_x as i32,
+                        y,
+                        seg.width.ceil() as u32,
+                        thickness,
+                        tint,
+                    );
+                }
+            }
+        }
     }
 
     /// Shape + blit a text run with swash images (alpha coverage tinted by
@@ -176,8 +270,10 @@ impl Rasterizer {
                 }
             }
             // Underline / line-through rectangles.
+            // Underline sits BELOW the baseline (CSS visual convention);
+            // line-through crosses the x-height middle.
             let mut deco = |dy: f32| {
-                let y = (rect.y + run.line_y - dy) as i32;
+                let y = (rect.y + run.line_y + dy) as i32;
                 let w = run.line_w.ceil() as u32;
                 fill_pixel_rect(
                     pixmap,
@@ -192,7 +288,7 @@ impl Rasterizer {
                 deco(style.font_size * 0.12);
             }
             if line_through {
-                deco(style.font_size * 0.30);
+                deco(-style.font_size * 0.30);
             }
         }
     }
@@ -305,8 +401,11 @@ fn blit_swash_image(
     if w == 0 || h == 0 {
         return;
     }
-    let x = x + image.placement.left;
-    let y = y + image.placement.top;
+    // NOTE: the caller has already resolved the final bitmap origin
+    // (x = physical.x + placement.left, y = baseline - placement.top).
+    // swash placement is applied exactly once; re-adding it here would
+    // push every glyph's bitmap top onto the baseline (vertical glyph
+    // jitter) and double the left side bearing (horizontal jitter).
 
     if image.content == SwashContent::Color {
         // RGBA8 straight-alpha → premultiply into an offscreen pixmap and draw.
@@ -533,7 +632,17 @@ mod tests {
             0.0,
             Default::default(),
         );
-        assert!(list.items.iter().any(|i| matches!(i, DisplayItem::Text { .. })));
+        assert!(
+            list.items.iter().any(|i| matches!(i, DisplayItem::Text { .. } | DisplayItem::InlineFlow { .. })),
+            "page must emit text items (Text or InlineFlow), got {:?}",
+            list.items.iter().map(|i| match i {
+                DisplayItem::Rect { .. } => "rect",
+                DisplayItem::Border { .. } => "border",
+                DisplayItem::Text { .. } => "text",
+                DisplayItem::InlineFlow { .. } => "inline-flow",
+                DisplayItem::Image { .. } => "image",
+            }).collect::<Vec<_>>()
+        );
         let mut r = Rasterizer::new(measurer.font_system.clone());
         let (pixmap, _stats) = r.paint(&list, 1280, 720).unwrap();
         let inked = pixmap.pixels().iter().filter(|p| p.alpha() > 0).count();

@@ -9,11 +9,16 @@
 //! Inline flow (mixed inline boxes on one line), floats and tables are
 //! tracked in docs/ROADMAP.md.
 
-use brows12_css::values::{AutoPx, Display, Len, Position as CssPosition};
+use brows12_css::values::{AutoPx, Display, Len, Position as CssPosition, TextAlign};
 use brows12_css::ComputedStyle;
 use brows12_html::{Document, NodeData, NodeId};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
+
+pub mod inline;
+pub use inline::{
+    apply_alignment, collapse_ws, InlineFlowLayout, InlineItem, InlineLine, InlineSegment,
+};
 
 /// Viewport the page lays out into.
 #[derive(Debug, Clone, Copy)]
@@ -49,6 +54,12 @@ pub enum LeafContext {
         font_family: Option<String>,
         white_space_pre: bool,
     },
+    /// An inline group: styled runs from nested inline elements flowed
+    /// across line boxes by our own line-breaking engine.
+    Inline {
+        items: Arc<Vec<InlineItem>>,
+        align: TextAlign,
+    },
     Image {
         intrinsic_width: u32,
         intrinsic_height: u32,
@@ -67,6 +78,11 @@ pub struct LayoutResult {
     pub fixed_nodes: Vec<NodeId>,
     /// Per-node transform (translate/rotate/scale) from CSS `transform`.
     pub transforms: HashMap<NodeId, brows12_css::values::Transform>,
+    /// Laid-out inline flows keyed by the first member node of each group.
+    pub inline_flows: HashMap<NodeId, InlineFlowLayout>,
+    /// Nodes painted as part of an inline flow (must not emit their own
+    /// display items). Includes every member except each group's first.
+    pub inline_covered: HashSet<NodeId>,
 }
 
 impl LayoutResult {
@@ -92,6 +108,10 @@ impl TextMeasurer {
             LeafContext::Image { intrinsic_width, intrinsic_height } => {
                 let (w, h) = (*intrinsic_width as f32, *intrinsic_height as f32);
                 (w, h)
+            }
+            LeafContext::Inline { items, .. } => {
+                let flow = inline::layout_inline(self, items, max_width);
+                (flow.width, flow.height.max(0.0))
             }
             LeafContext::Text {
                 text,
@@ -293,6 +313,8 @@ pub fn compute_layout(
         tree: &mut taffy::TaffyTree<LeafContext>,
         node_ids: &mut HashMap<NodeId, taffy::NodeId>,
         image_sizes: &HashMap<NodeId, (u32, u32)>,
+        inline_ctx: &mut HashMap<NodeId, (Arc<Vec<InlineItem>>, TextAlign)>,
+        covered: &mut HashSet<NodeId>,
         node: NodeId,
     ) -> Option<taffy::NodeId> {
         let style = styles.get(node)?;
@@ -311,17 +333,10 @@ pub fn compute_layout(
                 Some(tnode)
             }
             NodeData::Element { .. } => {
-                let taffy_style = build_taffy_style(style);
-                let children: Vec<taffy::NodeId> = doc
-                    .node(node)
-                    .children
-                    .iter()
-                    .filter_map(|&c| build(doc, styles, tree, node_ids, image_sizes, c))
-                    .collect();
-
                 // Leaf elements with intrinsic size (img).
-                if children.is_empty() {
+                if doc.node(node).children.is_empty() {
                     if let Some(&(w, h)) = image_sizes.get(&node) {
+                        let taffy_style = build_taffy_style(style);
                         let ctx = LeafContext::Image { intrinsic_width: w, intrinsic_height: h };
                         let tnode = tree.new_leaf_with_context(taffy_style, ctx).ok()?;
                         node_ids.insert(node, tnode);
@@ -329,12 +344,35 @@ pub fn compute_layout(
                     }
                 }
 
+                let taffy_style = build_taffy_style(style);
+                // Partition children into inline runs and block children
+                // (CSS anonymous block boxes).
+                let pieces = group_children(doc, styles, image_sizes, node);
+                let mut children: Vec<taffy::NodeId> = Vec::new();
+                for piece in pieces {
+                    match piece {
+                        Piece::Block(c) => {
+                            if let Some(t) = build(
+                                doc, styles, tree, node_ids, image_sizes, inline_ctx, covered, c,
+                            ) {
+                                children.push(t);
+                            }
+                        }
+                        Piece::Inline(members) => {
+                            if let Some(t) = build_inline_group(
+                                doc, styles, tree, node_ids, image_sizes, inline_ctx, covered,
+                                node, &members,
+                            ) {
+                                children.push(t);
+                            }
+                        }
+                    }
+                }
+
                 let tnode = if children.is_empty() {
                     tree.new_leaf(taffy_style).ok()?
                 } else {
-                    let tnode = tree.new_with_children(taffy_style, &children).ok()?;
-                    node_ids.insert(node, tnode);
-                    return Some(tnode);
+                    tree.new_with_children(taffy_style, &children).ok()?
                 };
                 node_ids.insert(node, tnode);
                 Some(tnode)
@@ -342,7 +380,9 @@ pub fn compute_layout(
             _ => {
                 // Document/doctype/comments: recurse through children.
                 for &c in &doc.node(node).children {
-                    if let Some(t) = build(doc, styles, tree, node_ids, image_sizes, c) {
+                    if let Some(t) =
+                        build(doc, styles, tree, node_ids, image_sizes, inline_ctx, covered, c)
+                    {
                         return Some(t);
                     }
                 }
@@ -351,7 +391,238 @@ pub fn compute_layout(
         }
     }
 
-    let Some(root_taffy) = build(doc, styles, &mut tree, &mut node_ids, image_sizes, start) else {
+    /// One child partition: either a run of inline members (flattened into
+    /// one anonymous inline box) or a single block-level child.
+    enum Piece {
+        Inline(Vec<NodeId>),
+        Block(NodeId),
+    }
+
+    fn group_children(
+        doc: &Document,
+        styles: &brows12_css::StyleMap,
+        image_sizes: &HashMap<NodeId, (u32, u32)>,
+        node: NodeId,
+    ) -> Vec<Piece> {
+        // Flex items are block-ified per CSS — no inline runs inside flex
+        // containers (each child is its own flex item).
+        if styles.get(node).map(|s| s.display) == Some(Display::Flex) {
+            return doc.node(node).children.iter().map(|&c| Piece::Block(c)).collect();
+        }
+        let mut pieces: Vec<Piece> = Vec::new();
+        let mut cur: Vec<NodeId> = Vec::new();
+        for &c in &doc.node(node).children {
+            if is_inline_member(doc, styles, image_sizes, c) {
+                cur.push(c);
+            } else {
+                if !cur.is_empty() {
+                    pieces.push(Piece::Inline(std::mem::take(&mut cur)));
+                }
+                pieces.push(Piece::Block(c));
+            }
+        }
+        if !cur.is_empty() {
+            pieces.push(Piece::Inline(cur));
+        }
+        pieces
+    }
+
+    /// A node joins an inline run when it is a text node or an inline
+    /// element whose whole subtree stays inline (no blocks, no atomics).
+    fn is_inline_member(
+        doc: &Document,
+        styles: &brows12_css::StyleMap,
+        image_sizes: &HashMap<NodeId, (u32, u32)>,
+        node: NodeId,
+    ) -> bool {
+        match &doc.node(node).data {
+            NodeData::Text(_) => true,
+            NodeData::Element { .. } => {
+                let Some(st) = styles.get(node) else { return false };
+                st.display == Display::Inline
+                    && !image_sizes.contains_key(&node)
+                    && !contains_boundary(doc, styles, image_sizes, node)
+            }
+            _ => false,
+        }
+    }
+
+    fn contains_boundary(
+        doc: &Document,
+        styles: &brows12_css::StyleMap,
+        image_sizes: &HashMap<NodeId, (u32, u32)>,
+        node: NodeId,
+    ) -> bool {
+        for &c in &doc.node(node).children {
+            match &doc.node(c).data {
+                NodeData::Text(_) => continue,
+                NodeData::Element { .. } => {
+                    let Some(st) = styles.get(c) else { return true };
+                    if st.display == Display::None {
+                        continue;
+                    }
+                    if st.display != Display::Inline || image_sizes.contains_key(&c) {
+                        return true;
+                    }
+                    if contains_boundary(doc, styles, image_sizes, c) {
+                        return true;
+                    }
+                }
+                _ => {}
+            }
+        }
+        false
+    }
+
+    /// Flatten inline members into styled items + create the anonymous
+    /// taffy leaf that measures/holds the whole run. The group's rect is
+    /// registered under its FIRST member so the display list can find it.
+    #[allow(clippy::too_many_arguments)]
+    fn build_inline_group(
+        doc: &Document,
+        styles: &brows12_css::StyleMap,
+        tree: &mut taffy::TaffyTree<LeafContext>,
+        node_ids: &mut HashMap<NodeId, taffy::NodeId>,
+        _image_sizes: &HashMap<NodeId, (u32, u32)>,
+        inline_ctx: &mut HashMap<NodeId, (Arc<Vec<InlineItem>>, TextAlign)>,
+        covered: &mut HashSet<NodeId>,
+        container: NodeId,
+        members: &[NodeId],
+    ) -> Option<taffy::NodeId> {
+        let mut items: Vec<InlineItem> = Vec::new();
+        for (i, &m) in members.iter().enumerate() {
+            let mut visited: Vec<NodeId> = Vec::new();
+            flatten_group(doc, styles, m, false, false, None, &mut items, &mut visited);
+            if i == 0 {
+                // First member roots the group (kept out of `covered` so the
+                // display list can key on it); its descendants are covered.
+                for &n in visited.iter().skip(1) {
+                    covered.insert(n);
+                }
+            } else {
+                for n in visited {
+                    covered.insert(n);
+                }
+            }
+        }
+        // CSS whitespace processing at flow boundaries.
+        if let Some(first) = items.first_mut() {
+            if first.white_space != brows12_css::values::WhiteSpace::Pre {
+                first.text = first.text.trim_start().to_string();
+            }
+        }
+        if let Some(last) = items.last_mut() {
+            if last.white_space != brows12_css::values::WhiteSpace::Pre {
+                last.text = last.text.trim_end().to_string();
+            }
+        }
+        items.retain(|it| !it.text.is_empty());
+        if std::env::var("BROWS_DEBUG").is_ok() {
+            eprintln!(
+                "INLINE_GROUP container={container:?} members={} items={:?}",
+                members.len(),
+                items.iter().map(|i| i.text.as_str()).collect::<Vec<_>>()
+            );
+        }
+        if items.is_empty() {
+            return None; // whitespace-only run between blocks: no box
+        }
+
+        let container_style = styles.get(container)?;
+        let align = container_style.text_align;
+        let arc: Arc<Vec<InlineItem>> = Arc::new(items);
+
+        let tnode = tree
+            .new_leaf_with_context(
+                taffy::Style::default(), // anonymous inline box: no margin/border
+                LeafContext::Inline { items: arc.clone(), align },
+            )
+            .ok()?;
+        node_ids.insert(members[0], tnode);
+        inline_ctx.insert(members[0], (arc, align));
+        Some(tnode)
+    }
+
+    /// Walk an inline subtree in tree order, emitting one `InlineItem` per
+    /// text chunk with its computed style (accumulating decorations and
+    /// inline backgrounds from ancestors).
+    #[allow(clippy::too_many_arguments)]
+    fn flatten_group(
+        doc: &Document,
+        styles: &brows12_css::StyleMap,
+        node: NodeId,
+        underline: bool,
+        strike: bool,
+        bg: Option<brows12_css::values::Rgba>,
+        items: &mut Vec<InlineItem>,
+        visited: &mut Vec<NodeId>,
+    ) {
+        visited.push(node);
+        let Some(style) = styles.get(node) else { return };
+        if style.display == Display::None {
+            return;
+        }
+        match &doc.node(node).data {
+            NodeData::Text(text) => {
+                let pre = style.white_space == brows12_css::values::WhiteSpace::Pre;
+                let text = if pre { text.clone() } else { collapse_ws(text) };
+                if text.is_empty() {
+                    return;
+                }
+                items.push(InlineItem {
+                    text,
+                    font_size: style.font_size,
+                    line_height_px: style.line_height_px(),
+                    font_weight: style.font_weight,
+                    italic: style.font_style == brows12_css::values::FontStyle::Italic,
+                    font_family: style.font_family.clone(),
+                    color: style.color,
+                    underline: underline || style.text_underline,
+                    line_through: strike || style.text_line_through,
+                    background: if style.background_color[3] > 0 {
+                        Some(style.background_color)
+                    } else {
+                        bg
+                    },
+                    white_space: style.white_space,
+                });
+            }
+            NodeData::Element { name, .. } => {
+                if name == "br" {
+                    items.push(InlineItem::newline(
+                        style.font_size,
+                        style.line_height_px(),
+                        style,
+                    ));
+                    return;
+                }
+                let bg2 = if style.background_color[3] > 0 {
+                    Some(style.background_color)
+                } else {
+                    bg
+                };
+                let und = underline || style.text_underline;
+                let stk = strike || style.text_line_through;
+                for &c in &doc.node(node).children {
+                    flatten_group(doc, styles, c, und, stk, bg2, items, visited);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let mut inline_ctx: HashMap<NodeId, (Arc<Vec<InlineItem>>, TextAlign)> = HashMap::new();
+    let mut covered: HashSet<NodeId> = HashSet::new();
+    let Some(root_taffy) = build(
+        doc,
+        styles,
+        &mut tree,
+        &mut node_ids,
+        image_sizes,
+        &mut inline_ctx,
+        &mut covered,
+        start,
+    ) else {
         return LayoutResult::default();
     };
 
@@ -442,6 +713,19 @@ pub fn compute_layout(
         }
     }
     extract(&taffy_to_dom, &tree, &mut result.rects, root_taffy, (0.0, 0.0));
+
+    // ---- Inline flows: final shape at each group's resolved box width ----
+    for (dom_id, (items, align)) in inline_ctx.iter() {
+        let Some(&tn) = node_ids.get(dom_id) else { continue };
+        let w = match tree.layout(tn) {
+            Ok(l) => l.size.width,
+            Err(_) => continue,
+        };
+        let mut flow = inline::layout_inline(measurer, items, Some(w));
+        apply_alignment(&mut flow, w, *align);
+        result.inline_flows.insert(*dom_id, flow);
+    }
+    result.inline_covered = covered;
 
     // ---- v0.2 post-pass: fixed anchoring + transforms + content bounds ----
     // Children map for subtree shifting.

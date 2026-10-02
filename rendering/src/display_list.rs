@@ -2,7 +2,7 @@
 
 use brows12_css::values::Rgba;
 use brows12_html::{Document, NodeData, NodeId};
-use brows12_layout::Rect;
+use brows12_layout::{InlineFlowLayout, Rect};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -33,6 +33,9 @@ pub enum DisplayItem {
     },
     /// A shaped-and-wrapped text run anchored in a box.
     Text { rect: Rect, text: String, style: TextStyle, underline: bool, line_through: bool },
+    /// A laid-out inline flow: styled segments positioned on line boxes
+    /// (text from nested inline elements, with per-span color/background).
+    InlineFlow { rect: Rect, flow: InlineFlowLayout },
     /// A decoded image blit.
     Image { rect: Rect, image: Arc<DecodedImage>, radius: f32 },
 }
@@ -164,6 +167,16 @@ pub fn build_display_list(
         // Compositor scroll: content moves up; fixed layers stay anchored.
         if !is_fixed && scroll_y != 0.0 {
             rect.y -= scroll_y;
+        }
+
+        // Inline flow groups: emit one item at the group's first member,
+        // skip every covered member.
+        if layout.inline_covered.contains(&node) {
+            return;
+        }
+        if let Some(flow) = layout.inline_flows.get(&node) {
+            list.items.push(DisplayItem::InlineFlow { rect, flow: flow.clone() });
+            return;
         }
 
         match &doc.node(node).data {
