@@ -670,8 +670,33 @@ fn scale_pixmap(src: &Pixmap, w: u32, h: u32) -> Option<Pixmap> {
     Some(out)
 }
 
-/// Decode raw image bytes (png/jpeg/webp/gif) into straight-alpha RGBA.
+/// Decode raw image bytes (png/jpeg/webp/gif/svg) into straight-alpha RGBA.
+/// SVG sources rasterize through resvg at their intrinsic size; the layout
+/// scales the result into the destination box.
 pub fn decode_image(bytes: &[u8]) -> Result<crate::display_list::DecodedImage, RenderError> {
+    // SVG sniffing: `<svg` at start, XML prolog, or `<svg` anywhere in
+    // ASCII-looking content (data: image/svg+xml arrives decoded here).
+    let looks_svg = bytes.starts_with(b"<svg")
+        || bytes.starts_with(b"<?xml")
+        || std::str::from_utf8(bytes).map(|s| s.contains("<svg")).unwrap_or(false);
+    if looks_svg {
+        let opt = resvg::usvg::Options::default();
+        let tree = resvg::usvg::Tree::from_data(bytes, &opt)
+            .map_err(|e| RenderError::Image(format!("svg: {e}")))?;
+        let size = tree.size();
+        let w = (size.width().ceil() as u32).max(1);
+        let h = (size.height().ceil() as u32).max(1);
+        let mut pm = resvg::tiny_skia::Pixmap::new(w, h)
+            .ok_or_else(|| RenderError::Image("svg pixmap".into()))?;
+        let sx = w as f32 / size.width().max(1.0);
+        let sy = h as f32 / size.height().max(1.0);
+        resvg::render(&tree, resvg::usvg::Transform::from_scale(sx, sy), &mut pm.as_mut());
+        return Ok(crate::display_list::DecodedImage {
+            width: w,
+            height: h,
+            pixels: pm.data().to_vec(),
+        });
+    }
     let img =
         image::load_from_memory(bytes).map_err(|e| RenderError::Image(e.to_string()))?.to_rgba8();
     Ok(crate::display_list::DecodedImage {
