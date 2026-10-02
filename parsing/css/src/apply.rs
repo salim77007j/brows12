@@ -712,9 +712,19 @@ fn map_display(d: &LcDisplay) -> Display {
     use lightningcss::properties::display::{DisplayInside, DisplayKeyword, DisplayOutside};
     match d {
         LcDisplay::Keyword(DisplayKeyword::None) => Display::None,
+        // Table keywords parse as bare keywords (not Pair) in lightningcss.
+        LcDisplay::Keyword(
+            DisplayKeyword::TableRow
+            | DisplayKeyword::TableRowGroup
+            | DisplayKeyword::TableHeaderGroup
+            | DisplayKeyword::TableFooterGroup,
+        ) => Display::TableRow,
+        LcDisplay::Keyword(DisplayKeyword::TableCell) => Display::TableCell,
         LcDisplay::Keyword(_) => Display::Block,
         LcDisplay::Pair(p) => match &p.inside {
             DisplayInside::Flex(_) | DisplayInside::Box(_) => Display::Flex,
+            // CSS tables → anonymous flex structures (v1 approximation).
+            DisplayInside::Table => Display::Table,
             DisplayInside::Flow if matches!(p.outside, DisplayOutside::Inline) => Display::Inline,
             _ => Display::Block,
         },

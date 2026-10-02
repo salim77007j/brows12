@@ -11,8 +11,11 @@ base, col, colgroup, area, source, track, datalist, param { display: none; }
 /* Block-level elements (v1 layout treats inline flow as block; see ROADMAP) */
 div, p, h1, h2, h3, h4, h5, h6, ul, ol, li, blockquote, figure, figcaption,
 section, article, aside, header, footer, nav, main, address, pre, form,
-fieldset, legend, details, dialog, dl, dt, dd, table, thead, tbody, tfoot,
-tr, td, th, caption, hr, center { display: block; }
+fieldset, legend, details, dialog, dl, dt, dd, caption, hr, center { display: block; }
+table, thead, tbody, tfoot { display: table; }
+tr { display: table-row; }
+td, th { display: table-cell; }
+table { border-spacing: 2px; }
 
 h1 { font-size: 2em; font-weight: bold; margin: 0.67em 0; }
 h2 { font-size: 1.5em; font-weight: bold; margin: 0.75em 0; }
@@ -45,6 +48,7 @@ input, select, button, textarea { display: inline-block; }
 center { text-align: center; }
 caption { text-align: center; }
 th { font-weight: bold; }
+td, th { text-align: start; }
 
 mark { background-color: #FFFF00; color: #000000; }
 abbr[title], acronym[title] { text-decoration: underline; }

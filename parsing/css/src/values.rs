@@ -47,6 +47,11 @@ pub enum Display {
     Inline,
     Flex,
     None,
+    /// CSS table boxes are laid out as anonymous flex structures
+    /// (table → column flex, row → row flex, cell → flex item).
+    Table,
+    TableRow,
+    TableCell,
 }
 
 /// Box positioning scheme. v1 performs static flow layout only.

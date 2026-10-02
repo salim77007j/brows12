@@ -206,8 +206,8 @@ fn taffy_inset(style: &ComputedStyle) -> taffy::Rect<taffy::LengthPercentageAuto
 fn build_taffy_style(style: &ComputedStyle) -> taffy::Style {
     let display = match style.display {
         Display::None => taffy::Display::None,
-        Display::Flex => taffy::Display::Flex,
-        Display::Block | Display::Inline => taffy::Display::Block,
+        Display::Flex | Display::Table | Display::TableRow => taffy::Display::Flex,
+        Display::Block | Display::Inline | Display::TableCell => taffy::Display::Block,
     };
     let mut taffy_style = taffy::Style {
         display,
@@ -242,6 +242,24 @@ fn build_taffy_style(style: &ComputedStyle) -> taffy::Style {
         ..taffy::Style::default()
     };
 
+    // CSS tables map onto anonymous flex structures: table = column flex,
+    // row = row flex with stretching items, cell = block flex item.
+    if style.display == Display::Table {
+        taffy_style.flex_direction = taffy::FlexDirection::Column;
+        taffy_style.align_items = Some(taffy::AlignItems::STRETCH);
+    }
+    if style.display == Display::TableRow {
+        taffy_style.flex_direction = taffy::FlexDirection::Row;
+        taffy_style.align_items = Some(taffy::AlignItems::STRETCH);
+        taffy_style.flex_grow = 1.0;
+    }
+    if style.display == Display::TableCell {
+        // Cells size to content and shrink when the row overflows;
+        // leftover row space stays trailing (close to Chrome's column
+        // sizing for content-driven tables).
+        taffy_style.flex_grow = 0.0;
+        taffy_style.flex_shrink = 1.0;
+    }
     if style.display == Display::Flex {
         taffy_style.flex_direction = match style.flex_direction {
             brows12_css::values::FlexDirection::Row => taffy::FlexDirection::Row,
