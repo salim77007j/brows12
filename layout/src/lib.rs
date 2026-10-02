@@ -299,9 +299,34 @@ fn build_taffy_style(style: &ComputedStyle) -> taffy::Style {
     taffy_style
 }
 
+/// Apply CSS `text-transform` to a text chunk.
+fn transform_text(t: &str, tt: brows12_css::values::TextTransform) -> String {
+    match tt {
+        brows12_css::values::TextTransform::None => t.to_string(),
+        brows12_css::values::TextTransform::Uppercase => t.to_uppercase(),
+        brows12_css::values::TextTransform::Lowercase => t.to_lowercase(),
+        brows12_css::values::TextTransform::Capitalize => {
+            let mut out = String::with_capacity(t.len());
+            let mut at_word_start = true;
+            for ch in t.chars() {
+                if ch.is_whitespace() {
+                    at_word_start = true;
+                    out.push(ch);
+                } else if at_word_start {
+                    out.extend(ch.to_uppercase());
+                    at_word_start = false;
+                } else {
+                    out.push(ch);
+                }
+            }
+            out
+        }
+    }
+}
+
 fn leaf_context(style: &ComputedStyle, text: &str) -> LeafContext {
     LeafContext::Text {
-        text: text.to_string(),
+        text: transform_text(text, style.text_transform),
         font_size: style.font_size,
         line_height_px: style.line_height_px(),
         font_weight: style.font_weight,
@@ -584,6 +609,7 @@ pub fn compute_layout(
             NodeData::Text(text) => {
                 let pre = style.white_space == brows12_css::values::WhiteSpace::Pre;
                 let text = if pre { text.clone() } else { collapse_ws(text) };
+                let text = transform_text(&text, style.text_transform);
                 if text.is_empty() {
                     return;
                 }

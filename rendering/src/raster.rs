@@ -53,6 +53,10 @@ impl Rasterizer {
                     self.paint_inline_flow(&mut pixmap, *rect, flow);
                     stats.text_runs += 1;
                 }
+                DisplayItem::GradientRect { rect, gradient, radius } => {
+                    fill_gradient(&mut pixmap, rect, gradient, *radius);
+                    stats.rects += 1;
+                }
                 DisplayItem::Image { rect, image, radius } => {
                     draw_image(&mut pixmap, rect, image, *radius);
                     stats.images += 1;
@@ -292,6 +296,140 @@ impl Rasterizer {
             }
         }
     }
+}
+
+/// Paint a CSS gradient into a rect (per-pixel projection; v1 covers the
+/// linear and radial cases our parser produces).
+fn fill_gradient(
+    pixmap: &mut Pixmap,
+    rect: &brows12_layout::Rect,
+    gradient: &brows12_css::values::Gradient,
+    radius: f32,
+) {
+    let (stops, angle_deg, radial) = match gradient {
+        brows12_css::values::Gradient::Linear { angle_deg, stops } => (stops, *angle_deg, false),
+        brows12_css::values::Gradient::Radial { stops } => (stops, 0.0, true),
+    };
+    if stops.is_empty() {
+        return;
+    }
+    // Resolve stop positions: explicit values stand; runs of unknowns are
+    // distributed evenly between the surrounding known positions (CSS rule).
+    let n = stops.len();
+    let mut pos = vec![0.0f32; n];
+    let mut i = 0;
+    while i < n {
+        if stops[i].position.is_some() {
+            pos[i] = stops[i].position.unwrap().clamp(0.0, 1.0);
+            i += 1;
+            continue;
+        }
+        let start = i.saturating_sub(1);
+        let mut j = i;
+        while j < n && stops[j].position.is_none() {
+            j += 1;
+        }
+        let lo = if start < i { pos[start] } else { 0.0 };
+        let hi = if j < n { pos[j] } else { 1.0 };
+        let count = j - i;
+        for k in 0..count {
+            let denom = if j < n { count + 1 } else { count } as f32;
+            pos[i + k] = lo + (hi - lo) * ((k + 1) as f32 / denom);
+        }
+        i = j;
+    }
+
+    let w = pixmap.width() as i32;
+    let ph = pixmap.height() as i32;
+    let x0 = rect.x.floor() as i32;
+    let y0 = rect.y.floor() as i32;
+    let rw = rect.width.ceil() as i32;
+    let rh = rect.height.ceil() as i32;
+    let cx = rect.x + rect.width / 2.0;
+    let cy = rect.y + rect.height / 2.0;
+    // CSS gradient angle → direction vector (0deg = up, 90deg = right).
+    let rad = angle_deg.to_radians();
+    let (dx, dy) = (rad.sin(), -rad.cos());
+    // Gradient line length so stops span the box corners.
+    let line_len = (rect.width * dx).abs() + (rect.height * dy).abs();
+    let r_radial = ((rect.width / 2.0).powi(2) + (rect.height / 2.0).powi(2)).sqrt();
+    let r = radius.min(rect.width / 2.0).min(rect.height / 2.0);
+
+    let pm = pixmap.pixels_mut();
+    for py in y0.max(0)..(y0 + rh).min(ph) {
+        for px in x0.max(0)..(x0 + rw).min(w) {
+            let fx = px as f32 + 0.5;
+            let fy = py as f32 + 0.5;
+            // Rounded-rect membership (when radius requested).
+            if r > 0.0 {
+                let qx = (fx - rect.x - r).abs().max(0.0) - (rect.width - 2.0 * r).max(0.0) / 2.0;
+                let qy = (fy - rect.y - r).abs().max(0.0) - (rect.height - 2.0 * r).max(0.0) / 2.0;
+                let inside = qx.max(0.0).hypot(qy.max(0.0)) <= r
+                    || (qx <= 0.0 && qy <= 0.0);
+                if !inside {
+                    continue;
+                }
+            }
+            let t = if radial {
+                let ddx = fx - cx;
+                let ddy = fy - cy;
+                (ddx * ddx + ddy * ddy).sqrt() / r_radial.max(1.0)
+            } else {
+                if line_len <= 0.001 {
+                    0.0
+                } else {
+                    ((fx - cx) * dx + (fy - cy) * dy) / line_len + 0.5
+                }
+            };
+            // Sample stops.
+            let color = sample_stops(&pos, stops, t.clamp(0.0, 1.0));
+            let idx = (py * w + px) as usize;
+            let dst = &mut pm[idx];
+            let (sr, sg, sb, sa) = (
+                color[0] as f32 / 255.0,
+                color[1] as f32 / 255.0,
+                color[2] as f32 / 255.0,
+                color[3] as f32 / 255.0,
+            );
+            let da = dst.alpha() as f32 / 255.0;
+            let out_a = sa + da * (1.0 - sa);
+            if out_a <= 0.0 {
+                continue;
+            }
+            let blend = |s: f32, d: f32| (s * sa + d * da * (1.0 - sa)) / out_a;
+            *dst = tiny_skia::PremultipliedColorU8::from_rgba(
+                (blend(sr, dst.red() as f32 / 255.0) * 255.0).round() as u8,
+                (blend(sg, dst.green() as f32 / 255.0) * 255.0).round() as u8,
+                (blend(sb, dst.blue() as f32 / 255.0) * 255.0).round() as u8,
+                (out_a * 255.0).round() as u8,
+            )
+            .unwrap_or(*dst);
+        }
+    }
+}
+
+fn sample_stops(
+    pos: &[f32],
+    stops: &[brows12_css::values::GradientStop],
+    t: f32,
+) -> [u8; 4] {
+    if t <= pos[0] {
+        return stops[0].color;
+    }
+    if t >= pos[pos.len() - 1] {
+        return stops[stops.len() - 1].color;
+    }
+    for i in 1..pos.len() {
+        if t <= pos[i] {
+            let span = pos[i] - pos[i - 1];
+            let f = if span <= 0.0001 { 0.0 } else { (t - pos[i - 1]) / span };
+            let a = &stops[i - 1].color;
+            let b = &stops[i].color;
+            let lerp = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * f).round() as u8;
+            return [lerp(a[0], b[0]), lerp(a[1], b[1]), lerp(a[2], b[2]), lerp(a[3], b[3])];
+        }
+    }
+    stops[stops.len() - 1].color
 }
 
 /// Fill an axis-aligned (optionally rounded) rect with premultiplied blending.

@@ -36,6 +36,12 @@ pub enum DisplayItem {
     /// A laid-out inline flow: styled segments positioned on line boxes
     /// (text from nested inline elements, with per-span color/background).
     InlineFlow { rect: Rect, flow: InlineFlowLayout },
+    /// A gradient-painted rectangle (CSS background gradients).
+    GradientRect {
+        rect: Rect,
+        gradient: brows12_css::values::Gradient,
+        radius: f32,
+    },
     /// A decoded image blit.
     Image { rect: Rect, image: Arc<DecodedImage>, radius: f32 },
 }
@@ -182,8 +188,15 @@ pub fn build_display_list(
         match &doc.node(node).data {
             NodeData::Element { .. } => {
                 let child_fixed = in_fixed_subtree;
-                // Background
-                if style.background_color[3] > 0 {
+                // Background: gradient paint wins over flat color (the
+                // color still renders beneath as fallback where possible).
+                if let Some(g) = &style.background_gradient {
+                    list.items.push(DisplayItem::GradientRect {
+                        rect,
+                        gradient: g.clone(),
+                        radius: style.border_radius,
+                    });
+                } else if style.background_color[3] > 0 {
                     list.items.push(DisplayItem::Rect {
                         rect,
                         color: style.background_color,

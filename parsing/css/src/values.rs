@@ -75,6 +75,32 @@ pub enum TextAlign {
     Justify,
 }
 
+/// A CSS gradient paint (linear or radial, non-repeating v1).
+#[derive(Debug, Clone, PartialEq)]
+pub enum Gradient {
+    /// CSS angle: 0deg points up, 90deg points right.
+    Linear { angle_deg: f32, stops: Vec<GradientStop> },
+    /// Circle, farthest-corner, centered (v1 approximation).
+    Radial { stops: Vec<GradientStop> },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct GradientStop {
+    pub color: Rgba,
+    /// 0..1 or None (evenly distributed among unpositioned stops).
+    pub position: Option<f32>,
+}
+
+/// CSS `text-transform` (v1: the case keywords).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TextTransform {
+    #[default]
+    None,
+    Uppercase,
+    Lowercase,
+    Capitalize,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum WhiteSpace {
     #[default]

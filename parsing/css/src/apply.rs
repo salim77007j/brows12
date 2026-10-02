@@ -34,11 +34,21 @@ pub(crate) fn apply_property(
             }
         }
         Property::Background(bg_list) => {
-            // Shorthand: apply the first layer's color (images/gradients
-            // land with the v0.3 paint work).
+            // Shorthand: first layer's color + first gradient image.
             if let Some(first) = bg_list.first() {
                 if let Some(rgba) = color(&first.color, s.color) {
                     s.background_color = rgba;
+                }
+                if let Some(g) = gradient_of(&first.image) {
+                    s.background_gradient = Some(g);
+                }
+            }
+        }
+        Property::BackgroundImage(images) => {
+            for img in images.iter() {
+                if let Some(g) = gradient_of(img) {
+                    s.background_gradient = Some(g);
+                    break;
                 }
             }
         }
@@ -253,6 +263,20 @@ pub(crate) fn apply_property(
                 LcTextAlign::Center => TextAlign::Center,
                 LcTextAlign::Justify | LcTextAlign::JustifyAll => TextAlign::Justify,
                 _ => TextAlign::Start,
+            };
+        }
+        Property::TextTransform(tt) => {
+            s.text_transform = match tt.case {
+                lightningcss::properties::text::TextTransformCase::Uppercase => {
+                    crate::values::TextTransform::Uppercase
+                }
+                lightningcss::properties::text::TextTransformCase::Lowercase => {
+                    crate::values::TextTransform::Lowercase
+                }
+                lightningcss::properties::text::TextTransformCase::Capitalize => {
+                    crate::values::TextTransform::Capitalize
+                }
+                _ => crate::values::TextTransform::None,
             };
         }
         Property::WhiteSpace(w) => {
@@ -603,6 +627,76 @@ fn nop_value(n: &lightningcss::values::percentage::NumberOrPercentage) -> f32 {
 
 fn color(c: &CssColor, inherited: Rgba) -> Option<Rgba> {
     crate::stylesheet::resolve_color(c, inherited)
+}
+
+/// Convert a lightningcss image into our gradient paint (gradients only).
+fn gradient_of(img: &lightningcss::values::image::Image) -> Option<crate::values::Gradient> {
+    use lightningcss::values::gradient::{
+        Gradient as LcGradient, GradientItem, LineDirection,
+    };
+    use lightningcss::values::percentage::DimensionPercentage as DP;
+    let (lc, repeating) = match img {
+        lightningcss::values::image::Image::Gradient(boxed) => match boxed.as_ref() {
+            LcGradient::Linear(l) => (l, false),
+            LcGradient::RepeatingLinear(l) => (l, true),
+            LcGradient::Radial(r) => {
+                let stops = convert_stops(&r.items)?;
+                return Some(crate::values::Gradient::Radial { stops });
+            }
+            _ => return None,
+        },
+        _ => return None,
+    };
+    let _ = repeating; // v1: repeating renders as non-repeating
+    let angle_deg = match &lc.direction {
+        LineDirection::Angle(a) => match a {
+            lightningcss::values::angle::Angle::Deg(d) => *d,
+            lightningcss::values::angle::Angle::Rad(r) => r * 180.0 / std::f32::consts::PI,
+            lightningcss::values::angle::Angle::Grad(g) => g * 0.9,
+            lightningcss::values::angle::Angle::Turn(t) => t * 360.0,
+            _ => 180.0,
+        },
+        LineDirection::Horizontal(h) => match h {
+            lightningcss::values::position::HorizontalPositionKeyword::Left => 270.0,
+            lightningcss::values::position::HorizontalPositionKeyword::Right => 90.0,
+        },
+        LineDirection::Vertical(v) => match v {
+            lightningcss::values::position::VerticalPositionKeyword::Top => 0.0,
+            lightningcss::values::position::VerticalPositionKeyword::Bottom => 180.0,
+        },
+        LineDirection::Corner { horizontal, vertical } => {
+            use lightningcss::values::position::{HorizontalPositionKeyword as H, VerticalPositionKeyword as V};
+            let hx = match horizontal { H::Left => -1.0, H::Right => 1.0 };
+            let vy = match vertical { V::Top => -1.0, V::Bottom => 1.0 };
+            // Corner direction: normalize the (hx, vy) diagonal to CSS angle.
+            let deg = f32::atan2(hx, -vy).to_degrees();
+            deg.rem_euclid(360.0)
+        }
+    };
+    let stops = convert_stops(&lc.items)?;
+    Some(crate::values::Gradient::Linear { angle_deg, stops })
+}
+
+fn convert_stops(
+    items: &[lightningcss::values::gradient::GradientItem<
+        lightningcss::values::length::LengthPercentage,
+    >],
+) -> Option<Vec<crate::values::GradientStop>> {
+    use lightningcss::values::percentage::DimensionPercentage as DP;
+    let mut stops = Vec::new();
+    for item in items {
+        if let lightningcss::values::gradient::GradientItem::ColorStop(cs) = item {
+            let rgba = color(&cs.color, [0, 0, 0, 255])?;
+            let position = match &cs.position {
+                Some(DP::Percentage(p)) => Some(p.0),
+                Some(DP::Dimension(lv)) => None, // px positions: v1 approximates evenly
+                Some(DP::Calc(_)) | None => None,
+            };
+            stops.push(crate::values::GradientStop { color: rgba, position });
+        }
+        // Hints are skipped (v1).
+    }
+    if stops.is_empty() { None } else { Some(stops) }
 }
 
 fn size(v: &Size, lctx: &LengthContext) -> Option<AutoPx> {
