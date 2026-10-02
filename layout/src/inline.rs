@@ -136,10 +136,7 @@ pub fn collapse_ws(s: &str) -> String {
 
 /// Shape one item at max-content and return its glyphs
 /// (byte range, x position, advance) plus natural width.
-fn shape_item(
-    measurer: &TextMeasurer,
-    item: &InlineItem,
-) -> Vec<(usize, usize, f32, f32)> {
+fn shape_item(measurer: &TextMeasurer, item: &InlineItem) -> Vec<(usize, usize, f32, f32)> {
     let mut fs = measurer.font_system.lock().unwrap();
     let metrics = cosmic_text::Metrics::new(item.font_size, item.line_height_px);
     let mut buffer = cosmic_text::Buffer::new(&mut fs, metrics);
@@ -216,7 +213,7 @@ pub fn layout_inline(
             let mut max_end = _e;
             let mut width = adv.abs();
             while j + 1 < gs.len() {
-                let (ns, ne, nx, nadv) = gs[j + 1];
+                let (ns, ne, _nx, nadv) = gs[j + 1];
                 let next_space = bytes.get(ns) == Some(&b' ');
                 if next_space == is_space {
                     j += 1;

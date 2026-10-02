@@ -37,11 +37,7 @@ pub enum DisplayItem {
     /// (text from nested inline elements, with per-span color/background).
     InlineFlow { rect: Rect, flow: InlineFlowLayout },
     /// A gradient-painted rectangle (CSS background gradients).
-    GradientRect {
-        rect: Rect,
-        gradient: brows12_css::values::Gradient,
-        radius: f32,
-    },
+    GradientRect { rect: Rect, gradient: brows12_css::values::Gradient, radius: f32 },
     /// A decoded image blit.
     Image { rect: Rect, image: Arc<DecodedImage>, radius: f32 },
 }
@@ -61,7 +57,9 @@ pub struct DisplayList {
     pub items: Vec<DisplayItem>,
     pub viewport: (f32, f32),
     /// Build-time (z_index, item) pairs; sorted into `items` at the end.
-    tagged: Vec<(i32, DisplayItem)>,
+    /// Technically build-internal, but `pub` so tests can construct the
+    /// struct literal.
+    pub tagged: Vec<(i32, DisplayItem)>,
 }
 
 /// Which part of the tree a display list covers (compositor layer split).
@@ -127,11 +125,14 @@ pub fn build_display_list(
                     .filter(|c| c[3] > 0)
             })
             .unwrap_or(INITIAL_CANVAS);
-        list.tagged.push((0, DisplayItem::Rect {
-            rect: Rect { x: 0.0, y: 0.0, width: viewport.0, height: viewport.1 },
-            color: canvas_color,
-            radius: 0.0,
-        }));
+        list.tagged.push((
+            0,
+            DisplayItem::Rect {
+                rect: Rect { x: 0.0, y: 0.0, width: viewport.0, height: viewport.1 },
+                color: canvas_color,
+                radius: 0.0,
+            },
+        ));
     }
 
     let start = doc.body().or_else(|| doc.document_element()).unwrap_or(doc.root());
@@ -212,11 +213,14 @@ pub fn build_display_list(
                         },
                     ));
                 } else if style.background_color[3] > 0 {
-                    list.tagged.push((z, DisplayItem::Rect {
-                        rect,
-                        color: style.background_color,
-                        radius: style.border_radius,
-                    }));
+                    list.tagged.push((
+                        z,
+                        DisplayItem::Rect {
+                            rect,
+                            color: style.background_color,
+                            radius: style.border_radius,
+                        },
+                    ));
                 }
                 // Border
                 let bw = &style.border_width;
@@ -225,25 +229,31 @@ pub fn build_display_list(
                     + bw.bottom.extract_px()
                     + bw.left.extract_px();
                 if total > 0.0 {
-                    list.tagged.push((z, DisplayItem::Border {
-                        rect,
-                        widths: (
-                            bw.top.extract_px(),
-                            bw.right.extract_px(),
-                            bw.bottom.extract_px(),
-                            bw.left.extract_px(),
-                        ),
-                        color: style.border_color,
-                        radius: style.border_radius,
-                    }));
+                    list.tagged.push((
+                        z,
+                        DisplayItem::Border {
+                            rect,
+                            widths: (
+                                bw.top.extract_px(),
+                                bw.right.extract_px(),
+                                bw.bottom.extract_px(),
+                                bw.left.extract_px(),
+                            ),
+                            color: style.border_color,
+                            radius: style.border_radius,
+                        },
+                    ));
                 }
                 // Image content
                 if let Some(img) = images.get(&node) {
-                    list.tagged.push((z, DisplayItem::Image {
-                        rect,
-                        image: img.clone(),
-                        radius: style.border_radius,
-                    }));
+                    list.tagged.push((
+                        z,
+                        DisplayItem::Image {
+                            rect,
+                            image: img.clone(),
+                            radius: style.border_radius,
+                        },
+                    ));
                 }
                 for &c in &doc.node(node).children {
                     emit(
@@ -276,13 +286,16 @@ pub fn build_display_list(
                     align: style.text_align,
                 };
                 let text = doc.text_content(node);
-                list.tagged.push((z, DisplayItem::Text {
-                    rect,
-                    text,
-                    style: text_style,
-                    underline: style.text_underline,
-                    line_through: style.text_line_through,
-                }));
+                list.tagged.push((
+                    z,
+                    DisplayItem::Text {
+                        rect,
+                        text,
+                        style: text_style,
+                        underline: style.text_underline,
+                        line_through: style.text_line_through,
+                    },
+                ));
             }
             _ => {
                 for &c in &doc.node(node).children {

@@ -631,10 +631,7 @@ fn color(c: &CssColor, inherited: Rgba) -> Option<Rgba> {
 
 /// Convert a lightningcss image into our gradient paint (gradients only).
 fn gradient_of(img: &lightningcss::values::image::Image) -> Option<crate::values::Gradient> {
-    use lightningcss::values::gradient::{
-        Gradient as LcGradient, GradientItem, LineDirection,
-    };
-    use lightningcss::values::percentage::DimensionPercentage as DP;
+    use lightningcss::values::gradient::{Gradient as LcGradient, LineDirection};
     let (lc, repeating) = match img {
         lightningcss::values::image::Image::Gradient(boxed) => match boxed.as_ref() {
             LcGradient::Linear(l) => (l, false),
@@ -665,9 +662,17 @@ fn gradient_of(img: &lightningcss::values::image::Image) -> Option<crate::values
             lightningcss::values::position::VerticalPositionKeyword::Bottom => 180.0,
         },
         LineDirection::Corner { horizontal, vertical } => {
-            use lightningcss::values::position::{HorizontalPositionKeyword as H, VerticalPositionKeyword as V};
-            let hx = match horizontal { H::Left => -1.0, H::Right => 1.0 };
-            let vy = match vertical { V::Top => -1.0, V::Bottom => 1.0 };
+            use lightningcss::values::position::{
+                HorizontalPositionKeyword as H, VerticalPositionKeyword as V,
+            };
+            let hx = match horizontal {
+                H::Left => -1.0,
+                H::Right => 1.0,
+            };
+            let vy = match vertical {
+                V::Top => -1.0,
+                V::Bottom => 1.0,
+            };
             // Corner direction: normalize the (hx, vy) diagonal to CSS angle.
             let deg = f32::atan2(hx, -vy).to_degrees();
             deg.rem_euclid(360.0)
@@ -689,14 +694,18 @@ fn convert_stops(
             let rgba = color(&cs.color, [0, 0, 0, 255])?;
             let position = match &cs.position {
                 Some(DP::Percentage(p)) => Some(p.0),
-                Some(DP::Dimension(lv)) => None, // px positions: v1 approximates evenly
+                Some(DP::Dimension(_)) => None, // px positions: v1 approximates evenly
                 Some(DP::Calc(_)) | None => None,
             };
             stops.push(crate::values::GradientStop { color: rgba, position });
         }
         // Hints are skipped (v1).
     }
-    if stops.is_empty() { None } else { Some(stops) }
+    if stops.is_empty() {
+        None
+    } else {
+        Some(stops)
+    }
 }
 
 fn size(v: &Size, lctx: &LengthContext) -> Option<AutoPx> {

@@ -156,9 +156,8 @@ impl Rasterizer {
                 buffer.set_text(&seg.text, &attrs, cosmic_text::Shaping::Advanced, None);
                 buffer.shape_until_scroll(&mut fs, false);
 
-                let tint = tiny_skia::Color::from_rgba8(
-                    seg.color[0], seg.color[1], seg.color[2], 255,
-                );
+                let tint =
+                    tiny_skia::Color::from_rgba8(seg.color[0], seg.color[1], seg.color[2], 255);
                 let origin_x = rect.x + seg.x;
                 let baseline_y = rect.y + line.baseline;
                 for run in buffer.layout_runs() {
@@ -364,8 +363,7 @@ fn fill_gradient(
             if r > 0.0 {
                 let qx = (fx - rect.x - r).abs().max(0.0) - (rect.width - 2.0 * r).max(0.0) / 2.0;
                 let qy = (fy - rect.y - r).abs().max(0.0) - (rect.height - 2.0 * r).max(0.0) / 2.0;
-                let inside = qx.max(0.0).hypot(qy.max(0.0)) <= r
-                    || (qx <= 0.0 && qy <= 0.0);
+                let inside = qx.max(0.0).hypot(qy.max(0.0)) <= r || (qx <= 0.0 && qy <= 0.0);
                 if !inside {
                     continue;
                 }
@@ -408,11 +406,7 @@ fn fill_gradient(
     }
 }
 
-fn sample_stops(
-    pos: &[f32],
-    stops: &[brows12_css::values::GradientStop],
-    t: f32,
-) -> [u8; 4] {
+fn sample_stops(pos: &[f32], stops: &[brows12_css::values::GradientStop], t: f32) -> [u8; 4] {
     if t <= pos[0] {
         return stops[0].color;
     }
@@ -722,6 +716,7 @@ mod tests {
     fn fills_background() {
         let mut r = measurer();
         let list = DisplayList {
+            tagged: Vec::new(),
             items: vec![DisplayItem::Rect {
                 rect: Rect { x: 10.0, y: 10.0, width: 100.0, height: 50.0 },
                 color: [255, 0, 0, 255],
@@ -750,6 +745,7 @@ mod tests {
             align: brows12_css::values::TextAlign::Start,
         };
         let list = DisplayList {
+            tagged: Vec::new(),
             items: vec![DisplayItem::Text {
                 rect: Rect { x: 20.0, y: 20.0, width: 400.0, height: 50.0 },
                 text: "Hello Brows12".to_string(),
@@ -796,15 +792,21 @@ mod tests {
             Default::default(),
         );
         assert!(
-            list.items.iter().any(|i| matches!(i, DisplayItem::Text { .. } | DisplayItem::InlineFlow { .. })),
+            list.items
+                .iter()
+                .any(|i| matches!(i, DisplayItem::Text { .. } | DisplayItem::InlineFlow { .. })),
             "page must emit text items (Text or InlineFlow), got {:?}",
-            list.items.iter().map(|i| match i {
-                DisplayItem::Rect { .. } => "rect",
-                DisplayItem::Border { .. } => "border",
-                DisplayItem::Text { .. } => "text",
-                DisplayItem::InlineFlow { .. } => "inline-flow",
-                DisplayItem::Image { .. } => "image",
-            }).collect::<Vec<_>>()
+            list.items
+                .iter()
+                .map(|i| match i {
+                    DisplayItem::Rect { .. } => "rect",
+                    DisplayItem::Border { .. } => "border",
+                    DisplayItem::Text { .. } => "text",
+                    DisplayItem::InlineFlow { .. } => "inline-flow",
+                    DisplayItem::Image { .. } => "image",
+                    DisplayItem::GradientRect { .. } => "gradient",
+                })
+                .collect::<Vec<_>>()
         );
         let mut r = Rasterizer::new(measurer.font_system.clone());
         let (pixmap, _stats) = r.paint(&list, 1280, 720).unwrap();

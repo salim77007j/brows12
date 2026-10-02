@@ -396,15 +396,29 @@ pub fn compute_layout(
                     match piece {
                         Piece::Block(c) => {
                             if let Some(t) = build(
-                                doc, styles, tree, node_ids, image_sizes, inline_ctx, covered, c,
+                                doc,
+                                styles,
+                                tree,
+                                node_ids,
+                                image_sizes,
+                                inline_ctx,
+                                covered,
+                                c,
                             ) {
                                 children.push(t);
                             }
                         }
                         Piece::Inline(members) => {
                             if let Some(t) = build_inline_group(
-                                doc, styles, tree, node_ids, image_sizes, inline_ctx, covered,
-                                node, &members,
+                                doc,
+                                styles,
+                                tree,
+                                node_ids,
+                                image_sizes,
+                                inline_ctx,
+                                covered,
+                                node,
+                                &members,
                             ) {
                                 children.push(t);
                             }
@@ -633,18 +647,11 @@ pub fn compute_layout(
             }
             NodeData::Element { name, .. } => {
                 if name == "br" {
-                    items.push(InlineItem::newline(
-                        style.font_size,
-                        style.line_height_px(),
-                        style,
-                    ));
+                    items.push(InlineItem::newline(style.font_size, style.line_height_px(), style));
                     return;
                 }
-                let bg2 = if style.background_color[3] > 0 {
-                    Some(style.background_color)
-                } else {
-                    bg
-                };
+                let bg2 =
+                    if style.background_color[3] > 0 { Some(style.background_color) } else { bg };
                 let und = underline || style.text_underline;
                 let stk = strike || style.text_line_through;
                 for &c in &doc.node(node).children {
@@ -819,11 +826,7 @@ pub fn compute_layout(
     {
         // Parent map (walk from the layout start node).
         let mut parent_of: HashMap<NodeId, NodeId> = HashMap::new();
-        fn collect_parents(
-            doc: &Document,
-            node: NodeId,
-            parent_of: &mut HashMap<NodeId, NodeId>,
-        ) {
+        fn collect_parents(doc: &Document, node: NodeId, parent_of: &mut HashMap<NodeId, NodeId>) {
             for &c in &doc.node(node).children {
                 parent_of.insert(c, node);
                 collect_parents(doc, c, parent_of);
