@@ -25,6 +25,8 @@ fn test_env(base_url: &str) -> Arc<JsEnvironment> {
         console_log: Arc::new(Mutex::new(Vec::new())),
         canvas_store: Arc::new(brows12_js::CanvasStore::new()),
         webgl_store: Arc::new(brows12_js::WebGlStore::new()),
+        kv: Arc::new(brows12_storage::MemoryStore::new()),
+        idb_registry: Arc::new(Mutex::new(std::collections::HashMap::new())),
         fonts: Arc::new(Mutex::new(cosmic_text::FontSystem::new())),
     })
 }

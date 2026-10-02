@@ -723,6 +723,8 @@ impl Tab {
             console_log: Arc::new(Mutex::new(Vec::new())),
             canvas_store: self.canvas_store.clone(),
             webgl_store: self.webgl_store.clone(),
+            kv: self.engine.kv.clone(),
+            idb_registry: Arc::new(Mutex::new(std::collections::HashMap::new())),
             fonts: self.engine.fonts.clone(),
         });
 

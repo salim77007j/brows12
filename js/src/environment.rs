@@ -4,6 +4,7 @@ use brows12_net::HttpClient;
 use brows12_privacy::fingerprint::NavigatorSpoof;
 use brows12_storage::cookies::CookieJar;
 use brows12_storage::WebStorage;
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 /// Everything a JS realm can reach outside its sandbox.
@@ -30,6 +31,10 @@ pub struct JsEnvironment {
     pub canvas_store: Arc<crate::canvas::CanvasStore>,
     /// WebGL canvases (keyed by node id; None-capable when no GPU exists).
     pub webgl_store: Arc<crate::webgl::WebGlStore>,
+    /// Shared KV backend (engine-provided) for IndexedDB databases.
+    pub kv: Arc<dyn brows12_storage::KeyValueStore>,
+    /// IndexedDB databases opened by this realm, keyed by name.
+    pub idb_registry: Arc<Mutex<HashMap<String, Arc<brows12_storage::IdbDatabase>>>>,
     /// Shared font system (Canvas2D fillText).
     pub fonts: Arc<Mutex<cosmic_text::FontSystem>>,
 }

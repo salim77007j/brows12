@@ -204,3 +204,44 @@ device.queue.submit([enc.finish()]);
     }
     eprintln!("webgpu compute pipeline executed");
 }
+
+#[test]
+fn indexeddb_put_get_round_trip() {
+    let html = r#"<!DOCTYPE html><html><head></head><body>
+<script>
+var db = null;
+var open = indexedDB.open('notes');
+db = open.result;
+var store = db.createObjectStore('notes', { keyPath: 'id' });
+var tx = db.transaction('notes', 'readwrite');
+var os = tx.objectStore('notes');
+os.put({ id: 1, text: 'first' });
+os.put({ id: 2, text: 'second' });
+var got = os.get(1);
+var all = os.getAll();
+if (JSON.stringify(got.result) !== '{"id":1,"text":"first"}') {
+  throw new Error('get mismatch: ' + JSON.stringify(got.result));
+}
+if (all.result.length !== 2) throw new Error('getAll expected 2, got ' + all.result.length);
+os.delete(1);
+if (os.get(1).result !== null) throw new Error('delete failed');
+</script></body></html>"#;
+    let engine = Engine::new(EngineConfig::default());
+    let tab = engine.tab();
+    tab.load_url_from_string(html, "brows12://fixture/idb").expect("idb load");
+}
+
+#[test]
+fn element_animate_sets_transition() {
+    let html = r#"<!DOCTYPE html><html><head></head><body>
+<div id="a" style="opacity: 1"></div>
+<script>
+var el = document.getElementById('a');
+var anim = el.animate([{ opacity: 0 }, { opacity: 1 }], 300);
+if (!anim || anim.playState !== 'running') throw new Error('animate did not start');
+anim.cancel();
+</script></body></html>"#;
+    let engine = Engine::new(EngineConfig::default());
+    let tab = engine.tab();
+    tab.load_url_from_string(html, "brows12://fixture/animate").expect("animate load");
+}

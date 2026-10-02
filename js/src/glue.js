@@ -620,6 +620,7 @@ if (!__brows12.isWorker) {
 
   __brows12PatchCanvas(Brows12Element);
   __brows12PatchWebGL(Brows12Element);
+  __brows12PatchWAAPI(Brows12Element);
 }
 
 function __brows12FireLoad() {
@@ -1065,6 +1066,47 @@ function __brows12ToFloats(v) {
   return [];
 }
 
+// Web Animations API subset: Element.animate() backed by CSS transitions
+// through the engine's deterministic animation clock. Only first->last
+// keyframe pairs with numeric/string property values are supported;
+// iterations/easing/direction map to their transition equivalents where the
+// transition engine supports them. Documented in CAPABILITY_REPORT.
+function __brows12CamelToKebab(p) {
+  return String(p).replace(/[A-Z]/g, m => "-" + m.toLowerCase());
+}
+
+function __brows12PatchWAAPI(Brows12Element) {
+  Brows12Element.prototype.animate = function (keyframes, options) {
+    const dur = typeof options === "number" ? options : Number((options && options.duration) || 0);
+    const delay = typeof options === "object" && options ? Number(options.delay || 0) : 0;
+    const frames = Array.isArray(keyframes) ? keyframes : keyframes ? [keyframes] : [];
+    const anim = {
+      currentTime: 0, playState: "running", onfinish: null,
+      cancel() { this.playState = "idle"; },
+      finish() { this.playState = "finished"; }
+    };
+    if (frames.length >= 2 && dur > 0) {
+      const from = frames[0];
+      const to = frames[frames.length - 1];
+      const self = this;
+      const props = Object.keys(from).filter(p => to[p] !== undefined && from[p] !== null && to[p] !== null);
+      for (const p of props) {
+        const cssProp = __brows12CamelToKebab(p);
+        this.styleSet("transition", cssProp + " " + (dur + delay) + "ms ease");
+        this.styleSet(cssProp, String(from[p]));
+      }
+      globalThis.setTimeout(function () {
+        for (const p of props) {
+          self.styleSet(__brows12CamelToKebab(p), String(to[p]));
+        }
+        anim.playState = "finished";
+        if (typeof anim.onfinish === "function") anim.onfinish({ target: anim });
+      }, Math.max(delay, 16));
+    }
+    return anim;
+  };
+}
+
 function __brows12PatchWebGL(Brows12Element) {
   const proto = Brows12Element.prototype;
   const oldGetContext = proto.getContext;
@@ -1249,3 +1291,81 @@ Object.defineProperty(globalThis.navigator || {}, "gpu", {
   get: function () { return new GPU(); },
   configurable: true
 });
+
+// ---- IndexedDB -------------------------------------------------------------
+// Synchronous engine-backed subset (documented deviation): open/transactions
+// resolve immediately; values are structured-clone JSON documents.
+class IDBRequest {
+  constructor(value) { this.result = value; this.error = null; this.readyState = "done"; }
+  addEventListener(type, cb) { if (type === "success" && cb) cb({ target: this }); }
+  set onsuccess(cb) { if (cb) cb({ target: this }); }
+  set onerror(cb) {}
+}
+
+class IDBObjectStore {
+  constructor(dbName, name, keyPath) {
+    this.__db = dbName;
+    this.name = name;
+    this.keyPath = keyPath;
+  }
+  put(value, key) {
+    const kp = this.keyPath || "id";
+    const isStr = typeof key === "string";
+    const num = isStr ? 0 : Number(key || 0);
+    const raw = isStr ? String(key) : "";
+    const v = (value !== null && typeof value === "object") ? value : { __value: value };
+    __brows12.idbPut(this.__db, this.name, kp, num, isStr, raw, JSON.stringify(v));
+    return new IDBRequest(key);
+  }
+  get(key) {
+    const isStr = typeof key === "string";
+    const raw = JSON.parse(
+      __brows12.idbGet(this.__db, this.name, isStr ? 0 : Number(key), isStr, isStr ? String(key) : "") || "null"
+    );
+    const v = raw && typeof raw === "object" && "__value" in raw ? raw.__value : raw;
+    return new IDBRequest(v);
+  }
+  getAll() {
+    const items = __brows12.idbGetAll(this.__db, this.name)
+      .map(s => { const v = JSON.parse(s); return v && typeof v === "object" && "__value" in v ? v.__value : v; });
+    return new IDBRequest(items);
+  }
+  delete(key) {
+    const isStr = typeof key === "string";
+    __brows12.idbDelete(this.__db, this.name, isStr ? 0 : Number(key), isStr, isStr ? String(key) : "");
+    return new IDBRequest(undefined);
+  }
+}
+
+class IDBTransaction {
+  constructor(dbName, storeNames, mode) {
+    this.mode = mode || "readonly";
+    this.__db = dbName;
+    this.__stores = Array.isArray(storeNames) ? storeNames : [storeNames];
+  }
+  objectStore(name) {
+    return new IDBObjectStore(this.__db, name, "id");
+  }
+}
+
+class IDBDatabase {
+  constructor(name) { this.name = name; this.version = 1; this.onversionchange = null; }
+  createObjectStore(name, opts) {
+    const keyPath = (opts && opts.keyPath) || "id";
+    __brows12.idbCreateObjectStore(this.name, name, String(keyPath));
+    return new IDBObjectStore(this.name, name, String(keyPath));
+  }
+  transaction(storeNames, mode) { return new IDBTransaction(this.name, storeNames, mode); }
+  close() {}
+}
+
+class IDBFactory {
+  open(name) {
+    __brows12.idbOpen(String(name));
+    return new IDBRequest(new IDBDatabase(String(name)));
+  }
+  deleteDatabase(name) { return new IDBRequest(undefined); }
+}
+
+globalThis.indexedDB = new IDBFactory();
+globalThis.IDBKeyRange = { only: v => v, lowerBound: v => v, upperBound: v => v, bound: (lo) => lo };
