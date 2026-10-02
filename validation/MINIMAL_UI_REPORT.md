@@ -139,3 +139,47 @@ clean automation channels for scripted driving.
 6. GPU present path via the existing compositor seam (wgpu surface swap)
    once sites demand faster blits; the shell already speaks in frames, so
    this is an engine-side swap behind `Tab::composite_frame()`.
+
+---
+
+## v0.2.2 re-validation — after the rendering quality upgrade (2026-10-03)
+
+The rendering engine received a major upgrade between the first validation
+run and this one (see `docs/RENDER_UPGRADE_PLAN.md`). The full 10-step
+UI validation was **re-run end-to-end under Xvfb** with the upgraded engine;
+all steps passed (`PASS: validation complete`, exit 0) and every screenshot
+in `/screenshots` was **regenerated from the live run**.
+
+### Step results (same criteria as the first run)
+
+| # | Step | Result | Notes |
+|---|------|--------|-------|
+| 1 | New-tab start page | **Yes** | clean chrome, caret blink |
+| 2 | Typed query "rust programming language" | **Yes** | omnibox + caret visible |
+| 3 | Search via omnibox → Bing | **Yes** | real results page: 166,000 results, favicon rows, blue underlined titles, snippets — text on one baseline, links flow mid-line |
+| 4 | example.com | **Yes** | matches Chrome (2025 centered layout, `25vh` padding, `max-width:26em`) |
+| 5 | en.wikipedia.org Rust article | **Partially** | huge clean h1, sidebar, SVG gear logo renders, infobox table renders; sticky sidebar menus still overlap (floats/sticky are known gaps) |
+| 6 | github.com | **Partially** | page loads but GitHub returns 403 "Forbidden" to this datacenter IP (server-side bot block, not a rendering defect) |
+| 7 | www.rust-lang.org | **Partially** | flows correctly (inline language list, serif headline, SVG logo); hero gradient/paint polish still missing |
+| 8 | Reload | **Yes** | real reload event + fresh load |
+| 9 | Two tabs side-by-side sites | **Yes** | new tab, switch, independent histories |
+| 10 | Back / Forward across history | **Yes** | github ⇄ rust-lang round trip through real history |
+
+### Engine bugs found by the browser window (and fixed)
+
+1. Double-applied swash glyph placement → the "reversed and jumbled text"
+2. Missing inline layout → text could not flow across links
+3. Percentage units computed at 1/100th (fraction-vs-percent double division)
+4. taffy gaps: percentage absolute insets, static position for auto insets
+5. Whitespace collapsing dropped leading spaces after inline elements
+6. BiDi cluster panic on RTL text
+7. Underline drawn above the baseline
+
+### Remaining honest gaps
+
+Floats, CSS grid, `overflow:hidden` clipping, `@font-face` web fonts,
+letter-spacing, colspan/rowspan — tracked in `docs/RENDER_UPGRADE_PLAN.md`.
+
+**Bottom line:** with the upgraded engine the browser demonstrates real
+end-to-end browsing — search from the omnibox, navigation, multi-tab, and
+history — with pages that read like a browser, not like scattered text.

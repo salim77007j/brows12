@@ -1,0 +1,26 @@
+{
+  "console": [
+    "script error: script threw: inline#1: portalSearchDomain is not defined\n--- JS stack ---\n    at <eval> (eval_script:15:5)\n",
+    "script error: script threw: portal/wikipedia.org/assets/js/index-a9b103e1fc.js: Element is not defined\n--- JS stack ---\n    at <eval> (eval_script:1:459)\n",
+    "[error] event handler error: cannot read property 'length' of undefined"
+  ],
+  "engine": "brows12 v0.2.0",
+  "error": null,
+  "final_url": "https://www.wikipedia.org",
+  "input": "https://www.wikipedia.org",
+  "loaded": true,
+  "render": {
+    "compositor": null,
+    "png_bytes": 84017,
+    "scroll_y": 0.0
+  },
+  "screenshot": "validation/run/fixcheck/live_wikipedia2.png",
+  "timing": {
+    "full_pipeline_ms": 4144
+  },
+  "title": "Wikipedia",
+  "viewport": {
+    "height": 800,
+    "width": 1280
+  }
+}

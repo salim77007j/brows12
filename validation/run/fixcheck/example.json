@@ -1,0 +1,22 @@
+{
+  "console": [],
+  "engine": "brows12 v0.2.0",
+  "error": null,
+  "final_url": "brows12://fixture/",
+  "input": "validation/run/fixcheck/example.html",
+  "loaded": true,
+  "render": {
+    "compositor": null,
+    "png_bytes": 26119,
+    "scroll_y": 0.0
+  },
+  "screenshot": "validation/run/fixcheck/example_after.png",
+  "timing": {
+    "full_pipeline_ms": 8
+  },
+  "title": "Example Domain",
+  "viewport": {
+    "height": 800,
+    "width": 1280
+  }
+}
