@@ -26,6 +26,7 @@ pub mod event_loop;
 pub mod glsl;
 pub mod glue;
 pub mod idb_bindings;
+pub mod modules;
 pub mod glue_b64;
 pub mod platform;
 pub mod runtime;

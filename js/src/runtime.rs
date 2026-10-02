@@ -33,6 +33,10 @@ pub enum Script {
     Inline { source: String, name: String },
     /// External script already fetched by the engine.
     External { content: String, name: String },
+    /// Inline `<script type="module">` body.
+    InlineModule { source: String, name: String },
+    /// External module already fetched by the engine.
+    ExternalModule { content: String, name: String },
 }
 
 /// One QuickJS runtime + context. `!Send` by design — pin it to the page's
@@ -85,6 +89,7 @@ impl JsRuntime {
 
         {
             let sender = sender.clone();
+            let env_for_loader = env.clone();
             ctx.with(|ctx| {
                 let links = RealmLinks {
                     sender,
@@ -96,6 +101,16 @@ impl JsRuntime {
                 bindings::install(&ctx, env, dom, links, timers.clone())
                     .map_err(|e| crate::JsError::Setup(e.to_string()))
             })?;
+
+            // ES module loading: HTTP(S)/virtual URLs through the net stack.
+            runtime.set_loader(
+                crate::modules::HttpModuleResolver { base_url: env_for_loader.base_url.clone() },
+                crate::modules::HttpModuleLoader::new(
+                    env_for_loader.net.clone(),
+                    env_for_loader.tokio.clone(),
+                    env_for_loader.base_url.clone(),
+                ),
+            );
         }
 
         let rt = Self {
@@ -134,14 +149,42 @@ impl JsRuntime {
 
     /// Execute a page script (inline source or engine-fetched external).
     pub fn execute(&self, script: &crate::Script) -> Result<(), JsExecutionError> {
-        let (source, name) = match script {
-            crate::Script::Inline { source, name } => (source.clone(), name.clone()),
-            crate::Script::External { content, name } => (content.clone(), name.clone()),
-        };
-        self.eval_raw(&source).map(|_| ()).map_err(|e| match e {
-            JsExecutionError::Script(msg) => JsExecutionError::Script(format!("{name}: {msg}")),
-            other => other,
-        })
+        match script {
+            crate::Script::InlineModule { source, name }
+            | crate::Script::ExternalModule { content: source, name } => {
+                self.eval_module(source, name)
+            }
+            crate::Script::Inline { source, name } | crate::Script::External { content: source, name } => {
+                self.eval_raw(source).map(|_| ()).map_err(|e| match e {
+                    JsExecutionError::Script(msg) => {
+                        JsExecutionError::Script(format!("{name}: {msg}"))
+                    }
+                    other => other,
+                })
+            }
+        }
+    }
+
+    /// Declare + evaluate an ES module. `import` statements (including
+    /// dynamic `import()`) resolve through the realm's module loader.
+    fn eval_module(&self, source: &str, name: &str) -> Result<(), JsExecutionError> {
+        self.ctx.with(|ctx| {
+            let outcome = (|| -> rquickjs::Result<()> {
+                let module =
+                    rquickjs::Module::declare(ctx.clone(), name.to_string(), source.to_string())?;
+                module.eval()?;
+                Ok(())
+            })();
+            outcome.map(|_| ()).map_err(|e| {
+                let caught = ctx.catch();
+                let msg = caught
+                    .as_string()
+                    .and_then(|s| s.to_string().ok())
+                    .unwrap_or_else(|| format!("{e}"));
+                JsExecutionError::Script(format!("{name}: {msg}"))
+            })
+        })?;
+        Ok(())
     }
 
     /// Drain pending jobs (microtasks / promise continuations).

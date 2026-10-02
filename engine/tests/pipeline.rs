@@ -245,3 +245,21 @@ anim.cancel();
     let tab = engine.tab();
     tab.load_url_from_string(html, "brows12://fixture/animate").expect("animate load");
 }
+
+#[test]
+fn es_module_import_executes() {
+    let module_code =
+        "export function greet(name) { return 'hello ' + name; }\nexport const version = 42;\n"
+            .to_string();
+    let html = r#"<!DOCTYPE html><html><head></head><body>
+<script type="module">
+import { greet, version } from '/util.js';
+document.title = 'esm-ok ' + greet('module') + ' v' + version;
+</script></body></html>"#;
+
+    let base = local_server(vec![("/", html.to_string()), ("/util.js", module_code)]);
+    let engine = Engine::new(EngineConfig::default());
+    let tab = engine.tab();
+    tab.load_url(&base).expect("load");
+    assert_eq!(tab.title(), "esm-ok hello module v42");
+}

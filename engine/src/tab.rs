@@ -677,16 +677,20 @@ impl Tab {
     }
 
     fn run_scripts(&self, page: &Arc<PageInner>) -> Result<(), EngineError> {
-        // Collect scripts in document order.
-        let scripts: Vec<(bool, String)> = {
+        // Collect scripts in document order: (is_external, is_module, source).
+        let scripts: Vec<(bool, bool, String)> = {
             let doc = page.document.lock().unwrap();
             let mut out = Vec::new();
             doc.visit_all(|node| {
                 if doc.is_element(node) && doc.local_name(node) == "script" {
+                    let is_module = doc
+                        .attr(node, "type")
+                        .map(|t| t.eq_ignore_ascii_case("module"))
+                        .unwrap_or(false);
                     if let Some(src) = doc.attr(node, "src") {
-                        out.push((true, src.to_string()));
+                        out.push((true, is_module, src.to_string()));
                     } else {
-                        out.push((false, doc.text_content(node)));
+                        out.push((false, is_module, doc.text_content(node)));
                     }
                 }
             });
@@ -733,7 +737,7 @@ impl Tab {
         runtime.load_glue().map_err(EngineError::from)?;
 
         let mut executed = 0;
-        for (is_external, source) in scripts.iter().take(16) {
+        for (is_external, is_module, source) in scripts.iter().take(16) {
             let script = if *is_external {
                 let resolved = match base.join(source) {
                     Ok(u) => u.to_string(),
@@ -744,11 +748,21 @@ impl Tab {
                         .net
                         .send(NetRequest::get(resolved, base.host_str().unwrap_or("").to_string())),
                 ) {
-                    Ok(resp) if resp.is_success() => Script::External {
-                        content: String::from_utf8_lossy(&resp.body).to_string(),
-                        name: source.clone(),
-                    },
+                    Ok(resp) if resp.is_success() => {
+                        let content = String::from_utf8_lossy(&resp.body).to_string();
+                        if *is_module {
+                            Script::ExternalModule { content, name: source.clone() }
+                        } else {
+                            Script::External { content, name: source.clone() }
+                        }
+                    }
                     _ => continue,
+                }
+            } else if *is_module {
+                Script::InlineModule {
+                    source: source.clone(),
+                    name: base.join(&format!("inline-module-{executed}.js")).map(|u| u.to_string())
+                        .unwrap_or_else(|_| format!("inline-module-{executed}.js")),
                 }
             } else {
                 Script::Inline { source: source.clone(), name: format!("inline#{}", executed) }
