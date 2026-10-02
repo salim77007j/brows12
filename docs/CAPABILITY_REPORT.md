@@ -1,6 +1,6 @@
 # Brows12 v0.2 Capability Report
 
-**Date:** 2026-10-02 · **Engine:** brows12 v0.2.0 · **Platform:** Linux x86_64 (headless CI container, 2 cores, no GPU)
+**Date:** 2026-10-02 · **Engine:** brows12 v0.2.0 (v0.2.1 GPU/graphics refresh) · **Platform:** Linux x86_64 (headless CI container, 2 cores; GPU paths verified on lavapipe/SwiftShader software Vulkan)
 **Verification:** every claim below is backed by a test in this repository or a screenshot in `docs/screenshots/` produced by the headless harness (`harness/`, `brows` CLI).
 
 This report is honest by design: it states what works, what is partial, and what is missing. Nothing here is aspirational.
@@ -13,7 +13,7 @@ Brows12 v0.2 is a Rust browser engine (13-crate workspace) that loads, styles, l
 
 What works well: document rendering for text-and-CSS sites (Wikipedia, docs.rs, arxiv, w3.org, HN data), CSS custom properties, cascade layers, media/supports/container at-rules, animations and transitions (deterministic clock), scrollable compositing with fixed-layer anchoring, Canvas 2D, WebAssembly (wasmi), observers, and an event loop with fetch/XHR/WebSocket/Workers.
 
-What is not there yet: tables and floats, full inline flow (mixed inline boxes on one line), presentational HTML attributes (`bgcolor`, `width`), form controls, WebGL/WebGPU contexts, media playback, and Service Workers. Section 4 has the complete matrix.
+What is not there yet: tables and floats, full inline flow (mixed inline boxes on one line), presentational HTML attributes (`bgcolor`, `width`), form controls, media playback, and Service Workers. WebGL 2 and WebGPU landed in the v0.2.1 refresh (shaders, buffers, VAOs, textures, compute; see the matrix for the subset boundaries), along with ES modules, IndexedDB (synchronous subset) and an Element.animate() polyfill. Section 4 has the complete matrix.
 
 **Verdict for the UI layer:** the engine is ready to host a UI against *document-centric* sites today (Wikipedia-class). Interactive web-app sites (GitHub-class) render partially — content and scripts execute, but layout fidelity drops where tables/floats/inline-flow are involved. See §6 for the exact per-site verdicts.
 
@@ -75,7 +75,7 @@ Legend: ✅ supported · 🟡 partial (works, subset documented) · ❌ missing.
 | `console.*` → engine events | ✅ | pipeline tests |
 | `localStorage` (per-origin, persisted) | ✅ | storage tests |
 | ES2022+ language level | ✅ | QuickJS-ng (classes, async/await, optional chaining, nullish coalescing) |
-| ES modules (`<script type=module>`, dynamic import) | ❌ | loader seam wired, URL loader not landed (ROADMAP) |
+| **ES modules** (`<script type=module>`, `import`, dynamic `import()`) | ✅ | HTTP(S)/virtual-scheme loader through the engine net stack (privacy/cache/cookies apply); bare specifiers unsupported (as in browsers). Evidence: `es_module_import_executes` |
 | `performance.now()` | ✅ | `canvas2d_and_platform_apis` |
 | `MutationObserver` | 🟡 | fires batched records on mutations; record granularity approximate |
 | `ResizeObserver`, `IntersectionObserver` | 🟡 | initial-callback semantics, not continuous |
@@ -87,11 +87,11 @@ Legend: ✅ supported · 🟡 partial (works, subset documented) · ❌ missing.
 |---|---|---|
 | Raster pipeline (backgrounds, borders, glyphs, images) | ✅ | tiny-skia + swash; validated pixel-level (`content_pipeline`) |
 | Canvas 2D (paths, transforms, fills/strokes, fillText, drawImage, gradients-stub) | 🟡 | `canvas2d_and_platform_apis`; `measureText` approximated; getImageData/putImageData missing |
-| **GPU compositor** (wgpu 30): layer textures, transform/opacity uniforms, offscreen render + readback, scroll without re-raster | ✅ compile / 🟡 runtime-here | `compositor` crate tests; this container has **no GPU adapter** — CPU fallback verified, GPU path needs lavapipe/GPU (CI note below) |
+| **GPU compositor** (wgpu 30): layer textures, transform/opacity uniforms, offscreen render + readback, scroll without re-raster | ✅ | `compositor` crate tests; GPU path verified on lavapipe/SwiftShader (CI installs `mesa-vulkan-drivers`); a WGSL `vec3` uniform alignment bug that only real GPUs caught (Windows) is fixed |
 | CPU compositor fallback | ✅ | blend + transform parity tests |
 | Scroll compositing (`Tab::set_scroll`) | ✅ | fixed layers anchored; content layer offset |
-| WebGL 2 | ❌ | design exists (naga glsl-in → wgpu); not landed — see §5 |
-| WebGPU (JS surface) | ❌ | adapter/device plumbing exists in compositor; JS bindings not landed |
+| **WebGL 2** | 🟡 | working subset over wgpu 30 (`brows12-js::webgl`): GLSL ES 1.00/3.00 shaders via a tested ES→desktop-core normalizer + naga 29 (see LIBRARY_CHOICES), programs, buffers, VAOs, textures (uploads from bytes + Canvas2D), uniforms (float/int/mat), `drawArrays`/`drawElements` (TRIANGLES/STRIP/LINES/POINTS), blending, depth test, culling, scissor, viewport, `readPixels`, GPU→page harvest like Canvas2D. **Missing:** framebuffer objects, transform feedback, instancing, queries, `TRIANGLE_FAN`/`LINE_LOOP`, extensions. Evidence: `engine::tests::pipeline::webgl2_triangle_renders_and_harvests` (red-pixel assertion on SwiftShader) |
+| **WebGPU (JS surface)** | 🟡 | `navigator.gpu.requestAdapter/requestDevice`, buffers (create/write/map-read/destroy), WGSL shader modules, compute pipelines, bind group layouts + groups, command encoder + compute pass dispatch, `queue.submit`. **Missing:** render pipelines/texture bindings from JS, full async model (`mapAsync` resolves synchronously — documented). Evidence: `webgpu_compute_vector_add` (WGSL kernel doubles a float buffer) |
 | Images (PNG/JPEG/GIF/WebP decode) | ✅ | `image` crate |
 | Web fonts (`@font-face`) | ✅ | engine fetches + `load_font_data` (cap 6/page) |
 | CSS animations (`@keyframes`, easing solver) | ✅ | `parsing/css` unit tests + `Tab::advance_animation` |
@@ -134,11 +134,11 @@ Legend: ✅ supported · 🟡 partial (works, subset documented) · ❌ missing.
 | Anti-fingerprinting navigator shield | ✅ | fingerprint tests |
 | HTTP cache (content-addressed, memory+disk redb) | ✅ | cache tests |
 | `localStorage` / `sessionStorage` | ✅ / 🟡 | sessionStorage same store, not session-cleared |
-| IndexedDB | ❌ | `storage/src/idb.rs` schema exists; JS bindings not landed |
+| **IndexedDB** | 🟡 | synchronous subset over `IdbDatabase` (redb/memory KV): `indexedDB.open`, `createObjectStore`, `put/get/getAll/delete` with keyPath keys. **Missing:** cursors, indexes, version upgrade events, async IDBRequest semantics. Evidence: `indexeddb_put_get_round_trip` |
 | Cache API / Service Workers | ❌ | roadmap |
 | WebAssembly (wasmi 2: instantiate/call/memory RW) | ✅ | `webassembly_instantiate_and_call` |
 | WebRTC data channels | ❌ | rejected for v0.2 (see §5) |
-| Web Animations API (`Element.animate`) | ❌ | CSS animation engine exists; JS surface not landed |
+| **Web Animations API** | 🟡 | `Element.animate()` backed by the CSS transition engine + deterministic clock (first→last keyframe pair, duration/delay). **Missing:** keyframe interpolation beyond endpoints, easing options, playback control. Evidence: `element_animate_sets_transition` |
 | Forms/validation/File API | ❌ | not landed |
 
 ---
@@ -164,7 +164,7 @@ GPU note: the compositor's wgpu path compiles and passes unit tests where an ada
 
 ## 5. Rejected / deferred decisions (with evidence)
 
-1. **WebGL2 over naga-GLSL → wgpu** — deferred, not rejected. The compositor already ships the wgpu device/texture infrastructure; WebGL2 additionally needs the full GL state machine (VAOs, texture formats, framebuffer objects). Evidence for deferral: the remaining work is a self-contained module (est. 2–3 kLOC) with no cross-crate risk; shipping a half-working `getContext('webgl2')` would be worse than `null` (which is exactly what a GPU-less browser returns).
+1. **WebGL2** — landed in v0.2.1 as the subset described in §3, built on a GLSL ES normalizer + naga 29 + the compositor's wgpu device seam. The remaining gap (FBOs, transform feedback, instancing) is documented in the matrix rather than silently absent: `getContext('webgl2')` now returns a real context on GPU-capable systems and `null` (spec behaviour) on GPU-less ones.
 2. **wasmtime over wasmi** — wasmi chosen for v0.2. Evidence: (a) this container class disallows/marginalizes RWX JIT pages; (b) 2-core CI: wasmi builds in seconds, wasmtime's cranelift is a multi-GB, memory-heavy build; (c) deterministic interpreter simplifies fuzzing. The `WebAssembly` JS surface is engine-level, so swapping wasmtime later is a leaf change.
 3. **WebRTC data channels** — rejected for v0.2: no mature pure-Rust SCTP/ICE stack at production quality; webrtc-rs is unmaintained. Re-evaluate when `str0m` matures.
 4. **Service Workers / Cache API** — deferred until the event-loop model gains per-origin registration storage; the storage layer (redb KV) already has the schema seam.
@@ -189,7 +189,7 @@ GPU note: the compositor's wgpu path compiles and passes unit tests where an ada
 1. Inline formatting contexts (biggest visual-fidelity win for the whole web).
 2. Tables + floats (HN, Wikipedia infoboxes, docs everywhere).
 3. Presentational attributes + form controls.
-4. WebGL2 over the existing compositor wgpu seam (three.js-class demos).
+4. WebGL2 depth: framebuffer objects + instancing + extension surface (three.js-class demos beyond simple geometry).
 5. ES modules + full event propagation (SPA boot).
 6. IndexedDB + Element.animate JS surface.
 
@@ -197,3 +197,32 @@ GPU note: the compositor's wgpu path compiles and passes unit tests where an ada
 `.github/workflows/ci.yml` runs fmt, clippy `-D warnings`, workspace tests (Linux+Windows), ASan/TSan, fuzz smoke, **plus a headless-harness job** that renders fixture pages and uploads `docs/test-results.json` + screenshots as artifacts. Add `sudo apt-get install -y mesa-vulkan-drivers` on the runner to also verify the wgpu GPU backend with lavapipe.
 
 — Brows12 engineering, v0.2.0
+
+---
+
+## 7. v0.2.1 refresh changelog (this report revision)
+
+All claims above reflect the v0.2.1 state; the deltas since the original
+v0.2.0 report:
+
+1. **WebGL 2 landed** — GLSL ES normalizer + naga 29 + wgpu 30 state machine
+   (`js/glsl.rs`, `js/webgl.rs`, `js/webgl_bindings.rs`); GPU canvases
+   harvest into the image pipeline like Canvas2D. Verified end-to-end on
+   SwiftShader (red-pixel assertion in `engine::tests::pipeline`).
+2. **WebGPU JS surface landed** — compute-first subset mirroring wgpu
+   (`js/webgpu.rs`), error-capture instead of panics on validation errors.
+3. **ES modules landed** — `<script type="module">` + `import`/dynamic
+   `import()` over the engine network stack.
+4. **IndexedDB (sync subset) landed** — real storage semantics via
+   `brows12_storage::IdbDatabase` over the engine KV backend.
+5. **Element.animate() landed** — transitions-backed WAAPI subset.
+6. **Engine fixes**: `document.title` reflects script mutations;
+   `load_url_from_string` (the harness/virtual path) now runs the full
+   pipeline — stylesheets, scripts, canvas harvest — instead of parse-only;
+   navigation clears page-owned surfaces; GPU compositor uniform struct
+   alignment fixed (80-byte WGSL `vec3` padding bug that only manifest on
+   real GPU backends such as Windows D3D12).
+7. **CI hardening**: the push trigger was corrupted (`branches: ain]`) and
+   silently skipped push builds — fixed; ubuntu build-test installs
+   lavapipe so the GPU paths are exercised every run; the ASan job runs
+   with `run_libc_freeres` and documents why.

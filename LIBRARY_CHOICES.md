@@ -20,6 +20,8 @@ of writing; `Cargo.lock` pins exact builds.
 | Text shaping | **cosmic-text 0.19** (rustybuzz + swash) | rustybuzz alone (no layout runs/bidi wrapping), fontdue (rasterization only, no complex shaping), harfbuzz-sys (C dependency) |
 | 2D raster | **tiny-skia 0.12** | vello (GPU-first; wonderful, but adds wgpu driver matrix to CI and ~20 s cold start; tracked as opt-in), raqote (slower than tiny-skia in resvg comparisons), skia-bindings (giant C++ build) |
 | GPU compositing | **wgpu 30** (`brows12-compositor`, feature `gpu`, default) with tiny-skia CPU fallback | vello (scene GPU rasterizer — beautiful, but replaces rather than complements our tiny-skia paint pipeline; revisit for tile-based GPU paint in v0.3), skia's GPU backend (C++) |
+| WebGL 2 | **Custom GL state machine over wgpu 30** + GLSL ES normalizer → **naga 29** (glsl-in desktop-core → WGSL-out) | naga 30 glsl-in (broken upstream at 30.0.1 — `apply_default_interpolation` missing in the IR), shaderc/glslang (C++ builds, and wgpu no longer accepts SPIR-V), Mesa VIRGL (C, way off scope), hand-written GLSL→WGSL byte-compiler (silent miscompile risk on a full language) |
+| WebGPU JS surface | **Direct wgpu 30 mirror** (`brows12-js::webgpu`) — the API is a near 1:1 mapping | emscripten-webgpu shims (wrong layer), Dawn/wgpu-native C plugins (we already own wgpu in-process) |
 | WebAssembly | **wasmi 2.0** (in-process interpreter) | wasmtime 30 (JIT: multi-GB build, RWX pages — marginalizes on hardened containers and 2-core CI; cranelift compile latency hurts small page modules end-to-end), wasmer (runtime churn), QuickJS's own wasm (none) |
 | Headless harness | **custom `brows` CLI** over `brows12-api` | headless-chrome style CDP forks (we ARE the engine) |
 | HTTP/1.1 + 2 | **hyper 1.x + hyper-util 0.1** | reqwest (full client but opinionated, hides the connection layer we need for cookies/DoH/alt-svc), ureq (blocking only) |
@@ -59,6 +61,42 @@ code for no gain); skia GPU (C++). The CPU fallback implements the same
 and battery-saver mode produce identical frames — validated by a shared
 round-trip test. On GitHub runners, `apt-get install mesa-vulkan-drivers`
 (lavapipe) exercises the true GPU path.
+
+### WebGL 2: a GLSL ES normalizer + naga 29, not naga's ES support
+
+naga's GLSL frontend is the only pure-Rust path from GLSL to wgpu, but v29
+parses **desktop core 440/450/460 only**: `#version 300 es` is rejected,
+`precision` statements and `in/out` without explicit locations error out,
+plain `uniform` declarations require `layout(binding=N)`, and the
+preprocessor has no `#ifdef`. Real WebGL shaders use every one of those.
+naga 30.0.1 does not fix this — its `glsl-in` feature does not even compile
+(missing `apply_default_interpolation` in the shipped IR).
+
+The chosen bridge (`brows12-js::glsl`) is a small, fully unit-tested
+normalizer that rewrites GLSL ES 1.00/3.00 into the desktop-core dialect
+naga accepts: a minimal preprocessor (object-like `#define`,
+`#ifdef/#ifndef/#if(defined)/#else/#endif`), precision stripping,
+`attribute/varying` → `in/out` with **explicitly allocated locations**
+(naga assigns every unannotated interface variable location 0, so real
+shaders collide), `texture2D/textureCube` → `texture`,
+`gl_FragColor` → a declared fragment output, and deterministic per-program
+binding allocation (uniforms from 0, samplers from 100 in set 1) shared
+across both stages. naga then parses, validates, and emits WGSL; wgpu 30
+runs it. The text-level WGSL bridge deliberately decouples the naga version
+from wgpu's internal naga, so the two can be bumped independently.
+Rejected: shaderc/glslang (C++ toolchain, SPIR-V no longer accepted by
+wgpu), rewriting the whole state machine on top of naga's IR directly
+(couples us to wgpu's exact naga build).
+
+### WebGPU: mirror wgpu through a thin registry layer
+
+The WebGPU JS surface maps 1:1 onto wgpu concepts (adapter/device/buffer/
+shader module/compute pipeline/bind groups/queue), so the implementation is
+a thin registry + validation-error capture layer. One deliberate deviation:
+`mapAsync` resolves synchronously through the engine's blocking poll — the
+rest of the engine's storage/GPU seam is synchronous, and a Promise-only
+API would force the whole realm onto the async loader path for no
+functional gain in a headless engine. Documented in the capability report.
 
 ### wasmi 2 over wasmtime for WebAssembly
 
