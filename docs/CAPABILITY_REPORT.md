@@ -226,3 +226,13 @@ v0.2.0 report:
    silently skipped push builds — fixed; ubuntu build-test installs
    lavapipe so the GPU paths are exercised every run; the ASan job runs
    with `run_libc_freeres` and documents why.
+8. **Memory-leak fix (ASan-green)**: the CI ASan job failed with
+   LeakSanitizer reporting 102 bytes in 7 allocations from
+   `brows12_css::vartext::substitute_vars_text` — every `var()`-bearing
+   inline `style` attribute was `Box::leak`ed to obtain a `&'static str`
+   for lightningcss, although `IntoOwned::into_owned` already copies the
+   parsed declarations. The leak is removed (`apply_inline` now parses a
+   borrowed string); the full pipeline test suite runs LeakSanitizer-clean
+   (0 leaks, 8/8 tests pass), so the ASan CI job goes green without any
+   suppression. Also removed two unused `thiserror` declarations
+   (`parsing/html`, `layout`) flagged by the nightly build.

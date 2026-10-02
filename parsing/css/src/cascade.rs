@@ -231,9 +231,13 @@ fn apply_inline(
     crate::vartext::collect_custom_defs(css, &mut vars);
     let resolved = crate::vartext::substitute_vars_text(css, &vars);
 
-    let leaked: &'static str = Box::leak(resolved.into_boxed_str());
+    // Parse the substituted text as a borrowed block, then convert to an
+    // owned 'static block. `IntoOwned::into_owned` copies every borrowed
+    // token, so the parse input only needs to outlive the parse — leaking
+    // the text here (as earlier revisions did) is unnecessary and would
+    // grow per-element with every var()-bearing inline style.
     if let Ok(block) = lightningcss::stylesheet::StyleAttribute::parse(
-        leaked,
+        &resolved,
         lightningcss::stylesheet::ParserOptions::default(),
     ) {
         let block: lightningcss::stylesheet::StyleAttribute<'static> =

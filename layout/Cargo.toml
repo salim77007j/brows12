@@ -14,7 +14,6 @@ brows12-html = { path = "../parsing/html" }
 brows12-css = { path = "../parsing/css" }
 cosmic-text = "0.19"
 taffy = "0.14"
-thiserror = "2"
 tracing = "0.1"
 
 [dev-dependencies]

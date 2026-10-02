@@ -12,7 +12,6 @@ publish = false
 [dependencies]
 html5ever = "0.39"
 markup5ever_rcdom = "0.39"
-thiserror = "2"
 tracing = "0.1"
 
 [dev-dependencies]
