@@ -393,6 +393,34 @@ pub(crate) fn apply_property(
         }
         Property::RowGap(g) => s.row_gap = gap_value(g, &lctx),
         Property::ColumnGap(g) => s.column_gap = gap_value(g, &lctx),
+
+        // ---- CSS grid (css-grid-2) ------------------------------------
+        Property::GridTemplateColumns(ts) => {
+            s.grid_template_columns = track_sizing(ts, &lctx);
+        }
+        Property::GridTemplateRows(ts) => {
+            s.grid_template_rows = track_sizing(ts, &lctx);
+        }
+        Property::GridAutoColumns(list) => {
+            s.grid_auto_columns = track_size_list(&list.0, &lctx);
+        }
+        Property::GridAutoRows(list) => {
+            s.grid_auto_rows = track_size_list(&list.0, &lctx);
+        }
+        Property::GridAutoFlow(flow) => {
+            s.grid_auto_flow_column = flow.contains(lightningcss::properties::grid::GridAutoFlow::Column);
+            s.grid_auto_flow_dense = flow.contains(lightningcss::properties::grid::GridAutoFlow::Dense);
+        }
+        Property::GridColumn(gc) => {
+            s.grid_column = (grid_line(&gc.start), grid_line(&gc.end));
+        }
+        Property::GridRow(gr) => {
+            s.grid_row = (grid_line(&gr.start), grid_line(&gr.end));
+        }
+        Property::GridColumnStart(gl) => s.grid_column.0 = grid_line(gl),
+        Property::GridColumnEnd(gl) => s.grid_column.1 = grid_line(gl),
+        Property::GridRowStart(gl) => s.grid_row.0 = grid_line(gl),
+        Property::GridRowEnd(gl) => s.grid_row.1 = grid_line(gl),
         Property::Overflow(o) => s.overflow = map_overflow(o.y),
         Property::OverflowY(o) => s.overflow = map_overflow(*o),
         Property::Position(p) => {
@@ -836,6 +864,104 @@ fn family_name_string(name: &lightningcss::properties::font::FamilyName) -> Opti
     }
 }
 
+/// Map a lightningcss track sizing value (template) onto our symbolic
+/// `GridTrackSize` list, expanding `repeat(N, ...)` counts.
+fn track_sizing(
+    ts: &lightningcss::properties::grid::TrackSizing<'static>,
+    lctx: &LengthContext,
+) -> Vec<crate::values::GridTrackSize> {
+    use lightningcss::properties::grid::{TrackListItem, TrackSizing};
+    let mut out = Vec::new();
+    if let TrackSizing::TrackList(list) = ts {
+        for item in &list.items {
+            match item {
+                TrackListItem::TrackSize(size) => {
+                    out.push(track_size(size, lctx));
+                }
+                TrackListItem::TrackRepeat(rep) => {
+                    let count = match rep.count {
+                        lightningcss::properties::grid::RepeatCount::Number(n) => {
+                            n.clamp(0, 64) as usize
+                        }
+                        // auto-fill/auto-fit depend on the available space;
+                        // approximate with one copy (documented limitation).
+                        _ => 1,
+                    };
+                    for _ in 0..count {
+                        for t in &rep.track_sizes {
+                            out.push(track_size(t, lctx));
+                            if out.len() >= 64 {
+                                return out;
+                            }
+                        }
+                    }
+                }
+            }
+            if out.len() >= 64 {
+                break;
+            }
+        }
+    }
+    out
+}
+
+/// Map a `grid-auto-columns`/`rows` track size list.
+fn track_size_list(
+    list: &[lightningcss::properties::grid::TrackSize],
+    lctx: &LengthContext,
+) -> Vec<crate::values::GridTrackSize> {
+    list.iter().map(|t| track_size(t, lctx)).collect()
+}
+
+/// One `<track-size>` → symbolic track size.
+fn track_size(
+    t: &lightningcss::properties::grid::TrackSize,
+    lctx: &LengthContext,
+) -> crate::values::GridTrackSize {
+    use crate::values::GridTrackSize as G;
+    use lightningcss::properties::grid::TrackSize as TS;
+    match t {
+        TS::TrackBreadth(tb) => track_breadth(tb, lctx),
+        TS::MinMax { min, max } => G::MinMax {
+            min: Box::new(track_breadth(min, lctx)),
+            max: Box::new(track_breadth(max, lctx)),
+        },
+        // fit-content(<length-percentage>) ≈ auto growth capped at the
+        // argument; v1 maps it to min-content (documented approximation).
+        TS::FitContent(_) => G::MinContent,
+    }
+}
+
+fn track_breadth(
+    tb: &lightningcss::properties::grid::TrackBreadth,
+    lctx: &LengthContext,
+) -> crate::values::GridTrackSize {
+    use crate::values::GridTrackSize as G;
+    use lightningcss::properties::grid::TrackBreadth as TB;
+    match tb {
+        TB::Auto => G::Auto,
+        TB::MinContent => G::MinContent,
+        TB::MaxContent => G::MaxContent,
+        TB::Flex(f) => G::Fr(*f),
+        TB::Length(lp) => match length_percentage_to_len(lp, lctx) {
+            Some(Len::Px(px)) => G::Px(px),
+            Some(Len::Percent(p)) => G::Percent(p),
+            None => G::Auto,
+        },
+    }
+}
+
+/// One `<grid-line>` → symbolic line spec (named lines/areas unsupported).
+fn grid_line(gl: &lightningcss::properties::grid::GridLine<'static>) -> crate::values::GridLineSpec {
+    use crate::values::GridLineSpec as S;
+    use lightningcss::properties::grid::GridLine as GL;
+    match gl {
+        GL::Auto | GL::Area { .. } => S::Auto,
+        GL::Line { index, .. } => S::Line(*index as i16),
+        GL::Span { index, .. } => S::Span((*index).max(1) as u16),
+    }
+}
+
 fn map_display(d: &LcDisplay) -> Display {
     use lightningcss::properties::display::{DisplayInside, DisplayKeyword, DisplayOutside};
     match d {
@@ -851,6 +977,7 @@ fn map_display(d: &LcDisplay) -> Display {
         LcDisplay::Keyword(_) => Display::Block,
         LcDisplay::Pair(p) => match &p.inside {
             DisplayInside::Flex(_) | DisplayInside::Box(_) => Display::Flex,
+            DisplayInside::Grid => Display::Grid,
             // CSS tables → anonymous flex structures (v1 approximation).
             DisplayInside::Table => Display::Table,
             DisplayInside::Flow if matches!(p.outside, DisplayOutside::Inline) => Display::Inline,

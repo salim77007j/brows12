@@ -234,6 +234,7 @@ fn build_taffy_style(style: &ComputedStyle) -> taffy::Style {
         Display::None => taffy::Display::None,
         Display::Flex | Display::Table | Display::TableRow => taffy::Display::Flex,
         Display::Block | Display::Inline | Display::TableCell => taffy::Display::Block,
+        Display::Grid => taffy::Display::Grid,
     };
     let mut taffy_style = taffy::Style {
         display,
@@ -285,6 +286,108 @@ fn build_taffy_style(style: &ComputedStyle) -> taffy::Style {
         // sizing for content-driven tables).
         taffy_style.flex_grow = 0.0;
         taffy_style.flex_shrink = 1.0;
+    }
+    // ---- CSS grid: templates, auto tracks, flow, item placement ----
+    if style.display == Display::Grid {
+        let tf = |t: &brows12_css::values::GridTrackSize| -> taffy::style::TrackSizingFunction {
+            use taffy::style::{MaxTrackSizingFunction as Max, MinTrackSizingFunction as Min};
+            use taffy::prelude::{TaffyAuto, TaffyMaxContent, TaffyMinContent};
+            fn min_side(g: &brows12_css::values::GridTrackSize) -> Min {
+                match g {
+                    brows12_css::values::GridTrackSize::Auto => Min::auto(),
+                    brows12_css::values::GridTrackSize::Px(px) => Min::length(*px),
+                    brows12_css::values::GridTrackSize::Percent(p) => Min::percent(*p),
+                    brows12_css::values::GridTrackSize::MinContent => Min::min_content(),
+                    brows12_css::values::GridTrackSize::MaxContent => Min::max_content(),
+                    // `fr` is a max-function only; the min side stays auto.
+                    brows12_css::values::GridTrackSize::Fr(_) => Min::auto(),
+                    // Nested minmax on the min side: use its inner min.
+                    brows12_css::values::GridTrackSize::MinMax { min, .. } => min_side(min),
+                }
+            }
+            let side = min_side;
+            match t {
+                brows12_css::values::GridTrackSize::MinMax { min, max } => {
+                    let lo = side(min);
+                    let hi = match &**max {
+                        brows12_css::values::GridTrackSize::Fr(f) => Max::fr(*f),
+                        brows12_css::values::GridTrackSize::Auto => Max::auto(),
+                        brows12_css::values::GridTrackSize::Px(px) => Max::length(*px),
+                        brows12_css::values::GridTrackSize::Percent(p) => Max::percent(*p),
+                        brows12_css::values::GridTrackSize::MinContent => Max::min_content(),
+                        brows12_css::values::GridTrackSize::MaxContent => Max::max_content(),
+                        brows12_css::values::GridTrackSize::MinMax { .. } => Max::auto(),
+                    };
+                    taffy::style::TrackSizingFunction { min: lo, max: hi }
+                }
+                brows12_css::values::GridTrackSize::Fr(f) => {
+                    taffy::style::TrackSizingFunction { min: Min::auto(), max: Max::fr(*f) }
+                }
+                other => {
+                    let lo = side(other);
+                    let hi = match other {
+                        brows12_css::values::GridTrackSize::Px(px) => Max::length(*px),
+                        brows12_css::values::GridTrackSize::Percent(p) => Max::percent(*p),
+                        brows12_css::values::GridTrackSize::MinContent => Max::min_content(),
+                        brows12_css::values::GridTrackSize::MaxContent => Max::max_content(),
+                        _ => Max::auto(),
+                    };
+                    taffy::style::TrackSizingFunction { min: lo, max: hi }
+                }
+            }
+        };
+        let single = |t: &brows12_css::values::GridTrackSize| {
+            taffy::style::GridTemplateComponent::Single(tf(t))
+        };
+        if !style.grid_template_columns.is_empty() {
+            taffy_style.grid_template_columns =
+                style.grid_template_columns.iter().map(single).collect();
+        }
+        if !style.grid_template_rows.is_empty() {
+            taffy_style.grid_template_rows = style.grid_template_rows.iter().map(single).collect();
+        }
+        // Auto tracks are plain sizing functions (not template components).
+        use taffy::prelude::TaffyAuto;
+        if !style.grid_auto_columns.is_empty() {
+            taffy_style.grid_auto_columns = style.grid_auto_columns.iter().map(tf).collect();
+        } else {
+            taffy_style.grid_auto_columns = vec![taffy::style::TrackSizingFunction::AUTO];
+        }
+        if !style.grid_auto_rows.is_empty() {
+            taffy_style.grid_auto_rows = style.grid_auto_rows.iter().map(tf).collect();
+        } else {
+            taffy_style.grid_auto_rows = vec![taffy::style::TrackSizingFunction::AUTO];
+        }
+        taffy_style.grid_auto_flow = match (style.grid_auto_flow_column, style.grid_auto_flow_dense) {
+            (false, false) => taffy::style::GridAutoFlow::Row,
+            (true, false) => taffy::style::GridAutoFlow::Column,
+            (false, true) => taffy::style::GridAutoFlow::RowDense,
+            (true, true) => taffy::style::GridAutoFlow::ColumnDense,
+        };
+    }
+    // Item placement applies to any node (only meaningful under a grid
+    // parent; harmless elsewhere).
+    {
+        let place = |spec: brows12_css::values::GridLineSpec| -> taffy::style::GridPlacement {
+            match spec {
+                brows12_css::values::GridLineSpec::Auto => taffy::style::GridPlacement::Auto,
+                brows12_css::values::GridLineSpec::Line(i) => {
+                    use taffy::prelude::TaffyGridLine;
+                    taffy::style::GridPlacement::from_line_index(i)
+                }
+                brows12_css::values::GridLineSpec::Span(n) => {
+                    taffy::style::GridPlacement::Span(n.max(1))
+                }
+            }
+        };
+        taffy_style.grid_column = taffy::Line {
+            start: place(style.grid_column.0),
+            end: place(style.grid_column.1),
+        };
+        taffy_style.grid_row = taffy::Line {
+            start: place(style.grid_row.0),
+            end: place(style.grid_row.1),
+        };
     }
     if style.display == Display::Flex {
         taffy_style.flex_direction = match style.flex_direction {
@@ -490,7 +593,10 @@ pub fn compute_layout(
     ) -> Vec<Piece> {
         // Flex items are block-ified per CSS — no inline runs inside flex
         // containers (each child is its own flex item).
-        if styles.get(node).map(|s| s.display) == Some(Display::Flex) {
+        if matches!(
+            styles.get(node).map(|s| s.display),
+            Some(Display::Flex) | Some(Display::Grid)
+        ) {
             return doc.node(node).children.iter().map(|&c| Piece::Block(c)).collect();
         }
         let mut pieces: Vec<Piece> = Vec::new();

@@ -44,6 +44,19 @@ pub struct ComputedStyle {
     pub align_items: AlignItems,
     pub row_gap: Len,
     pub column_gap: Len,
+    // ---- CSS grid ---------------------------------------------------------
+    /// `grid-template-columns` / `grid-template-rows` track lists.
+    pub grid_template_columns: Vec<GridTrackSize>,
+    pub grid_template_rows: Vec<GridTrackSize>,
+    /// `grid-auto-columns` / `grid-auto-rows` (implicit track sizes).
+    pub grid_auto_columns: Vec<GridTrackSize>,
+    pub grid_auto_rows: Vec<GridTrackSize>,
+    /// `grid-auto-flow`: row (default) or column, with optional dense packing.
+    pub grid_auto_flow_column: bool,
+    pub grid_auto_flow_dense: bool,
+    /// `grid-column: <start> / <end>` and `grid-row: <start> / <end>`.
+    pub grid_column: (GridLineSpec, GridLineSpec),
+    pub grid_row: (GridLineSpec, GridLineSpec),
     pub white_space: WhiteSpace,
     // ---- v0.2 additions -------------------------------------------------
     /// `top/right/bottom/left` inset properties (positioning).
@@ -97,6 +110,14 @@ impl Default for ComputedStyle {
             align_items: AlignItems::Stretch,
             row_gap: Len::Px(0.0),
             column_gap: Len::Px(0.0),
+            grid_template_columns: Vec::new(),
+            grid_template_rows: Vec::new(),
+            grid_auto_columns: Vec::new(),
+            grid_auto_rows: Vec::new(),
+            grid_auto_flow_column: false,
+            grid_auto_flow_dense: false,
+            grid_column: (GridLineSpec::Auto, GridLineSpec::Auto),
+            grid_row: (GridLineSpec::Auto, GridLineSpec::Auto),
             white_space: WhiteSpace::Normal,
             insets: Edges::splat(AutoPx::Auto),
             transform: Transform::default(),

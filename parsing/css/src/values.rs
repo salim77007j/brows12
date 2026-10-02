@@ -52,6 +52,38 @@ pub enum Display {
     Table,
     TableRow,
     TableCell,
+    /// CSS grid: template/auto tracks and item placement map onto taffy's
+    /// native grid implementation.
+    Grid,
+}
+
+/// One track sizing function of a CSS grid template (`grid-template-*`,
+/// `grid-auto-*`). `fr`, min/max-content and `minmax()` are kept symbolic;
+/// the layout engine maps them onto taffy's native grid sizing.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub enum GridTrackSize {
+    #[default]
+    Auto,
+    Px(f32),
+    Percent(f32),
+    Fr(f32),
+    MinContent,
+    MaxContent,
+    /// `minmax(min, max)` — either side may itself be a keyword/length.
+    MinMax {
+        min: Box<GridTrackSize>,
+        max: Box<GridTrackSize>,
+    },
+}
+
+/// A `<grid-line>`: auto placement, the Nth line (1-based; negative counts
+/// from the end), or a span across N tracks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum GridLineSpec {
+    #[default]
+    Auto,
+    Line(i16),
+    Span(u16),
 }
 
 /// `float` — takes a box out of normal flow and shifts it left/right

@@ -74,3 +74,48 @@ fn clear_pushes_block_below_float() {
     let float_bottom = result.floats[0].rect.y + result.floats[0].rect.height;
     assert!(r.y >= float_bottom - 1.0, "cleared block starts below the float: {:?} vs {}", r.y, float_bottom);
 }
+
+const GRID_DOC: &str = r#"<html><body>
+  <div class="g">
+    <div id="a" class="c1">a</div>
+    <div id="b">b</div>
+    <div id="c">c</div>
+    <div id="d">d</div>
+    <div id="e">e</div>
+  </div>
+</body></html>"#;
+
+const GRID_CSS: &str = ".g { display: grid; grid-template-columns: 100px 1fr 1fr; gap: 10px; } .c1 { grid-row: 1 / span 2; }";
+
+fn layout_doc(css: &str) -> (brows12_html::Document, brows12_layout::LayoutResult) {
+    let doc = parse_document(GRID_DOC);
+    let sheet = Stylesheet::parse(css, brows12_css::Origin::Author).unwrap();
+    let engine = StyleEngine::with_author_sheets(&[sheet]);
+    let ctx = CascadeCtx { viewport_width: 800.0, viewport_height: 600.0, ..Default::default() };
+    let styles = compute_styles(&doc, &engine, &ctx);
+    let measurer = TextMeasurer::new(Arc::new(Mutex::new(cosmic_text::FontSystem::new())));
+    let result = compute_layout(&doc, &styles, Viewport { width: 800.0, height: 600.0 }, &measurer, &HashMap::new());
+    (doc, result)
+}
+
+#[test]
+fn grid_tracks_and_placement() {
+    let (doc, result) = layout_doc(GRID_CSS);
+    let ids = |id: &str| doc.get_elements_by_tag_name("div")
+        .into_iter().find(|&n| doc.attr(n, "id") == Some(id)).unwrap();
+    let a = result.rect(ids("a")).unwrap();
+    let b = result.rect(ids("b")).unwrap();
+    let c = result.rect(ids("c")).unwrap();
+    let d = result.rect(ids("d")).unwrap();
+    // Column 1 = 100px; gap 10 → column 2 starts at 110.
+    assert!((b.x - 110.0).abs() < 2.0, "second column after 100px + gap, got {:?}", b.x);
+    // `a` spans rows 1-2: taller than single-row items.
+    assert!(a.height > d.height + 20.0, "row span grows the item: a={:?} d={:?}", a, d);
+    // `d` sits on row 2 column 1 (below the spanning `a`).
+    assert!(d.y > b.y, "d is on a later row");
+    // fr columns split the remaining width equally; gaps are honored.
+    let e = result.rect(ids("e")).unwrap();
+    assert!((c.width - b.width).abs() < 2.0, "fr columns are equal: b={:?} c={:?}", b.width, c.width);
+    assert!((c.x - b.x - b.width - 10.0).abs() < 2.0, "gap between fr columns, got {:?}", c.x - b.x - b.width);
+    assert!((e.x - d.x - d.width - 10.0).abs() < 2.0, "gap on row 2");
+}
