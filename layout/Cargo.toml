@@ -16,3 +16,6 @@ cosmic-text = "0.19"
 taffy = "0.14"
 thiserror = "2"
 tracing = "0.1"
+
+[dev-dependencies]
+cosmic-text = "0.19"

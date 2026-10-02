@@ -402,8 +402,16 @@ pub fn compute_layout(
         offset: (f32, f32),
     ) {
         let Ok(layout) = tree.layout(taffy_node) else {
+            if std::env::var("BROWS_DEBUG").is_ok() {
+                eprintln!("EXTRACT: layout() FAILED for taffy={taffy_node:?}");
+            }
             return;
         };
+        if std::env::var("BROWS_DEBUG").is_ok() {
+            if let Some(dom) = taffy_to_dom.get(&taffy_node) {
+                eprintln!("EXTRACT taffy={taffy_node:?} dom={dom:?} at ({:.0},{:.0} {}x{})", offset.0 + layout.location.x, offset.1 + layout.location.y, layout.size.width, layout.size.height);
+            }
+        }
         let x = offset.0 + layout.location.x;
         let y = offset.1 + layout.location.y;
         let rect = Rect { x, y, width: layout.size.width, height: layout.size.height };
@@ -414,6 +422,17 @@ pub fn compute_layout(
             for child in children {
                 extract(taffy_to_dom, tree, rects, child, (x, y));
             }
+        }
+    }
+    if std::env::var("BROWS_DEBUG").is_ok() {
+        eprintln!("LAYOUT node_ids: {} entries", node_ids.len());
+        for (dom, taf) in &node_ids {
+            let label = match &doc.node(*dom).data {
+                NodeData::Element { name, .. } => format!("<{name}>"),
+                NodeData::Text(t) => format!("text({:.14})", t.trim()),
+                _ => "?".into(),
+            };
+            eprintln!("  dom={dom:?} {label} -> taffy={taf:?}");
         }
     }
     extract(&taffy_to_dom, &tree, &mut result.rects, root_taffy, (0.0, 0.0));

@@ -1,0 +1,256 @@
+{
+  "count": 25,
+  "engine": "0.1.0",
+  "results": [
+    {
+      "compositor": null,
+      "error": null,
+      "loaded": true,
+      "png_bytes": 14494,
+      "screenshot": "example_com.png",
+      "title": "Example Domain",
+      "total_ms": 3439,
+      "url": "https://example.com"
+    },
+    {
+      "compositor": null,
+      "error": null,
+      "loaded": true,
+      "png_bytes": 79380,
+      "screenshot": "www_wikipedia_org.png",
+      "title": "Wikipedia",
+      "total_ms": 4149,
+      "url": "https://www.wikipedia.org"
+    },
+    {
+      "compositor": null,
+      "error": null,
+      "loaded": true,
+      "png_bytes": 77366,
+      "screenshot": "en_wikipedia_org_wiki_Rust__programming_language.png",
+      "title": "Rust (programming language) - Wikipedia",
+      "total_ms": 28026,
+      "url": "https://en.wikipedia.org/wiki/Rust_(programming_language)"
+    },
+    {
+      "compositor": null,
+      "error": null,
+      "loaded": true,
+      "png_bytes": 51254,
+      "screenshot": "github_com.png",
+      "title": "GitHub · Change is constant. GitHub keeps you ahead. · GitHub",
+      "total_ms": 54066,
+      "url": "https://github.com"
+    },
+    {
+      "compositor": null,
+      "error": null,
+      "loaded": true,
+      "png_bytes": 39319,
+      "screenshot": "news_ycombinator_com.png",
+      "title": "Hacker News",
+      "total_ms": 4870,
+      "url": "https://news.ycombinator.com"
+    },
+    {
+      "compositor": null,
+      "error": null,
+      "loaded": true,
+      "png_bytes": 47836,
+      "screenshot": "www_rust_lang_org.png",
+      "title": "\n            Rust Programming Language\n        ",
+      "total_ms": 7981,
+      "url": "https://www.rust-lang.org"
+    },
+    {
+      "compositor": null,
+      "error": null,
+      "loaded": true,
+      "png_bytes": 37328,
+      "screenshot": "www_mozilla_org.png",
+      "title": "Client Challenge",
+      "total_ms": 3705,
+      "url": "https://www.mozilla.org"
+    },
+    {
+      "compositor": null,
+      "error": null,
+      "loaded": true,
+      "png_bytes": 29238,
+      "screenshot": "www_google_com.png",
+      "title": "Google",
+      "total_ms": 3575,
+      "url": "https://www.google.com"
+    },
+    {
+      "compositor": null,
+      "error": "network: HTTP client error: response timeout",
+      "loaded": false,
+      "png_bytes": 0,
+      "screenshot": "duckduckgo_com.png",
+      "title": "",
+      "total_ms": 30007,
+      "url": "https://duckduckgo.com"
+    },
+    {
+      "compositor": null,
+      "error": null,
+      "loaded": true,
+      "png_bytes": 5883,
+      "screenshot": "www_youtube_com.png",
+      "title": "YouTube",
+      "total_ms": 4991,
+      "url": "https://www.youtube.com"
+    },
+    {
+      "compositor": null,
+      "error": null,
+      "loaded": true,
+      "png_bytes": 358669,
+      "screenshot": "threejs_org.png",
+      "title": "Three.js – JavaScript 3D Library",
+      "total_ms": 12302,
+      "url": "https://threejs.org"
+    },
+    {
+      "compositor": null,
+      "error": null,
+      "loaded": true,
+      "png_bytes": 30883,
+      "screenshot": "webgpu_github_io.png",
+      "title": "Site not found · GitHub Pages",
+      "total_ms": 471,
+      "url": "https://webgpu.github.io"
+    },
+    {
+      "compositor": null,
+      "error": null,
+      "loaded": true,
+      "png_bytes": 22763,
+      "screenshot": "developer_mozilla_org.png",
+      "title": "MDN Web Docs",
+      "total_ms": 9095,
+      "url": "https://developer.mozilla.org"
+    },
+    {
+      "compositor": null,
+      "error": null,
+      "loaded": true,
+      "png_bytes": 5780,
+      "screenshot": "stackoverflow_com.png",
+      "title": "Just a moment...",
+      "total_ms": 3425,
+      "url": "https://stackoverflow.com"
+    },
+    {
+      "compositor": null,
+      "error": null,
+      "loaded": true,
+      "png_bytes": 53804,
+      "screenshot": "www_bbc_com.png",
+      "title": "BBC Home - Breaking News, World News, US News, Sports, Business, Innovation, Climate, Culture, Travel, Video & Audio",
+      "total_ms": 6690,
+      "url": "https://www.bbc.com"
+    },
+    {
+      "compositor": null,
+      "error": null,
+      "loaded": true,
+      "png_bytes": 18289,
+      "screenshot": "www_reddit_com.png",
+      "title": "",
+      "total_ms": 133,
+      "url": "https://www.reddit.com"
+    },
+    {
+      "compositor": null,
+      "error": null,
+      "loaded": true,
+      "png_bytes": 11472,
+      "screenshot": "arxiv_org.png",
+      "title": "arXiv.org e-Print archive",
+      "total_ms": 3928,
+      "url": "https://arxiv.org"
+    },
+    {
+      "compositor": null,
+      "error": null,
+      "loaded": true,
+      "png_bytes": 44078,
+      "screenshot": "docs_rs.png",
+      "title": "Docs.rs",
+      "total_ms": 5564,
+      "url": "https://docs.rs"
+    },
+    {
+      "compositor": null,
+      "error": null,
+      "loaded": true,
+      "png_bytes": 5780,
+      "screenshot": "crates_io.png",
+      "title": "crates.io: Rust Package Registry",
+      "total_ms": 5256,
+      "url": "https://crates.io"
+    },
+    {
+      "compositor": null,
+      "error": null,
+      "loaded": true,
+      "png_bytes": 54664,
+      "screenshot": "www_w3_org.png",
+      "title": "W3C",
+      "total_ms": 4622,
+      "url": "https://www.w3.org"
+    },
+    {
+      "compositor": null,
+      "error": null,
+      "loaded": true,
+      "png_bytes": 10982,
+      "screenshot": "caniuse_com.png",
+      "title": "Can I use... Support tables for HTML5, CSS3, etc",
+      "total_ms": 7930,
+      "url": "https://caniuse.com"
+    },
+    {
+      "compositor": null,
+      "error": null,
+      "loaded": true,
+      "png_bytes": 18858,
+      "screenshot": "webglfundamentals_org.png",
+      "title": "WebGL Fundamentals",
+      "total_ms": 7471,
+      "url": "https://webglfundamentals.org"
+    },
+    {
+      "compositor": null,
+      "error": null,
+      "loaded": true,
+      "png_bytes": 114525,
+      "screenshot": "http3_is.png",
+      "title": "",
+      "total_ms": 549,
+      "url": "https://http3.is"
+    },
+    {
+      "compositor": null,
+      "error": null,
+      "loaded": true,
+      "png_bytes": 6118,
+      "screenshot": "www_bing_com.png",
+      "title": "Search - Microsoft Bing",
+      "total_ms": 4368,
+      "url": "https://www.bing.com"
+    },
+    {
+      "compositor": null,
+      "error": "network: HTTP client error: response timeout",
+      "loaded": false,
+      "png_bytes": 0,
+      "screenshot": "lite_duckduckgo_com.png",
+      "title": "",
+      "total_ms": 30007,
+      "url": "https://lite.duckduckgo.com"
+    }
+  ]
+}

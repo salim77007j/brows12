@@ -323,6 +323,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "brows12-harness"
+version = "0.1.0"
+dependencies = [
+ "brows12-api",
+ "brows12-compositor",
+ "brows12-engine",
+ "serde_json",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "brows12-html"
 version = "0.1.0"
 dependencies = [

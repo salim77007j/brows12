@@ -33,6 +33,15 @@ pub(crate) fn apply_property(
                 s.background_color = rgba;
             }
         }
+        Property::Background(bg_list) => {
+            // Shorthand: apply the first layer's color (images/gradients
+            // land with the v0.3 paint work).
+            if let Some(first) = bg_list.first() {
+                if let Some(rgba) = color(&first.color, s.color) {
+                    s.background_color = rgba;
+                }
+            }
+        }
         Property::Color(c) => {
             if let Some(rgba) = color(c, s.color) {
                 s.color = rgba;

@@ -6,6 +6,7 @@ members = [
     "layout",
     "rendering",
     "compositor",
+    "harness",
     "networking",
     "storage",
     "privacy",

@@ -116,7 +116,9 @@ impl Rasterizer {
 
         let metrics = cosmic_text::Metrics::new(style.font_size, style.line_height_px);
         let mut buffer = cosmic_text::Buffer::new(&mut fs, metrics);
-        buffer.set_size(Some(rect.width.max(1.0)), None);
+        // +1px slack: the box width came from measuring this exact text, and
+        // a borderline exact-fit must not re-wrap at paint time.
+        buffer.set_size(Some(rect.width.max(1.0) + 1.0), None);
 
         let mut attrs = cosmic_text::Attrs::new();
         attrs = match style.font_family.as_deref() {
@@ -131,6 +133,16 @@ impl Rasterizer {
         }
         buffer.set_text(text, &attrs, cosmic_text::Shaping::Advanced, None);
         buffer.shape_until_scroll(&mut fs, false);
+
+        if std::env::var("BROWS_DEBUG").is_ok() {
+            eprintln!(
+                "PAINT_TEXT rect=({:.0},{:.0} {}x{}) fs={} lh={:.1} runs:",
+                rect.x, rect.y, rect.width, rect.height, style.font_size, style.line_height_px
+            );
+            for run in buffer.layout_runs() {
+                eprintln!("  run line_y={:.1} line_h={:.1} w={:.1} glyphs={}", run.line_y, run.line_height, run.line_w, run.glyphs.len());
+            }
+        }
 
         let tint =
             tiny_skia::Color::from_rgba8(style.color[0], style.color[1], style.color[2], 255);
@@ -147,10 +159,12 @@ impl Rasterizer {
                 _ => rect.x,
             };
             for glyph in run.glyphs {
-                let physical = glyph.physical((line_x, run.line_y), 1.0);
+                let physical = glyph.physical((line_x, rect.y + run.line_y), 1.0);
                 if let Some(image) = cache.get_image(&mut fs, physical.cache_key) {
                     let x = physical.x + image.placement.left;
-                    let y = physical.y + image.placement.top;
+                    // swash placement.top is the distance UP from the
+                    // baseline to the bitmap top: bitmap_y = baseline - top.
+                    let y = physical.y - image.placement.top;
                     blit_swash_image(pixmap, image, x, y, tint);
                 }
             }

@@ -391,6 +391,22 @@ impl Tab {
             scroll_y,
             Default::default(),
         );
+        if std::env::var("BROWS_DEBUG").is_ok() {
+            for item in &display_list.items {
+                match item {
+                    brows12_render::display_list::DisplayItem::Rect { rect, color, .. } => {
+                        eprintln!("DL RECT ({:.0},{:.0} {}x{}) {:?}", rect.x, rect.y, rect.width, rect.height, color)
+                    }
+                    brows12_render::display_list::DisplayItem::Text { rect, text, style, .. } => {
+                        eprintln!(
+                            "DL TEXT ({:.0},{:.0} {}x{}) fs={} '{:.24}'",
+                            rect.x, rect.y, rect.width, rect.height, style.font_size, text
+                        )
+                    }
+                    _ => {}
+                }
+            }
+        }
         let mut rasterizer = Rasterizer::new(self.engine.fonts.clone());
         let (pixmap, _stats) = rasterizer.paint(
             &display_list,
@@ -410,7 +426,23 @@ impl Tab {
 
     /// Full re-render: cascade (+ container pass) -> layout -> paint.
     fn render_page(&self, page: &Arc<PageInner>) -> Result<(), EngineError> {
-        let engine_sheet = brows12_css::StyleEngine::with_author_sheets(&page.author_sheets);
+        // Inline <style> blocks are collected at render time so every path
+        // (URL loads and string loads) styles identically.
+        let mut sheets = page.author_sheets.clone();
+        {
+            let doc = page.document.lock().unwrap();
+            doc.visit_all(|node| {
+                if doc.is_element(node) && doc.local_name(node) == "style" {
+                    let css = doc.text_content(node);
+                    if let Ok(sheet) =
+                        brows12_css::Stylesheet::parse(&css, brows12_css::Origin::Author)
+                    {
+                        sheets.push(sheet);
+                    }
+                }
+            });
+        }
+        let engine_sheet = brows12_css::StyleEngine::with_author_sheets(&sheets);
         self.load_web_fonts(&engine_sheet);
         let ctx = brows12_css::computed::CascadeCtx {
             viewport_width: self.engine.config.viewport.width,
@@ -535,12 +567,9 @@ impl Tab {
         };
 
         let mut sheets = Vec::new();
-        // Inline <style> blocks first (document order).
-        for css in &inline {
-            if let Ok(sheet) = Stylesheet::parse(css, brows12_css::Origin::Author) {
-                sheets.push(sheet);
-            }
-        }
+        // Inline <style> blocks are collected during render_page (shared by
+        // the string-load path); here we fetch external sheets only.
+        let _ = &inline;
         // External sheets, capped to keep hostile pages bounded.
         let base = url::Url::parse(base_url)
             .map_err(|_| brows12_net::NetError::InvalidUrl(base_url.to_string()))?;

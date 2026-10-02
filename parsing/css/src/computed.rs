@@ -100,11 +100,18 @@ impl Default for ComputedStyle {
 
 impl ComputedStyle {
     /// Resolve a unitless/absolute line height into pixels for this style.
+    /// Zero line-heights (CSS resets) clamp to the normal single-space
+    /// value — shaping engines reject 0.
     pub fn line_height_px(&self) -> f32 {
-        match self.line_height {
+        let px = match self.line_height {
             LineHeight::Normal => self.font_size * 1.2,
             LineHeight::Number(n) => self.font_size * n,
             LineHeight::Px(px) => px,
+        };
+        if px <= 0.0 {
+            self.font_size * 1.2
+        } else {
+            px
         }
     }
 

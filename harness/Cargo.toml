@@ -1,0 +1,25 @@
+[package]
+name = "brows12-harness"
+description = "Brows12 headless CLI test harness: full pipeline -> PNG + JSON metrics, no GUI"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[[bin]]
+name = "brows"
+path = "src/main.rs"
+
+[dependencies]
+brows12-api = { path = "../api" }
+brows12-engine = { path = "../engine" }
+brows12-compositor = { path = "../compositor" }
+serde_json = "1"
+url = "2.5"
+tokio = { version = "1", features = ["rt-multi-thread"] }
+
+[profile.release]
+# inherit workspace release

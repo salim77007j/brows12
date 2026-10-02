@@ -120,32 +120,41 @@ pub fn substitute_vars_text(css: &str, vars: &HashMap<String, String>) -> String
     if !css.contains("var(") {
         return css.to_string();
     }
-    let bytes = css.as_bytes();
+    // Char-based scan: CSS text is UTF-8 and `var(` handling must not split
+    // multi-byte characters (the byte loop previously panicked mid-codepoint).
+    let chars: Vec<char> = css.chars().collect();
     let mut out = String::with_capacity(css.len() + 64);
     let mut i = 0usize;
-    while i < bytes.len() {
-        if css[i..].starts_with("var(") && !(i > 0 && (bytes[i - 1].is_ascii_alphabetic() || bytes[i-1] == b'-')) {
+    while i < chars.len() {
+        let starts_var = chars[i] == 'v'
+            && chars.get(i + 1) == Some(&'a')
+            && chars.get(i + 2) == Some(&'r')
+            && chars.get(i + 3) == Some(&'(');
+        let prev_ok = i == 0
+            || !(chars[i - 1].is_ascii_alphabetic() || chars[i - 1] == '-');
+        if starts_var && prev_ok {
             let start = i + 4;
-            let mut depth = 1;
+            let mut depth = 1i32;
             let mut j = start;
-            while j < bytes.len() && depth > 0 {
-                match bytes[j] {
-                    b'(' => depth += 1,
-                    b')' => depth -= 1,
+            while j < chars.len() && depth > 0 {
+                match chars[j] {
+                    '(' => depth += 1,
+                    ')' => depth -= 1,
                     _ => {}
                 }
                 j += 1;
             }
             if depth != 0 {
-                out.push_str(&css[i..]);
+                for c in &chars[i..] {
+                    out.push(*c);
+                }
                 break;
             }
-            let inner = &css[start..j - 1];
-            let (name_part, fallback) = split_var_args(inner);
+            let inner: String = chars[start..j - 1].iter().collect();
+            let (name_part, fallback) = split_var_args(&inner);
             let name = name_part.trim().to_ascii_lowercase();
             match vars.get(&name) {
                 Some(resolved) => {
-                    // Resolved values may themselves reference vars.
                     let substituted = substitute_vars_text(resolved, vars);
                     out.push_str(&substituted);
                 }
@@ -161,7 +170,7 @@ pub fn substitute_vars_text(css: &str, vars: &HashMap<String, String>) -> String
             }
             i = j;
         } else {
-            out.push(bytes[i] as char);
+            out.push(chars[i]);
             i += 1;
         }
     }
