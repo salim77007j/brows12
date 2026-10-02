@@ -407,6 +407,14 @@ fn build_taffy_style(
             width: taffy_dimension(style.width),
             height: taffy_dimension(style.height),
         },
+        max_size: {
+            // max-height is not modelled yet: keep the vertical axis unconstrained.
+            let _ = &style;
+            taffy::Size {
+                width: taffy_auto_min(style.max_width),
+                height: taffy::LengthPercentageAuto::auto(),
+            }
+        },
         min_size: {
             // CSS: the automatic minimum size (min-width:auto flooring at
             // content) applies to flex/grid ITEMS only. Block children have
@@ -474,6 +482,7 @@ fn build_taffy_style(
         || style.position == CssPosition::Absolute
         || style.position == CssPosition::Fixed)
         && style.width == AutoPx::Auto
+        && style.max_width == AutoPx::Auto
     {
         taffy_style.max_size.width = taffy::LengthPercentageAuto::percent(1.0);
     }
@@ -1182,6 +1191,15 @@ pub fn compute_layout(
         )
     };
 
+    // Root max-width (e.g. example.com's body { max-width: 26em }): taffy
+    // sizes the root to the given available space and ignores the root's
+    // own max-size, so constrain the available width ourselves and center
+    // the root box afterwards (margin:auto behaviour).
+    let root_style = styles.get(start);
+    let avail_width = root_style
+        .and_then(|s| inset_px(s.max_width, viewport.width))
+        .map(|mw| mw.min(viewport.width).max(1.0))
+        .unwrap_or(viewport.width);
     let run_compute = |tree: &mut taffy::TaffyTree<LeafContext>,
                        root: taffy::NodeId,
                        measure: &dyn Fn(
@@ -1194,7 +1212,7 @@ pub fn compute_layout(
         tree.compute_layout_with_measure(
             root,
             taffy::Size {
-                width: taffy::AvailableSpace::Definite(viewport.width),
+                width: taffy::AvailableSpace::Definite(avail_width),
                 height: taffy::AvailableSpace::Definite(viewport.height),
             },
             measure,
@@ -1339,6 +1357,24 @@ pub fn compute_layout(
     // ---- Final extraction + float placement on final rects ----
     let mut result = LayoutResult::default();
     extract(doc, styles, &parent_of, &taffy_to_dom, &tree, &mut result.rects, root_taffy, (0.0, 0.0));
+
+    // Center a width-constrained root with auto horizontal margins.
+    if avail_width < viewport.width {
+        let auto_margins = root_style.map(|s| {
+            matches!(s.margin.left, AutoPx::Auto) && matches!(s.margin.right, AutoPx::Auto)
+        }) == Some(true);
+        let auto_single = root_style
+            .map(|s| matches!(s.margin.left, AutoPx::Auto) || matches!(s.margin.right, AutoPx::Auto))
+            == Some(true);
+        if auto_margins || auto_single {
+            let dx = ((viewport.width - avail_width) / 2.0).max(0.0);
+            if dx > 0.0 {
+                for r in result.rects.values_mut() {
+                    r.x += dx;
+                }
+            }
+        }
+    }
     result.floats =
         place_floats(doc, styles, &mut result.rects, &children_of, &parent_of, &all_elements);
 
