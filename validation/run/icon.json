@@ -1,0 +1,22 @@
+{
+  "console": [],
+  "engine": "brows12 v0.2.0",
+  "error": null,
+  "final_url": "brows12://fixture/",
+  "input": "validation/run/icon.html",
+  "loaded": true,
+  "render": {
+    "compositor": null,
+    "png_bytes": 3291,
+    "scroll_y": 0.0
+  },
+  "screenshot": "assets/icon.png",
+  "timing": {
+    "full_pipeline_ms": 3
+  },
+  "title": "",
+  "viewport": {
+    "height": 256,
+    "width": 256
+  }
+}

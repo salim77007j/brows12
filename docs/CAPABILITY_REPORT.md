@@ -236,3 +236,12 @@ v0.2.0 report:
    (0 leaks, 8/8 tests pass), so the ASan CI job goes green without any
    suppression. Also removed two unused `thiserror` declarations
    (`parsing/html`, `layout`) flagged by the nightly build.
+9. **Canvas background propagation (found by the real browser window)**:
+   driving the shell over live sites showed pages shorter than the
+   viewport painting nothing below their body box — the shell's backdrop
+   showed through (per CSS 2.1 §14.2 the root/body background must paint
+   the whole canvas, and the canvas's initial background is white).
+   `rendering/src/display_list.rs` now emits a viewport-anchored canvas
+   fill: root element background → body background → initial white.
+   Before/after is visible in the round-1 vs round-2 validation captures
+   (`validation/MINIMAL_UI_REPORT.md` §4).

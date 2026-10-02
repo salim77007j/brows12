@@ -95,6 +95,34 @@ pub fn build_display_list(
         collect_fixed(doc, root, &mut fixed_subtrees);
     }
 
+    // Canvas background propagation (CSS 2.1 §14.2): the root element's
+    // background paints the whole canvas; if it is transparent, the body's
+    // background propagates instead. When neither declares one, the canvas
+    // keeps its initial background (white, as in real browsers) — without
+    // this, pages shorter than the viewport leave the rest of the canvas
+    // unpainted. The fill is pushed first (everything paints over it) and
+    // is viewport-anchored — it must not scroll with the content layer.
+    if scope != ListScope::Fixed {
+        const INITIAL_CANVAS: brows12_css::values::Rgba = [255, 255, 255, 255];
+        let html = doc.document_element();
+        let canvas_color = html
+            .and_then(|h| styles.get(h))
+            .map(|s| s.background_color)
+            .filter(|c| c[3] > 0)
+            .or_else(|| {
+                doc.body()
+                    .and_then(|b| styles.get(b))
+                    .map(|s| s.background_color)
+                    .filter(|c| c[3] > 0)
+            })
+            .unwrap_or(INITIAL_CANVAS);
+        list.items.push(DisplayItem::Rect {
+            rect: Rect { x: 0.0, y: 0.0, width: viewport.0, height: viewport.1 },
+            color: canvas_color,
+            radius: 0.0,
+        });
+    }
+
     let start = doc.body().or_else(|| doc.document_element()).unwrap_or(doc.root());
 
     #[allow(clippy::too_many_arguments)]

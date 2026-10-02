@@ -1,0 +1,10 @@
+[package]
+name = "x11driver"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Validation driver for brows12-ui: XTEST input injection + root screenshots under Xvfb"
+
+[dependencies]
+x11rb = { version = "0.13", features = ["xtest"] }
+image = { version = "0.25", default-features = false, features = ["png"] }

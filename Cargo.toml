@@ -1,4 +1,7 @@
 [workspace]
+exclude = [
+    "validation/x11driver",
+]
 resolver = "2"
 members = [
     "parsing/html",
@@ -15,6 +18,7 @@ members = [
     "api",
     "tests",
     "benchmarks",
+    "ui",
 ]
 
 [workspace.package]

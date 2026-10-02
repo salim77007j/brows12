@@ -1,0 +1,5 @@
+cmd.fifo
+events.fifo
+events.log
+pf.json
+ui-*.log

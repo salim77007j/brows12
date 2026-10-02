@@ -22,6 +22,24 @@ screenshots. **The engine is ready for the UI layer. See docs/API.md.**
 Honest capability matrix, per-site verdicts and v0.3 priorities live in
 [docs/CAPABILITY_REPORT.md](docs/CAPABILITY_REPORT.md).
 
+## v0.3 — the browser window (real, minimal, end-to-end)
+
+`ui/` is a native shell (winit + softbuffer + tiny-skia, ~1,300 LOC) that
+proves the engine through a real window: viewport blit of engine frames,
+omnibox (URLs *and* search queries), Back/Forward/Reload, multi-tab strip,
+and `Loading…/Loaded/Error` status from engine events. It was validated
+end-to-end under Xvfb by driving the real window (omnibox → Bing search →
+example.com → Wikipedia → GitHub → rust-lang.org → second tab → back →
+forward), with awaited engine events and 10 screenshots —
+see [`validation/MINIMAL_UI_REPORT.md`](validation/MINIMAL_UI_REPORT.md),
+[`integration/README.md`](integration/README.md) and
+[`screenshots/`](screenshots). CI builds Windows + Linux binaries on every
+push (`.github/workflows/browser-ui.yml`) and smoke-runs the Linux window.
+
+```bash
+cargo run --release -p brows12-ui     # open the browser
+```
+
 ```
 URL ─▶ HTTPS upgrade ─▶ ad/tracker filter ─▶ HTTP/1.1·2·3 (rustls TLS 1.3)
     ─▶ HTML5 parse (html5ever) ─▶ arena DOM
@@ -111,11 +129,16 @@ Build the static lib: `cargo build -p brows12-api --release --features capi`.
 | `storage/` | `brows12-storage` | Cookies + CHIPS, web storage, HTTP cache, IndexedDB |
 | `privacy/` | `brows12-privacy` | Adblock engine, anti-fingerprinting, HSTS, policies |
 | `api/` | `brows12-api` | UI-facing facade + C ABI (`api/include/brows12.h`) |
+| `ui/` | `brows12-ui` | Native browser shell: window, omnibox, tabs, back/forward/reload |
 | `tests/` | `brows12-tests` | Cross-crate integration suite |
 | `benchmarks/` | `brows12-benchmarks` | Criterion benches + browser compare tooling |
 | `fuzz/` | `brows12-fuzz` | cargo-fuzz targets (parsers + wire formats) |
 | `ci/` | — | Local CI runner; workflows in `.github/workflows/` |
 | `docs/` | — | Architecture, API reference, performance, privacy, roadmap |
+| `integration/` | — | Engine ↔ shell contract documentation |
+| `validation/` | — | End-to-end UI validation driver + honest report + event journals |
+| `assets/` | — | App icon and shell assets |
+| `screenshots/` | — | Real window captures from the validation run |
 
 ## Performance
 

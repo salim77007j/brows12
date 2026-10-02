@@ -1,0 +1,104 @@
+name: browser-ui
+
+# Build the full browser (engine + native shell) on Windows and Linux and
+# publish the binaries as downloadable artifacts. The Linux job additionally
+# launches the real window under Xvfb and drives a navigation through the
+# automation FIFOs, proving the artifact actually runs.
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["docs/**", "*.md"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: brows12-ui-linux-x86_64
+            bin: brows12-ui
+          - os: windows-latest
+            artifact: brows12-ui-windows-x86_64
+            bin: brows12-ui.exe
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux runtime deps (X11 client libs + Xvfb)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libxkbcommon-x11-0 libxkbcommon-dev \
+            libxcb1 libxcb-xkb1 libxcursor1 libxrandr2 libxi6 \
+            xvfb x11-utils
+
+      - name: Build release (engine + UI)
+        run: cargo build --release -p brows12-ui
+
+      - name: Smoke-run the real window under Xvfb (Linux only)
+        if: runner.os == 'Linux'
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -e
+          export DISPLAY=:97
+          Xvfb :97 -screen 0 1280x800x24 -nolisten tcp &
+          sleep 1
+          RUNDIR=validation/run-ci
+          mkdir -p "$RUNDIR"
+          mkfifo "$RUNDIR/cmd.fifo" "$RUNDIR/events.fifo"
+          BROWS12_UI_CMD_FIFO="$RUNDIR/cmd.fifo" \
+          BROWS12_UI_EVENT_FIFO="$RUNDIR/events.fifo" \
+            ./target/release/brows12-ui > "$RUNDIR/ui.log" 2>&1 &
+          UI_PID=$!
+          exec 3<>"$RUNDIR/events.fifo"
+          exec 4>"$RUNDIR/cmd.fifo"
+          # 1. wait for the start-page load event
+          SEEN=0
+          for i in $(seq 1 300); do
+            IFS= read -r -t 1 line <&3 || true
+            if [[ "${line:-}" == tab_created* ]]; then SEEN=1; fi
+            if [[ "${line:-}" == loaded*title=New_Tab* && $SEEN == 1 ]]; then break; fi
+          done
+          [[ "${line:-}" == loaded*title=New_Tab* ]] || { cat "$RUNDIR/ui.log"; exit 1; }
+          echo "smoke: start page loaded: $line"
+          # 2. navigate to example.com and wait for the real load
+          echo '<OMNI> example.com' >&4
+          echo '<RETURN>' >&4
+          OK=0
+          for i in $(seq 1 120); do
+            IFS= read -r -t 1 line <&3 || true
+            [[ "${line:-}" == loaded*url=https://example.com* ]] && { OK=1; break; }
+          done
+          [[ $OK == 1 ]] || { cat "$RUNDIR/ui.log"; exit 1; }
+          echo "smoke: example.com loaded: $line"
+          # 3. clean quit
+          echo '<QUIT>' >&4
+          for i in $(seq 1 30); do
+            IFS= read -r -t 1 line <&3 || true
+            [[ "${line:-}" == quit ]] && break
+          done
+          wait $UI_PID
+          echo "smoke: PASS"
+
+      - name: Package artifact
+        shell: bash
+        run: |
+          mkdir -p upload
+          cp "target/release/${{ matrix.bin }}" upload/
+          cp README.md upload/
+          cp docs/CAPABILITY_REPORT.md upload/ 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: upload/
+          if-no-files-found: error

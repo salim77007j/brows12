@@ -1,0 +1,43 @@
+start pid=21813 viewport=1280x728
+tab_created id=1
+nav tab=1 url=brows12://start
+loaded tab=1 url=brows12://start title=New_Tab
+omni text=rust_programming_language
+return input=rust_programming_language
+nav tab=1 url=https://www.bing.com/search?q=rust%20programming%20language
+loaded tab=1 url=https://www.bing.com/search?q=rust%20programming%20language title=rust_programming_language_-_Search
+omni text=example.com
+return input=example.com
+nav tab=1 url=https://example.com
+loaded tab=1 url=https://example.com title=Example_Domain
+omni text=en.wikipedia.org/wiki/Rust_(programming_language)
+return input=en.wikipedia.org/wiki/Rust_(programming_language)
+nav tab=1 url=https://en.wikipedia.org/wiki/Rust_(programming_language)
+loaded tab=1 url=https://en.wikipedia.org/wiki/Rust_(programming_language) title=Rust_(programming_language)_-_Wikipedia
+omni text=github.com
+return input=github.com
+nav tab=1 url=https://github.com
+loaded tab=1 url=https://github.com title=GitHub_·_Change_is_constant._GitHub_keeps_you_ahead._·_GitHub
+omni text=www.rust-lang.org
+return input=www.rust-lang.org
+nav tab=1 url=https://rust-lang.org/
+loaded tab=1 url=https://rust-lang.org/ title=\n____________Rust_Programming_Language\n________
+reload url=https://rust-lang.org/
+nav tab=1 url=https://rust-lang.org/
+loaded tab=1 url=https://rust-lang.org/ title=\n____________Rust_Programming_Language\n________
+newtab requested
+tab_created id=2
+nav tab=2 url=brows12://start
+loaded tab=2 url=brows12://start title=New_Tab
+omni text=example.org
+return input=example.org
+nav tab=2 url=https://example.org
+loaded tab=2 url=https://example.org title=Example_Domain
+switch index=0 url=https://rust-lang.org/
+back from=https://rust-lang.org/ index=5
+nav tab=1 url=https://github.com
+loaded tab=1 url=https://github.com title=GitHub_·_Change_is_constant._GitHub_keeps_you_ahead._·_GitHub
+forward from=https://github.com index=4
+nav tab=1 url=https://rust-lang.org/
+loaded tab=1 url=https://rust-lang.org/ title=\n____________Rust_Programming_Language\n________
+quit
