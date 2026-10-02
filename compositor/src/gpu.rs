@@ -10,8 +10,13 @@ use crate::{Backend, CompositeOutput, CompositeStats, Compositor, CompositorErro
 const SHADER: &str = r#"
 struct LayerUniforms {
     matrix: mat3x3<f32>,
+    // NOTE: scalar padding only. A `vec3<f32>` here would force 16-byte
+    // alignment (struct size 80) which must then be mirrored in the Rust
+    // side; scalars keep the struct at exactly 64 bytes = [f32; 16].
     opacity: f32,
-    pad: vec3<f32>,
+    pad0: f32,
+    pad1: f32,
+    pad2: f32,
 };
 @group(0) @binding(0) var<uniform> u: LayerUniforms;
 @group(0) @binding(1) var t: texture_2d<f32>;

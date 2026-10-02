@@ -102,6 +102,12 @@ impl CanvasStore {
         self.canvases.lock().unwrap().remove(&node_id);
     }
 
+    /// Drop all surfaces (navigation: node ids of the previous document must
+    /// not leak surfaces into the next one).
+    pub fn clear(&self) {
+        self.canvases.lock().unwrap().clear();
+    }
+
     /// Snapshot of all surfaces for engine harvesting.
     pub fn snapshot(&self) -> Vec<(i32, std::sync::Arc<CanvasSurface>)> {
         self.canvases.lock().unwrap().iter().map(|(k, v)| (*k, v.clone())).collect()

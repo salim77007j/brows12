@@ -129,9 +129,13 @@ impl Tab {
     }
 
     /// Current document title.
+    ///
+    /// Read live from the DOM so that titles set by scripts
+    /// (`document.title = "..."`) are reflected after `load_*` returns;
+    /// the `PageInner::title` snapshot is taken before scripts run.
     pub fn title(&self) -> String {
         match &*self.state.lock().unwrap() {
-            TabState::Live(p) => p.title.clone(),
+            TabState::Live(p) => p.document.lock().unwrap().title().unwrap_or_default(),
             TabState::Suspended(s) => s.title.clone(),
             TabState::Empty => String::new(),
         }
@@ -248,15 +252,32 @@ impl Tab {
             .events
             .send(EngineEvent::NavigationCommitted { tab: self.id, url: final_url.clone() });
 
-        // 4. Parse HTML into the arena DOM.
+        // 4-9. Parse, style, layout, paint, script — the shared HTML pipeline.
         let html_text = String::from_utf8_lossy(&response.body).to_string();
-        let document = Arc::new(Mutex::new(parse_document(&html_text)));
+        self.load_html(&html_text, final_url, top_site)
+    }
+
+    /// Shared HTML pipeline: parse → stylesheets → page → images → render →
+    /// scripts → canvas harvest → re-render. Used by network loads
+    /// ([`Tab::load_url`]) and virtual-string loads ([`Tab::load_url_from_string`])
+    /// so both execute scripts and honour stylesheets identically.
+    fn load_html(
+        &self,
+        html_text: &str,
+        final_url: String,
+        top_site: String,
+    ) -> Result<(), EngineError> {
+        // Navigation resets page-owned surfaces (node ids are per-document).
+        self.canvas_store.clear();
+
+        // Parse HTML into the arena DOM.
+        let document = Arc::new(Mutex::new(parse_document(html_text)));
         let dom = DomHandle::new(document.clone());
 
-        // 5. Stylesheets: <link rel=stylesheet> + inline <style>.
+        // Stylesheets: <link rel=stylesheet> + inline <style>.
         let author_sheets = self.load_stylesheets(&document, &final_url, &top_site)?;
 
-        // 6. Images: fetched during render (display:none filtered via styles).
+        // Images: fetched during render (display:none filtered via styles).
         let page = Arc::new(PageInner {
             url: final_url.clone(),
             title: document.lock().unwrap().title().unwrap_or_default(),
@@ -284,13 +305,13 @@ impl Tab {
             .events
             .send(EngineEvent::LoadFinished { tab: self.id, title: page.title.clone() });
 
-        // 7. Scripts: build the JS realm and execute in document order.
+        // Scripts: build the JS realm and execute in document order.
         self.run_scripts(&page)?;
 
-        // 8. Canvas2D surfaces painted by scripts join the image pipeline.
+        // Canvas2D surfaces painted by scripts join the image pipeline.
         self.harvest_canvases(&page);
 
-        // 9. If scripts mutated the DOM: full re-style / re-layout / re-paint.
+        // If scripts mutated the DOM: full re-style / re-layout / re-paint.
         if page.dom.take_mutated() || !page.images.lock().unwrap().is_empty() {
             self.render_page(&page)?;
         }
@@ -746,34 +767,26 @@ impl Tab {
         self.load_url_from_string(&html, &format!("brows12://blocked/{}", url))
     }
 
-    /// Load a document from raw HTML (used for internal pages and tests).
+    /// Load an in-memory HTML document under a virtual URL. Runs the SAME
+    /// pipeline as a network load (stylesheets, scripts, canvas harvest) so
+    /// fixture pages behave exactly like fetched pages.
     pub fn load_url_from_string(&self, html: &str, virtual_url: &str) -> Result<(), EngineError> {
-        let document = Arc::new(Mutex::new(parse_document(html)));
-        let dom = DomHandle::new(document.clone());
-        let title = document.lock().unwrap().title().unwrap_or_default();
-        let page = Arc::new(PageInner {
-            url: virtual_url.to_string(),
-            title,
-            document,
-            dom,
-            styles: Mutex::new(None),
-            layout: Mutex::new(None),
-            frame: RwLock::new(None),
-            images: Mutex::new(HashMap::new()),
-            last_used: AtomicU64::new(now_secs()),
-            author_sheets: Vec::new(),
-            scroll_y: Mutex::new(0.0),
-            anim_clock_s: Mutex::new(0.0),
-            transitions: Mutex::new(brows12_css::TransitionEngine::default()),
-            compositor_stats: Mutex::new(None),
-        });
-        *self.state.lock().unwrap() = TabState::Live(page.clone());
-        self.render_page(&page)?;
         let _ = self
             .engine
             .events
-            .send(EngineEvent::LoadFinished { tab: self.id, title: self.title() });
-        Ok(())
+            .send(EngineEvent::NavigationStarted { tab: self.id, url: virtual_url.to_string() });
+        let _ = self
+            .engine
+            .events
+            .send(EngineEvent::NavigationCommitted {
+                tab: self.id,
+                url: virtual_url.to_string(),
+            });
+        let top_site = url::Url::parse(virtual_url)
+            .ok()
+            .and_then(|u| u.host_str().map(|h| h.to_string()))
+            .unwrap_or_default();
+        self.load_html(html, virtual_url.to_string(), top_site)
     }
 
     /// Scroll the viewport to `y` (CSS px) and re-composite.
