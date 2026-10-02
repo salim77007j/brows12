@@ -224,8 +224,14 @@ impl Stylesheet {
             css
         };
 
-        let sheet = LcStyleSheet::parse(&effective, ParserOptions::default())
-            .map_err(|e| crate::CssError::Parse(format!("{e}")))?;
+        // error_recovery: browsers skip declarations/rules they do not
+        // understand — one exotic at-rule must not discard the whole sheet
+        // (real-world pages mix syntax generations).
+        let sheet = LcStyleSheet::parse(
+            &effective,
+            ParserOptions { error_recovery: true, ..ParserOptions::default() },
+        )
+        .map_err(|e| crate::CssError::Parse(format!("{e}")))?;
         // Erase lifetimes: the owned stylesheet no longer borrows `css`.
         let sheet: LcStyleSheet<'static> = IntoOwned::into_owned(sheet);
         let mut rules = Vec::new();

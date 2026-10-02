@@ -907,6 +907,7 @@ mod tests {
                     DisplayItem::InlineFlow { .. } => "inline-flow",
                     DisplayItem::Image { .. } => "image",
                     DisplayItem::GradientRect { .. } => "gradient",
+                    DisplayItem::PushClip { .. } | DisplayItem::PopClip => "clip",
                 })
                 .collect::<Vec<_>>()
         );

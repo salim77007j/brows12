@@ -491,7 +491,7 @@ fn build_taffy_style(
     if style.display == Display::Grid {
         let tf = |t: &brows12_css::values::GridTrackSize| -> taffy::style::TrackSizingFunction {
             use taffy::style::{MaxTrackSizingFunction as Max, MinTrackSizingFunction as Min};
-            use taffy::prelude::{TaffyAuto, TaffyMaxContent, TaffyMinContent};
+            use taffy::prelude::TaffyAuto;
             fn min_side(g: &brows12_css::values::GridTrackSize) -> Min {
                 match g {
                     brows12_css::values::GridTrackSize::Auto => Min::auto(),
@@ -1332,7 +1332,7 @@ pub fn compute_layout(
     let floats1 = place_floats(doc, styles, &mut rects1, &children_of, &parent_of, &all_elements);
     {
         let mut bmap = bands_cell.borrow_mut();
-        for (dom_id, _) in inline_ctx.iter() {
+        for dom_id in inline_ctx.keys() {
             let (Some(gr), Some(&tn)) = (rects1.get(dom_id), node_ids.get(dom_id)) else {
                 continue;
             };

@@ -261,7 +261,10 @@ fn apply_inline(
     // grow per-element with every var()-bearing inline style.
     if let Ok(block) = lightningcss::stylesheet::StyleAttribute::parse(
         &resolved,
-        lightningcss::stylesheet::ParserOptions::default(),
+        lightningcss::stylesheet::ParserOptions {
+            error_recovery: true,
+            ..lightningcss::stylesheet::ParserOptions::default()
+        },
     ) {
         let block: lightningcss::stylesheet::StyleAttribute<'static> =
             lightningcss::traits::IntoOwned::into_owned(block);

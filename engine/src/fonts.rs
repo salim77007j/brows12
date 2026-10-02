@@ -15,7 +15,7 @@ pub fn alias_font_family(raw: &[u8], family: &str) -> Vec<u8> {
             let name = build_name_table(family);
             entries.push((*b"name", name));
             // sfnt directories are sorted by tag.
-            entries.sort_by(|a, b| a.0.cmp(&b.0));
+            entries.sort_by_key(|e| e.0);
             assemble_sfnt(flavor, &entries)
         }
         None => raw.to_vec(),
@@ -74,12 +74,12 @@ fn build_name_table(family: &str) -> Vec<u8> {
     let mut header: Vec<u8> = Vec::new();
     header.extend_from_slice(&0u16.to_be_bytes());
     header.extend_from_slice(&count.to_be_bytes());
-    header.extend_from_slice(&(string_offset as u16).to_be_bytes());
+    header.extend_from_slice(&(string_offset.to_be_bytes()));
     let mut strings: Vec<u8> = Vec::new();
     for (p, e, l, id, data) in &records {
         header.extend_from_slice(&(*p as u16).to_be_bytes());
         header.extend_from_slice(&(*e as u16).to_be_bytes());
-        header.extend_from_slice(&(*l as u16).to_be_bytes());
+        header.extend_from_slice(&l.to_be_bytes());
         header.extend_from_slice(&id.to_be_bytes());
         header.extend_from_slice(&(data.len() as u16).to_be_bytes());
         header.extend_from_slice(&(strings.len() as u16).to_be_bytes());
