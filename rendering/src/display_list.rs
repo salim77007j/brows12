@@ -60,6 +60,8 @@ pub struct DecodedImage {
 pub struct DisplayList {
     pub items: Vec<DisplayItem>,
     pub viewport: (f32, f32),
+    /// Build-time (z_index, item) pairs; sorted into `items` at the end.
+    tagged: Vec<(i32, DisplayItem)>,
 }
 
 /// Which part of the tree a display list covers (compositor layer split).
@@ -86,7 +88,7 @@ pub fn build_display_list(
     scroll_y: f32,
     scope: ListScope,
 ) -> DisplayList {
-    let mut list = DisplayList { items: Vec::new(), viewport };
+    let mut list = DisplayList { items: Vec::new(), viewport, tagged: Vec::new() };
 
     // Subtrees rooted at fixed nodes ignore the scroll offset.
     let mut fixed_subtrees: std::collections::HashSet<NodeId> = Default::default();
@@ -125,11 +127,11 @@ pub fn build_display_list(
                     .filter(|c| c[3] > 0)
             })
             .unwrap_or(INITIAL_CANVAS);
-        list.items.push(DisplayItem::Rect {
+        list.tagged.push((0, DisplayItem::Rect {
             rect: Rect { x: 0.0, y: 0.0, width: viewport.0, height: viewport.1 },
             color: canvas_color,
             radius: 0.0,
-        });
+        }));
     }
 
     let start = doc.body().or_else(|| doc.document_element()).unwrap_or(doc.root());
@@ -144,9 +146,19 @@ pub fn build_display_list(
         scroll_y: f32,
         fixed_subtrees: &std::collections::HashSet<NodeId>,
         is_fixed: bool,
+        z: i32,
         node: NodeId,
         scope: ListScope,
     ) {
+        // Stacking contexts: a non-auto z-index re-roots the z bucket for
+        // the whole subtree (items sort by their context root's z).
+        let z = styles
+            .get(node)
+            .map(|s| match s.z_index {
+                brows12_css::values::ZIndex::Number(n) => n,
+                _ => z,
+            })
+            .unwrap_or(z);
         let Some(style) = styles.get(node) else {
             return;
         };
@@ -181,7 +193,7 @@ pub fn build_display_list(
             return;
         }
         if let Some(flow) = layout.inline_flows.get(&node) {
-            list.items.push(DisplayItem::InlineFlow { rect, flow: flow.clone() });
+            list.tagged.push((z, DisplayItem::InlineFlow { rect, flow: flow.clone() }));
             return;
         }
 
@@ -191,17 +203,20 @@ pub fn build_display_list(
                 // Background: gradient paint wins over flat color (the
                 // color still renders beneath as fallback where possible).
                 if let Some(g) = &style.background_gradient {
-                    list.items.push(DisplayItem::GradientRect {
-                        rect,
-                        gradient: g.clone(),
-                        radius: style.border_radius,
-                    });
+                    list.tagged.push((
+                        z,
+                        DisplayItem::GradientRect {
+                            rect,
+                            gradient: g.clone(),
+                            radius: style.border_radius,
+                        },
+                    ));
                 } else if style.background_color[3] > 0 {
-                    list.items.push(DisplayItem::Rect {
+                    list.tagged.push((z, DisplayItem::Rect {
                         rect,
                         color: style.background_color,
                         radius: style.border_radius,
-                    });
+                    }));
                 }
                 // Border
                 let bw = &style.border_width;
@@ -210,7 +225,7 @@ pub fn build_display_list(
                     + bw.bottom.extract_px()
                     + bw.left.extract_px();
                 if total > 0.0 {
-                    list.items.push(DisplayItem::Border {
+                    list.tagged.push((z, DisplayItem::Border {
                         rect,
                         widths: (
                             bw.top.extract_px(),
@@ -220,15 +235,15 @@ pub fn build_display_list(
                         ),
                         color: style.border_color,
                         radius: style.border_radius,
-                    });
+                    }));
                 }
                 // Image content
                 if let Some(img) = images.get(&node) {
-                    list.items.push(DisplayItem::Image {
+                    list.tagged.push((z, DisplayItem::Image {
                         rect,
                         image: img.clone(),
                         radius: style.border_radius,
-                    });
+                    }));
                 }
                 for &c in &doc.node(node).children {
                     emit(
@@ -240,6 +255,7 @@ pub fn build_display_list(
                         scroll_y,
                         fixed_subtrees,
                         child_fixed,
+                        z,
                         c,
                         scope,
                     );
@@ -260,13 +276,13 @@ pub fn build_display_list(
                     align: style.text_align,
                 };
                 let text = doc.text_content(node);
-                list.items.push(DisplayItem::Text {
+                list.tagged.push((z, DisplayItem::Text {
                     rect,
                     text,
                     style: text_style,
                     underline: style.text_underline,
                     line_through: style.text_line_through,
-                });
+                }));
             }
             _ => {
                 for &c in &doc.node(node).children {
@@ -279,6 +295,7 @@ pub fn build_display_list(
                         scroll_y,
                         fixed_subtrees,
                         is_fixed,
+                        z,
                         c,
                         scope,
                     );
@@ -287,7 +304,11 @@ pub fn build_display_list(
         }
     }
 
-    emit(doc, styles, layout, &mut list, images, scroll_y, &fixed_subtrees, false, start, scope);
+    emit(doc, styles, layout, &mut list, images, scroll_y, &fixed_subtrees, false, 0, start, scope);
+    // Paint order: negative stacking contexts behind, positive above; tree
+    // order preserved within a bucket (stable sort).
+    list.tagged.sort_by_key(|(z, _)| *z);
+    list.items = std::mem::take(&mut list.tagged).into_iter().map(|(_, i)| i).collect();
     list
 }
 
