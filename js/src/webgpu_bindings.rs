@@ -6,7 +6,7 @@
 use crate::environment::JsEnvironment;
 use crate::webgpu::{usage, GpuDevice};
 use rquickjs::{Ctx, Function, Object, Value};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, OnceLock};
 
 static DEVICE: OnceLock<Option<Arc<GpuDevice>>> = OnceLock::new();
 
