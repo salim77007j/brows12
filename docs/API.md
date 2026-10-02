@@ -89,9 +89,17 @@ Every page realm (QuickJS-ng, hard 256 MiB heap + 1 MiB stack caps) exposes:
 | `crypto.getRandomValues`, `btoa/atob` | both | |
 | `location`, `navigator` | both | navigator values come from the anti-fingerprint shield |
 | `requestAnimationFrame` | page | mapped onto the frame scheduler |
+| `CanvasRenderingContext2D` (`canvas.getContext('2d')`) | page | paths/transforms/fills/strokes/fillText/drawImage; surfaces join the image pipeline |
+| `WebGL2RenderingContext` (`canvas.getContext('webgl2')`) | page | GLSL ES 1.00/3.00 shaders (normalized + naga-validated), buffers, VAOs, textures, uniforms, drawArrays/drawElements, blend/depth/cull, readPixels; `null` on GPU-less environments (spec behaviour). Subset documented in CAPABILITY_REPORT §3 |
+| `navigator.gpu` (WebGPU subset) | page | requestAdapter/requestDevice, storage buffers, WGSL compute pipelines, bind groups, command encoder + queue; `mapAsync` resolves synchronously (documented deviation) |
+| `WebAssembly` | both | wasmi interpreter: instantiate/call/memory RW |
+| `indexedDB` | page | synchronous subset: open/createObjectStore/put/get/getAll/delete over the engine KV backend |
+| `Element.animate(keyframes, options)` | page | Web Animations subset backed by CSS transitions (duration/delay honoured) |
+| ES modules | page | `<script type="module">`, `import`, dynamic `import()`; specifiers resolve as URLs through the engine net stack |
 
 Out of scope for this release (tracked in docs/ROADMAP.md): full event
-propagation/bubbling, Canvas2D, WebAssembly, ES modules in pages.
+propagation/bubbling, WebGL framebuffer objects/instancing, WebGPU render
+pipelines from JS, async IndexedDB semantics, Service Workers.
 
 ## C ABI (feature `capi`)
 
