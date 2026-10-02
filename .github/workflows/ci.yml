@@ -109,6 +109,10 @@ jobs:
       - name: Build and test under AddressSanitizer
         env:
           RUSTFLAGS: -Zsanitizer=address
+          # run_libc_freeres releases glibc's own one-time allocations
+          # (getaddrinfo resolver buffers from the network-path tests) that
+          # LSan would otherwise report; the engine itself is leak-checked.
+          ASAN_OPTIONS: detect_leaks=1:run_libc_freeres=1
         run: cargo +nightly -Zbuild-std=std,panic_abort test --workspace --target x86_64-unknown-linux-gnu
 
   fuzz-smoke:
