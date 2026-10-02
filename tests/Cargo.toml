@@ -26,3 +26,5 @@ url = "2.5"
 tokio-tungstenite = "0.29"
 futures-util = "0.3"
 brows12-js = { version = "0.1.0", path = "../js" }
+
+cosmic-text = "0.19"

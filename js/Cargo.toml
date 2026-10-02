@@ -25,3 +25,7 @@ thiserror = "2"
 tokio = { version = "1", features = ["rt-multi-thread", "time", "sync"] }
 tracing = "0.1"
 url = "2.5"
+brows12-render = { path = "../rendering" }
+tiny-skia = { version = "0.12", features = ["png-format"] }
+cosmic-text = "0.19"
+wasmi = "2"

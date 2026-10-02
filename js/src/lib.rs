@@ -19,14 +19,19 @@
 //!   of the process.
 
 pub mod bindings;
+pub mod canvas;
 pub mod dom_handle;
 pub mod environment;
 pub mod event_loop;
 pub mod glue;
+pub mod platform;
 pub mod runtime;
+pub mod wasm;
+pub mod glue_b64;
 pub mod worker;
 
 pub use bindings::{WorkerRegistry, WsSenders};
+pub use canvas::{CanvasStore, CanvasSurface};
 pub use dom_handle::DomHandle;
 pub use environment::JsEnvironment;
 pub use event_loop::JsTask;

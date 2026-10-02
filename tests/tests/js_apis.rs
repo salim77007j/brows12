@@ -62,6 +62,8 @@ fn realm(base_url: String) -> JsRuntime {
         top_level_site: "localhost".into(),
         viewport: (800, 600),
         console_log: Arc::new(Mutex::new(Vec::new())),
+        canvas_store: Arc::new(brows12_js::CanvasStore::new()),
+        fonts: Arc::new(Mutex::new(cosmic_text::FontSystem::new())),
     });
     let dom = DomHandle::new(Arc::new(Mutex::new(Document::new())));
     let rt = JsRuntime::new(env, dom).expect("realm");
@@ -222,5 +224,54 @@ fn worker_message_round_trip() {
         "worker payload wrong; raw type={} json={:?}",
         rt.eval("typeof globalThis.__raw").unwrap_or_default(),
         rt.eval("String(globalThis.__raw)").unwrap_or_default()
+    );
+}
+
+#[test]
+fn canvas2d_and_platform_apis() {
+    let base = server(vec![("/", "<h1>canvas</h1>".into())]);
+    let rt = realm(base.clone());
+    rt.eval(
+        "globalThis.__log = [];
+         var cv = document.createElement('canvas');
+         cv.setAttribute('width', '64'); cv.setAttribute('height', '64');
+         var ctx = cv.getContext('2d');
+         globalThis.__ctxType = typeof ctx;
+         ctx.fillStyle = '#ff0000';
+         ctx.fillRect(8, 8, 32, 32);
+         ctx.font = 'bold 16px sans-serif';
+         ctx.fillStyle = '#00ff00';
+         ctx.fillText('Hi', 2, 20);
+         globalThis.__log.push(typeof performance.now());
+         globalThis.__log.push(typeof WebAssembly);
+         globalThis.__log.push(typeof MutationObserver);
+         globalThis.__log.push(typeof EventSource);
+         globalThis.__log.push(typeof IntersectionObserver);",
+    )
+    .unwrap();
+    assert_eq!(rt.eval("globalThis.__ctxType").unwrap(), "object", "getContext('2d') must work");
+    assert_eq!(rt.eval("globalThis.__log.join(',')").unwrap(),
+        "number,object,function,function,function", "platform globals present");
+}
+
+#[test]
+fn webassembly_instantiate_and_call() {
+    let base = server(vec![("/", "<h1>wasm</h1>".into())]);
+    let rt = realm(base.clone());
+    // Minimal WASM module: (func (export "add") (param i32 i32) (result i32)
+    //   local.get 0 local.get 1 i32.add)
+    // Hand-assembled below via wat2wasm output captured as bytes.
+    let wasm_b64 = "AGFzbQEAAAABBwFgAn9/AX8DAgEABwcBA2FkZAAACgkBBwAgACABagsACgRuYW1lAgMBAAA=";
+    rt.eval(&format!(
+        "globalThis.__result = null;
+         WebAssembly.instantiate(Uint8Array.from(atob('{wasm_b64}'), function(c) {{ return c.charCodeAt(0); }})).then(function (r) {{
+           globalThis.__result = r.instance.exports.add(40, 2);
+         }});"
+    ))
+    .unwrap();
+    assert!(
+        wait_until(&rt, "globalThis.__result === 42", Duration::from_secs(5)),
+        "wasm add(40,2) did not return 42, got {:?}",
+        rt.eval("String(globalThis.__result)").unwrap_or_default()
     );
 }

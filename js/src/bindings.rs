@@ -157,6 +157,27 @@ pub fn install(
         })?,
     )?;
 
+    crate::platform::install(ctx, &env, &ns)?;
+    crate::wasm::install(ctx, &env, &ns)?;
+
+    // performance.now (ms since realm creation)
+    let realm_start = std::time::Instant::now();
+    ns.set(
+        "perfNow",
+        Function::new(ctx.clone(), move || -> f64 {
+            realm_start.elapsed().as_secs_f64() * 1000.0
+        })?,
+    )?;
+
+    // performance.now (ms since realm creation)
+    let realm_start = std::time::Instant::now();
+    ns.set(
+        "perfNow",
+        Function::new(ctx.clone(), move || -> f64 {
+            realm_start.elapsed().as_secs_f64() * 1000.0
+        })?,
+    )?;
+
     // ---- environment data ---------------------------------------------------
     ns.set(
         "locationJson",

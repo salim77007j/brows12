@@ -617,9 +617,280 @@ if (!__brows12.isWorker) {
       try { w.onerror.call(w, { type: "error", message: message }); } catch (e) { console.error(e); }
     }
   };
+
+  __brows12PatchCanvas(Brows12Element);
 }
 
 function __brows12FireLoad() {
   __brows12Dispatch("DOMContentLoaded", -1);
   __brows12Dispatch("load", -1);
+}
+
+// ===========================================================================
+// v0.2 platform: performance, Canvas 2D, WebAssembly, observers, EventSource
+// ===========================================================================
+
+// ---- performance ----------------------------------------------------------
+var __brows12Origin = Date.now();
+var performance = {
+  now: function () { return __brows12.perfNow() - __brows12Origin; },
+  timeOrigin: __brows12Origin,
+  mark: function () {},
+  measure: function () {},
+  getEntries: function () { return []; },
+  getEntriesByType: function () { return []; },
+  getEntriesByName: function () { return []; }
+};
+
+// ---- Canvas 2D ------------------------------------------------------------
+function __brows12ParseFont(font) {
+  var s = String(font || "10px sans-serif").trim();
+  var italic = false, weight = 400, size = 10, family = "sans-serif";
+  var m = s.match(/(\d+(?:\.\d+)?)px/);
+  if (m) size = parseFloat(m[1]);
+  m = s.match(/italic|oblique/i);
+  if (m) italic = true;
+  m = s.match(/bold|[1-9]00/i);
+  if (m) weight = /^bold$/i.test(m[0]) ? 700 : parseInt(m[0], 10);
+  m = s.match(/px\s*(?:\/\s*[\d.]+)?\s+(.*)$/);
+  if (m && m[1].trim()) family = m[1].trim().split(",")[0].replace(/^["']|["']$/g, "");
+  return { italic: italic, weight: weight, size: size, family: family };
+}
+
+class CanvasRenderingContext2D {
+  constructor(nodeId) {
+    this.__nodeId = nodeId;
+    this.canvas = null;
+    this.fillStyle = "#000000";
+    this.strokeStyle = "#000000";
+    this.lineWidth = 1;
+    this.globalAlpha = 1;
+    this.font = "10px sans-serif";
+    this.__transform = [1, 0, 0, 1, 0, 0];
+    this.__stack = [];
+  }
+  __pushState() {
+    const f = __brows12ParseFont(this.font);
+    __brows12.canvasSetState(this.__nodeId, JSON.stringify({
+      lineWidth: this.lineWidth, alpha: this.globalAlpha,
+      a: this.__transform[0], b: this.__transform[1], c: this.__transform[2],
+      d: this.__transform[3], e: this.__transform[4], f: this.__transform[5],
+      fontSize: f.size, fontWeight: f.weight, italic: f.italic, family: f.family
+    }));
+  }
+  save() { this.__stack.push(JSON.stringify(this.__transform)); }
+  restore() {
+    const t = this.__stack.pop();
+    if (t) this.__transform = JSON.parse(t);
+  }
+  setTransform(a, b, c, d, e, f) { this.__transform = [a, b, c, d, e, f]; }
+  resetTransform() { this.__transform = [1, 0, 0, 1, 0, 0]; }
+  translate(x, y) {
+    const t = this.__transform;
+    this.__transform = [t[0], t[1], t[2], t[3], t[4] + t[0]*x + t[2]*y, t[5] + t[1]*x + t[3]*y];
+  }
+  scale(x, y) {
+    const t = this.__transform;
+    this.__transform = [t[0]*x, t[1]*x, t[2]*y, t[3]*y, t[4], t[5]];
+  }
+  rotate(rad) {
+    const t = this.__transform, cos = Math.cos(rad), sin = Math.sin(rad);
+    const a = t[0]*cos + t[2]*sin, b = t[1]*cos + t[3]*sin;
+    const c = t[2]*cos - t[0]*sin, d = t[3]*cos - t[1]*sin;
+    this.__transform = [a, b, c, d, t[4], t[5]];
+  }
+  clearRect(x, y, w, h) { this.__pushState(); __brows12.canvasClearRect(this.__nodeId, x, y, w, h); }
+  fillRect(x, y, w, h) {
+    __brows12.canvasSetFillStyle(this.__nodeId, String(this.fillStyle));
+    this.__pushState(); __brows12.canvasFillRect(this.__nodeId, x, y, w, h, false);
+  }
+  strokeRect(x, y, w, h) {
+    __brows12.canvasSetStrokeStyle(this.__nodeId, String(this.strokeStyle));
+    this.__pushState(); __brows12.canvasFillRect(this.__nodeId, x, y, w, h, true);
+  }
+  beginPath() { __brows12.canvasPathOp(this.__nodeId, 4, 0, 0, 0, 0); }
+  closePath() { __brows12.canvasPathOp(this.__nodeId, 3, 0, 0, 0, 0); }
+  moveTo(x, y) { __brows12.canvasPathOp(this.__nodeId, 0, x, y, 0, 0); }
+  lineTo(x, y) { __brows12.canvasPathOp(this.__nodeId, 1, x, y, 0, 0); }
+  arc(x, y, r, start, end, ccw) { __brows12.canvasPathOp(this.__nodeId, 2, x, y, r, end); }
+  fill() { this.__pushState(); __brows12.canvasSetFillStyle(this.__nodeId, String(this.fillStyle)); __brows12.canvasFillPath(this.__nodeId, false); }
+  stroke() { this.__pushState(); __brows12.canvasSetStrokeStyle(this.__nodeId, String(this.strokeStyle)); __brows12.canvasFillPath(this.__nodeId, true); }
+  fillText(text, x, y, maxWidth) {
+    this.__pushState();
+    __brows12.canvasSetFillStyle(this.__nodeId, String(this.fillStyle));
+    __brows12.canvasFillText(this.__nodeId, String(text), x, y, maxWidth || 0);
+  }
+  strokeText(text, x, y) {
+    this.__pushState();
+    __brows12.canvasSetStrokeStyle(this.__nodeId, String(this.strokeStyle));
+    __brows12.canvasFillText(this.__nodeId, String(text), x, y, 0);
+  }
+  drawImage(image, dx, dy, dw, dh) {
+    if (!image || image.__nodeId === undefined) return;
+    this.__pushState();
+    __brows12.canvasDrawImage(this.__nodeId, image.__nodeId, dx, dy, dw || 0, dh || 0);
+  }
+  measureText(text) { return { width: String(text).length * 6 }; }
+  createLinearGradient() { return { addColorStop: function () {} }; }
+  createRadialGradient() { return { addColorStop: function () {} }; }
+}
+
+
+// ---- WebAssembly (wasmi interpreter bridge) --------------------------------
+function __brows12BytesToBase64(bytes) {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  let out = "";
+  for (let i = 0; i < bytes.length; i += 3) {
+    const b0 = bytes[i], b1 = bytes[i+1], b2 = bytes[i+2];
+    out += chars[b0 >> 2] + chars[((b0 & 3) << 4) | ((b1 === undefined ? 0 : b1) >> 4)] +
+      (b1 === undefined ? "=" : chars[((b1 & 15) << 2) | ((b2 === undefined ? 0 : b2) >> 6)]) +
+      (b2 === undefined ? "=" : chars[b2 & 63]);
+  }
+  return out;
+}
+function __brows12Base64ToBytes(b64) {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  const clean = String(b64).replace(/[^A-Za-z0-9+/=]/g, "");
+  const out = [];
+  let bits = 0, acc = 0;
+  for (let i = 0; i < clean.length; i++) {
+    const c = chars.indexOf(clean[i]);
+    if (c < 0 || c === 64) continue;
+    acc = (acc << 6) | c; bits += 6;
+    if (bits >= 8) { bits -= 8; out.push((acc >> bits) & 0xff); }
+  }
+  return new Uint8Array(out);
+}
+
+const WebAssembly = {
+  instantiate: function (bytes, imports) {
+    return new Promise(function (resolve, reject) {
+      try {
+        const b64 = __brows12BytesToBase64(new Uint8Array(bytes));
+        const id = __brows12AllocId();
+        const res = JSON.parse(__brows12.wasmNew(id, b64));
+        if (!res.ok) { reject(new Error("WebAssembly: " + (res.error || "compile failed"))); return; }
+        const exports = {};
+        for (const name of res.funcs) {
+          (function (fname) {
+            exports[fname] = function () {
+              const args = Array.prototype.slice.call(arguments);
+              const r = JSON.parse(__brows12.wasmCall(res.id, fname, JSON.stringify(args)));
+              if (!r.ok) throw new Error("wasm: " + (r.error || "call failed"));
+              return r.results.length === 1 ? r.results[0] : undefined;
+            };
+          })(name);
+        }
+        if (res.hasMemory) {
+          const mem = {
+            get buffer() { return __brows12MemView(res.id, 0, 1 << 20); },
+            grow: function () { return 0; }
+          };
+          exports.memory = mem;
+        }
+        resolve({ module: { exports: exports }, instance: { exports: exports } });
+      } catch (e) { reject(e); }
+    });
+  },
+  instantiateStreaming: function (response, imports) {
+    return response.then(function (r) { return r.arrayBuffer(); }).then(function (buf) {
+      return WebAssembly.instantiate(buf, imports);
+    });
+  },
+  validate: function () { return true; }
+};
+function __brows12MemView(instanceId, offset, len) {
+  const b64 = __brows12.wasmMemoryRead(instanceId, offset, len);
+  return __brows12Base64ToBytes(b64).buffer;
+}
+
+// ---- MutationObserver (approximate: batched global records) ---------------
+var __brows12MutObservers = [];
+var __brows12MutQueue = [];
+function __brows12RecordMutation(type, nodeId, detail) {
+  for (const o of __brows12MutObservers) {
+    __brows12MutQueue.push({ obs: o, record: { type: type, target: new Brows12Node(nodeId), addedNodes: detail.added || [], removedNodes: detail.removed || [], attributeName: detail.attr || null, oldValue: null } });
+  }
+  if (__brows12MutQueue.length) {
+    Promise.resolve().then(function () {
+      const byObs = {};
+      for (const item of __brows12MutQueue) {
+        (byObs[item.obs] = byObs[item.obs] || []).push(item.record);
+      }
+      __brows12MutQueue = [];
+      for (const obs in byObs) obs(byObs[obs]);
+    });
+  }
+}
+class MutationObserver {
+  constructor(cb) { this.__cb = cb; }
+  observe(target, options) { __brows12MutObservers.push(this.__cb); }
+  disconnect() { __brows12MutObservers.length = 0; }
+  takeRecords() { return []; }
+}
+
+class ResizeObserver {
+  constructor(cb) { this.__cb = cb; }
+  observe(el) { const cb = this.__cb; setTimeout(function(){ cb([{ target: el, contentRect: { width: 0, height: 0 } }]); }, 0); }
+  unobserve() {} disconnect() {}
+}
+class IntersectionObserver {
+  constructor(cb) { this.__cb = cb; }
+  observe(el) { const cb = this.__cb; setTimeout(function(){ cb([{ target: el, isIntersecting: true, intersectionRatio: 1 }]); }, 0); }
+  unobserve() {} disconnect() {}
+}
+
+// ---- EventSource (non-streaming: parses events from the complete body) ----
+class EventSource {
+  constructor(url) {
+    this.url = url;
+    this.readyState = 0;
+    this.onopen = null; this.onmessage = null; this.onerror = null;
+    this.readyState = 1;
+    fetch(url).then(function (r) { return r.text(); }).then(function (body) {
+      this.readyState = 2;
+      if (this.onopen) this.onopen({ type: "open" });
+      let lines = [];
+      const self = this;
+      const flush = function () {
+        if (lines.length && self.onmessage) {
+          self.onmessage({ type: "message", data: lines.join("\n"), lastEventId: "" });
+        }
+        lines = [];
+      };
+      for (const line of body.split("\n")) {
+        if (line === "") { flush(); continue; }
+        if (line.indexOf(":") === 0) continue;
+        if (line.indexOf("data:") === 0) lines.push(line.slice(5).replace(/^ /, ""));
+      }
+      flush();
+    }.bind(this)).catch(function () { if (this.onerror) this.onerror({ type: "error" }); }.bind(this));
+  }
+  close() { this.readyState = 2; }
+  addEventListener(type, cb) { if (type === "message") this.onmessage = cb; if (type === "open") this.onopen = cb; if (type === "error") this.onerror = cb; }
+}
+
+Object.assign(globalThis, {
+  performance: performance,
+  WebAssembly: WebAssembly,
+  MutationObserver: MutationObserver,
+  ResizeObserver: ResizeObserver,
+  IntersectionObserver: IntersectionObserver,
+  EventSource: EventSource,
+  CanvasRenderingContext2D: CanvasRenderingContext2D
+});
+
+function __brows12PatchCanvas(Brows12Element) {
+  const proto = Brows12Element.prototype;
+  proto.getContext = function (kind) {
+    if (String(kind).toLowerCase() === "2d") {
+      __brows12.canvasEnsure(this.__nodeId, parseInt(this.getAttribute("width") || "300", 10), parseInt(this.getAttribute("height") || "150", 10));
+      const ctx = new CanvasRenderingContext2D(this.__nodeId);
+      ctx.canvas = this;
+      return ctx;
+    }
+    // webgl / webgpu: GPU-backed contexts land with the v0.3 compositor seam.
+    return null;
+  };
+  proto.toDataURL = function () { return "data:image/png;base64,"; };
 }

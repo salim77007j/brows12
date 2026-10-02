@@ -91,6 +91,8 @@ pub struct Tab {
     frame_gen: AtomicU64,
     /// Shared compositor backend (GPU when available, else CPU).
     compositor: std::sync::Mutex<Box<dyn brows12_compositor::Compositor>>,
+    /// Canvas2D surfaces created by this tab's page scripts.
+    canvas_store: Arc<brows12_js::CanvasStore>,
 }
 
 fn now_secs() -> u64 {
@@ -109,6 +111,7 @@ impl Tab {
             state: Mutex::new(TabState::Empty),
             frame_gen: AtomicU64::new(0),
             compositor: std::sync::Mutex::new(brows12_compositor::auto_compositor()),
+            canvas_store: Arc::new(brows12_js::CanvasStore::new()),
         }
     }
 
@@ -284,12 +287,36 @@ impl Tab {
         // 7. Scripts: build the JS realm and execute in document order.
         self.run_scripts(&page)?;
 
-        // 8. If scripts mutated the DOM: full re-style / re-layout / re-paint.
-        if page.dom.take_mutated() {
+        // 8. Canvas2D surfaces painted by scripts join the image pipeline.
+        self.harvest_canvases(&page);
+
+        // 9. If scripts mutated the DOM: full re-style / re-layout / re-paint.
+        if page.dom.take_mutated() || !page.images.lock().unwrap().is_empty() {
             self.render_page(&page)?;
         }
 
         Ok(())
+    }
+
+    /// Route Canvas2D surfaces into the image pipeline (canvas participates
+    /// in layout + paint like any decoded image).
+    fn harvest_canvases(&self, page: &Arc<PageInner>) {
+        use brows12_render::display_list::DecodedImage as DI;
+        for (node_id, width, height, pixels) in brows12_js::platform::harvest(&self.canvas_store)
+        {
+            let node = brows12_html::NodeId(node_id.max(0) as u32);
+            let doc = page.document.lock().unwrap();
+            let is_canvas =
+                doc.is_element(node) && doc.local_name(node) == "canvas";
+            drop(doc);
+            if !is_canvas || pixels.is_empty() {
+                continue;
+            }
+            page.images
+                .lock()
+                .unwrap()
+                .insert(node, Arc::new(DI { width, height, pixels }));
+        }
     }
 
     /// Fetch + decode images for the page's `<img>` elements into PageInner.
@@ -629,6 +656,8 @@ impl Tab {
                 self.engine.config.viewport.height as u32,
             ),
             console_log: Arc::new(Mutex::new(Vec::new())),
+            canvas_store: self.canvas_store.clone(),
+            fonts: self.engine.fonts.clone(),
         });
 
         let runtime =

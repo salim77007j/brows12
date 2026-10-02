@@ -58,6 +58,48 @@ impl Rasterizer {
         Ok((pixmap, stats))
     }
 
+    /// Render text into a tightly-fitted premultiplied pixmap.
+    /// Public seam for Canvas2D `fillText` (js crate) and tests.
+    pub fn rasterize_text(
+        &mut self,
+        text: &str,
+        font_size: f32,
+        font_weight: u16,
+        italic: bool,
+        font_family: Option<&str>,
+        color: [u8; 4],
+        max_width: Option<f32>,
+    ) -> Option<Pixmap> {
+        // Measure first (same shaping path as layout).
+        let measure_style = crate::display_list::TextStyle {
+            font_size,
+            line_height_px: font_size * 1.2,
+            font_weight,
+            italic,
+            font_family: font_family.map(|s| s.to_string()),
+            color,
+            white_space_pre: false,
+            align: brows12_css::values::TextAlign::Start,
+        };
+        let mut measurer = brows12_layout::TextMeasurer::new(self.font_system.clone());
+        let leaf = brows12_layout::LeafContext::Text {
+            text: text.to_string(),
+            font_size,
+            line_height_px: font_size * 1.2,
+            font_weight,
+            font_style_italic: italic,
+            font_family: font_family.map(|s| s.to_string()),
+            white_space_pre: false,
+        };
+        let (w, h) = measurer.measure(&leaf, max_width);
+        let pw = (w.ceil() as u32).max(1);
+        let ph = (h.ceil() as u32).max(1);
+        let mut pm = Pixmap::new(pw, ph)?;
+        let rect = brows12_layout::Rect { x: 0.0, y: 0.0, width: pw as f32, height: ph as f32 };
+        self.paint_text(&mut pm, rect, text, &measure_style, false, false);
+        Some(pm)
+    }
+
     /// Shape + blit a text run with swash images (alpha coverage tinted by
     /// the style color, or full-color images for emoji).
     fn paint_text(

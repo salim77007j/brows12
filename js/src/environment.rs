@@ -26,6 +26,10 @@ pub struct JsEnvironment {
     pub viewport: (u32, u32),
     /// Captured console output (for tests + UI consoles).
     pub console_log: Arc<Mutex<Vec<String>>>,
+    /// Canvas2D surfaces created by page scripts (keyed by node id).
+    pub canvas_store: Arc<crate::canvas::CanvasStore>,
+    /// Shared font system (Canvas2D fillText).
+    pub fonts: Arc<Mutex<cosmic_text::FontSystem>>,
 }
 
 impl std::fmt::Debug for JsEnvironment {

@@ -29,8 +29,9 @@ keywords = ["browser", "engine", "quickjs", "privacy", "rendering"]
 categories = ["web-programming", "rendering"]
 
 [profile.dev]
-# 2-core / 3.9GB CI box: line-tables only, keep artifacts lean
-debug = 1
+# 9.9GB CI box with wgpu test links: strip debug info to keep artifacts lean
+debug = 0
+strip = "debuginfo" 
 
 # Realistic runtime performance for the headless harness without paying full opt cost
 [profile.dev.package."*"]

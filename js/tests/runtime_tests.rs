@@ -23,6 +23,8 @@ fn test_env(base_url: &str) -> Arc<JsEnvironment> {
         ),
         viewport: (1280, 720),
         console_log: Arc::new(Mutex::new(Vec::new())),
+        canvas_store: Arc::new(brows12_js::CanvasStore::new()),
+        fonts: Arc::new(Mutex::new(cosmic_text::FontSystem::new())),
     })
 }
 
