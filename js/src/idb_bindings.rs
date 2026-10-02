@@ -9,19 +9,9 @@
 
 use crate::environment::JsEnvironment;
 use brows12_storage::idb::ObjectStoreConfig;
-use brows12_storage::{IdbDatabase, KeyValueStore};
+use brows12_storage::IdbDatabase;
 use rquickjs::{Ctx, Function, Object};
 use std::sync::Arc;
-
-fn open_db(env: &JsEnvironment, name: &str) -> Arc<IdbDatabase> {
-    let mut reg = env.idb_registry.lock().unwrap();
-    if let Some(db) = reg.get(name) {
-        return db.clone();
-    }
-    let db = Arc::new(IdbDatabase::open(env.kv.clone(), &env.base_url, name));
-    reg.insert(name.to_string(), db.clone());
-    db
-}
 
 fn key_to_json(key: f64, is_string: bool, raw: &str) -> serde_json::Value {
     if is_string {
