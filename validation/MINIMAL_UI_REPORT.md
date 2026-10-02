@@ -47,6 +47,16 @@ Notes:
   the same handlers as real mouse/keyboard input. Both channels are inert
   unless the env vars are set.
 
+**CI artifact verification.** The `browser-ui` workflow builds the shell on
+Windows and Linux and publishes the binaries as downloadable artifacts. Both
+artifacts from run 37039053807 were downloaded and inspected: the Linux
+binary (ELF x86-64, 37.6 MB) was then **launched and driven under Xvfb —
+start page load → omnibox navigation to example.com → clean `<QUIT>` —
+using the same FIFO protocol and the same wait-on-event discipline**
+(all three stages verified by their real events); the Windows binary
+(PE32+ x86-64, 29.3 MB) was verified structurally; executing it requires a
+Windows host (CI builds it zero-error but this sandbox cannot run PE).
+
 ## 3. Per-site test results (honest)
 
 All states below were driven through the real window (omnibox typing +
