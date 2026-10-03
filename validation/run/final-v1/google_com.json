@@ -1,0 +1,27 @@
+{
+  "console": [
+    "script error: script threw: inline#1: not a function\n--- JS stack ---\n    at <anonymous> (eval_script:76:28)\n    at <eval> (eval_script:83:4)\n",
+    "script error: script threw: inline#1: cannot read property 'mei' of undefined\n--- JS stack ---\n    at <anonymous> (eval_script:2:29)\n    at <eval> (eval_script:2:1695)\n",
+    "script error: script threw: inline#4: not a function\n--- JS stack ---\n    at <anonymous> (eval_script:7:28)\n    at <eval> (eval_script:20:4)\n",
+    "script error: script threw: inline#4: not a function\n--- JS stack ---\n    at <anonymous> (eval_script:32:28)\n    at <eval> (eval_script:40:4)\n"
+  ],
+  "engine": "brows12 v0.2.0",
+  "error": null,
+  "final_url": "https://www.google.com",
+  "input": "https://www.google.com",
+  "loaded": true,
+  "render": {
+    "compositor": null,
+    "png_bytes": 29285,
+    "scroll_y": 0.0
+  },
+  "screenshot": "/home/z/my-project/brows12-fresh/validation/run/final-v1/google_com.png",
+  "timing": {
+    "full_pipeline_ms": 3631
+  },
+  "title": "Google",
+  "viewport": {
+    "height": 800,
+    "width": 1280
+  }
+}

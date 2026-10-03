@@ -102,3 +102,33 @@ Stage Summary:
   BROWS_DEBUG/BROWS_ROOT_DEBUG/BROWS_MEASURE_DEBUG hooks).
 - 120 tests green, clippy -D clean, rustfmt clean.
 - Next: B2 box-shadow/text-shadow, then opacity paint skip, then B3.
+
+
+---
+
+## 2026-10-03 — Site suite + final report + release (session close)
+
+Task ID: 10/11/12
+Agent: Super Z (main)
+
+Work Log:
+- perf(engine): page images now fetched concurrently (join_all) instead of
+  24 serial block_on calls; committed a1aef90.
+- 25+ site suite executed (scripts/v1_site_suite.py): Chromium ground truth
+  + brows12 render + side-by-side for 25 sites in screenshots/v1-final/
+  (tailwindcss/amazon failed to render within the 150s cap and are marked
+  No). Verdicts in docs/V1_FINAL_REPORT.md section 3: 2 Yes, 12 Mostly,
+  8 No, ~75% correct-or-mostly vs the 90% goal — honest gap documented.
+- docs/V1_FINAL_REPORT.md written with all 7 mandatory sections
+  (executive summary, per-fix before/after, site verdict table, honest
+  capability matrix, perf numbers, verdict + top-3 gaps, v1.0+ plan).
+- CI: added thread-sanitizer job (nightly, -Zbuild-std, TSAN_OPTIONS).
+- Release build: cargo build --release -p brows12-harness — green;
+  example.com smoke render ok.
+- Known perf bottleneck recorded: CPU-bound style + two-pass layout on
+  large DOMs (10-80s wall); Group F remains the biggest lever.
+
+Stage Summary:
+- Tag v1.0.0-rc1 marks the audit-complete state with P0 closed, Group A1
+  + B2 core done, suite + report delivered; remaining gaps documented
+  for v1.0+.

@@ -1,0 +1,27 @@
+{
+  "console": [
+    "script error: script threw: https://transcend-cdn.com/cm/d556c3a1-e57c-4bdf-a490-390a1aebf6dd/airgap.js: cannot read property 'transcend' of undefined\n--- JS stack ---\n    at <eval> (eval_script:4:75)\n",
+    "script error: script threw: https://www.mozilla.org/media/js/lib.57070d33021c.js: invalid 'in' operand\n--- JS stack ---\n    at <anonymous> (eval_script:2:2371)\n    at <eval> (eval_script:2:17377)\n",
+    "script error: script threw: https://www.mozilla.org/media/js/m24-ui.54a2e7c5dc9d.js: Error converting from js 'undefined' into type 'i32'\n--- JS stack ---\n    at querySelector (eval_script:455:64)\n    at <anonymous> (eval_script:1:5049)\n    at <anonymous> (eval_script:1:5421)\n    at 8199 (eval_script:1:5437)\n    at n (eval_script:1:15230)\n    at <anonymous> (eval_script:1:15531)\n    at <eval> (eval_script:1:15586)\n",
+    "script error: script threw: https://www.mozilla.org/media/js/m24-animation.ff54678f00e8.js: cannot read property 'allowsMotion' of undefined\n--- JS stack ---\n    at <anonymous> (eval_script:1:44)\n    at <eval> (eval_script:1:435)\n"
+  ],
+  "engine": "brows12 v0.2.0",
+  "error": null,
+  "final_url": "https://www.mozilla.org/en-US/",
+  "input": "https://www.mozilla.org",
+  "loaded": true,
+  "render": {
+    "compositor": null,
+    "png_bytes": 105403,
+    "scroll_y": 0.0
+  },
+  "screenshot": "/home/z/my-project/brows12-fresh/validation/run/final-v1/mozilla_org.png",
+  "timing": {
+    "full_pipeline_ms": 9682
+  },
+  "title": "Mozilla - Internet for people, not profit (US)",
+  "viewport": {
+    "height": 800,
+    "width": 1280
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "console": [
+    "script error: script threw: inline#0: RLCONF is not defined\n--- JS stack ---\n    at <eval> (eval_script:1:913)\n",
+    "script error: script threw: inline#0: RLQ is not defined\n--- JS stack ---\n    at <eval> (eval_script:1:6)\n",
+    "script error: script threw: /w/load.php?lang=en&modules=startup&only=scripts&raw=1&skin=vector-2022: RLQ is not defined\n--- JS stack ---\n    at <anonymous> (eval_script:23:132)\n    at <eval> (eval_script:23:274)\n",
+    "script error: script threw: inline#0: RLQ is not defined\n--- JS stack ---\n    at <eval> (eval_script:1:6)\n",
+    "script error: script threw: inline#0: expecting ';'\n--- JS stack ---\n    at eval_script:1:12\n"
+  ],
+  "engine": "brows12 v0.2.0",
+  "error": null,
+  "final_url": "https://en.wikipedia.org/wiki/Rust_(programming_language)",
+  "input": "https://en.wikipedia.org/wiki/Rust_(programming_language)",
+  "loaded": true,
+  "render": {
+    "compositor": null,
+    "png_bytes": 42903,
+    "scroll_y": 0.0
+  },
+  "screenshot": "/home/z/my-project/brows12-fresh/validation/run/final-v1/wikipedia_rust.png",
+  "timing": {
+    "full_pipeline_ms": 28584
+  },
+  "title": "Rust (programming language) - Wikipedia",
+  "viewport": {
+    "height": 800,
+    "width": 1280
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "console": [
+    "script error: script threw: /static/base/1.0.1/js/arxiv-header.js?v=20260626: cannot read property 'bannerName' of undefined\n--- JS stack ---\n    at <anonymous> (eval_script:107:53)\n    at <eval> (eval_script:175:1)\n"
+  ],
+  "engine": "brows12 v0.2.0",
+  "error": null,
+  "final_url": "https://arxiv.org",
+  "input": "https://arxiv.org",
+  "loaded": true,
+  "render": {
+    "compositor": null,
+    "png_bytes": 198711,
+    "scroll_y": 0.0
+  },
+  "screenshot": "/home/z/my-project/brows12-fresh/validation/run/final-v1/arxiv.png",
+  "timing": {
+    "full_pipeline_ms": 6545
+  },
+  "title": "arXiv.org e-Print archive",
+  "viewport": {
+    "height": 800,
+    "width": 1280
+  }
+}

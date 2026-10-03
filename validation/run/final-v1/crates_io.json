@@ -1,0 +1,24 @@
+{
+  "console": [
+    "script error: script threw: inline#1: __sveltekit_5hztav is not defined\n--- JS stack ---\n    at <eval> (eval_script:3:6)\n"
+  ],
+  "engine": "brows12 v0.2.0",
+  "error": null,
+  "final_url": "https://crates.io",
+  "input": "https://crates.io",
+  "loaded": true,
+  "render": {
+    "compositor": null,
+    "png_bytes": 5783,
+    "scroll_y": 0.0
+  },
+  "screenshot": "/home/z/my-project/brows12-fresh/validation/run/final-v1/crates_io.png",
+  "timing": {
+    "full_pipeline_ms": 10661
+  },
+  "title": "crates.io: Rust Package Registry",
+  "viewport": {
+    "height": 800,
+    "width": 1280
+  }
+}

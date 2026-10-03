@@ -1,0 +1,24 @@
+{
+  "console": [
+    "script error: script threw: hn.js?js7ZHmmYC9ZEXQYX3bYv: not a function\n--- JS stack ---\n    at byClass (eval_script:2:67)\n    at allof (eval_script:4:48)\n    at <eval> (eval_script:100:18)\n"
+  ],
+  "engine": "brows12 v0.2.0",
+  "error": null,
+  "final_url": "https://news.ycombinator.com",
+  "input": "https://news.ycombinator.com",
+  "loaded": true,
+  "render": {
+    "compositor": null,
+    "png_bytes": 190766,
+    "scroll_y": 0.0
+  },
+  "screenshot": "/home/z/my-project/brows12-fresh/validation/run/final-v1/hacker_news.png",
+  "timing": {
+    "full_pipeline_ms": 6931
+  },
+  "title": "Hacker News",
+  "viewport": {
+    "height": 800,
+    "width": 1280
+  }
+}

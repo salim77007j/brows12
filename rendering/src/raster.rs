@@ -325,14 +325,10 @@ impl Rasterizer {
                         // swash placement is applied exactly once here (see
                         // blit_swash_image notes): bitmap origin relative to
                         // the offscreen layer's top-left corner.
-                        let x = (physical.x as f32
-                            + image.placement.left as f32
-                            + shadow.x
-                            - min_x) as i32;
-                        let y = (physical.y as f32
-                            - image.placement.top as f32
-                            + shadow.y
-                            - min_y) as i32;
+                        let x = (physical.x as f32 + image.placement.left as f32 + shadow.x - min_x)
+                            as i32;
+                        let y = (physical.y as f32 - image.placement.top as f32 + shadow.y - min_y)
+                            as i32;
                         blit_swash_image(&mut layer, image, x, y, ink_white, None);
                     }
                 }

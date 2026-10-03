@@ -1,0 +1,25 @@
+{
+  "console": [
+    "script error: script threw: inline#1: cannot read property 'globalThis' of undefined\n--- JS stack ---\n    at <eval> (eval_script:1:17)\n",
+    "script error: script threw: /static-pages/home-minimal/_next/static/chunks/turbopack-3ajhf5ao3bk59.js: cannot read property 'TURBOPACK_ASSET_SUFFIX' of undefined\n--- JS stack ---\n    at <anonymous> (eval_script:1:452)\n    at <anonymous> (eval_script:1:675)\n    at <eval> (eval_script:1:18936)\n"
+  ],
+  "engine": "brows12 v0.2.0",
+  "error": null,
+  "final_url": "https://duckduckgo.com",
+  "input": "https://duckduckgo.com",
+  "loaded": true,
+  "render": {
+    "compositor": null,
+    "png_bytes": 8944,
+    "scroll_y": 0.0
+  },
+  "screenshot": "/home/z/my-project/brows12-fresh/validation/run/final-v1/duckduckgo.png",
+  "timing": {
+    "full_pipeline_ms": 6932
+  },
+  "title": "DuckDuckGo - Protection. Privacy. Peace of mind.",
+  "viewport": {
+    "height": 800,
+    "width": 1280
+  }
+}

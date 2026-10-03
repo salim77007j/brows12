@@ -1,0 +1,22 @@
+{
+  "console": [],
+  "engine": "brows12 v0.2.0",
+  "error": null,
+  "final_url": "https://www.reddit.com",
+  "input": "https://www.reddit.com",
+  "loaded": true,
+  "render": {
+    "compositor": null,
+    "png_bytes": 27489,
+    "scroll_y": 0.0
+  },
+  "screenshot": "/home/z/my-project/brows12-fresh/validation/run/final-v1/reddit.png",
+  "timing": {
+    "full_pipeline_ms": 95
+  },
+  "title": "",
+  "viewport": {
+    "height": 800,
+    "width": 1280
+  }
+}

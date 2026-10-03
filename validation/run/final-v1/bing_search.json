@@ -1,0 +1,26 @@
+{
+  "console": [
+    "script error: script threw: inline#4: cannot read property 'navigationStart' of undefined\n--- JS stack ---\n    at <anonymous> (eval_script:3:2888)\n    at <eval> (eval_script:3:3075)\n",
+    "script error: script threw: inline#6: not a function\n--- JS stack ---\n    at t (eval_script:3:1511)\n    at <eval> (eval_script:3:1572)\n",
+    "script error: script threw: inline#8: si_PP is not defined\n--- JS stack ---\n    at <anonymous> (eval_script:3:1707)\n    at <eval> (eval_script:3:1836)\n"
+  ],
+  "engine": "brows12 v0.2.0",
+  "error": null,
+  "final_url": "https://www.bing.com/search?q=rust+programming+language",
+  "input": "https://www.bing.com/search?q=rust+programming+language",
+  "loaded": true,
+  "render": {
+    "compositor": null,
+    "png_bytes": 70656,
+    "scroll_y": 0.0
+  },
+  "screenshot": "/home/z/my-project/brows12-fresh/validation/run/final-v1/bing_search.png",
+  "timing": {
+    "full_pipeline_ms": 3637
+  },
+  "title": "rust programming language - Search",
+  "viewport": {
+    "height": 800,
+    "width": 1280
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "console": [
+    "script error: script threw: https://www.googletagmanager.com/gtag/js?id=G-JPPX9MZGZ4: cannot read property 'CLOSURE_FLAGS' of undefined\n--- JS stack ---\n    at <anonymous> (eval_script:421:366)\n    at <eval> (eval_script:1111:1)\n"
+  ],
+  "engine": "brows12 v0.2.0",
+  "error": null,
+  "final_url": "https://threejs.org",
+  "input": "https://threejs.org",
+  "loaded": true,
+  "render": {
+    "compositor": null,
+    "png_bytes": 38194,
+    "scroll_y": 0.0
+  },
+  "screenshot": "/home/z/my-project/brows12-fresh/validation/run/final-v1/threejs_org.png",
+  "timing": {
+    "full_pipeline_ms": 13852
+  },
+  "title": "Three.js – JavaScript 3D Library",
+  "viewport": {
+    "height": 800,
+    "width": 1280
+  }
+}

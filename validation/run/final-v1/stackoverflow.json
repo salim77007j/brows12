@@ -1,0 +1,22 @@
+{
+  "console": [],
+  "engine": "brows12 v0.2.0",
+  "error": null,
+  "final_url": "https://stackoverflow.com/questions/1732348/regex-match-open-tags-except-xhtml-self-contained-tags",
+  "input": "https://stackoverflow.com/questions/1732348/regex-match-open-tags-except-xhtml-self-contained-tags",
+  "loaded": true,
+  "render": {
+    "compositor": null,
+    "png_bytes": 5783,
+    "scroll_y": 0.0
+  },
+  "screenshot": "/home/z/my-project/brows12-fresh/validation/run/final-v1/stackoverflow.png",
+  "timing": {
+    "full_pipeline_ms": 3345
+  },
+  "title": "Just a moment...",
+  "viewport": {
+    "height": 800,
+    "width": 1280
+  }
+}

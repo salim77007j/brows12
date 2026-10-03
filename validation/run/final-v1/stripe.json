@@ -1,0 +1,39 @@
+{
+  "console": [
+    "script error: script threw: https://b.stripecdn.com/mkt-ssr-statics/assets/_next/static/chunks/polyfills-42372ed130431b0a.js: invalid 'in' operand\n--- JS stack ---\n    at <anonymous> (eval_script:1:104032)\n    at <eval> (eval_script:1:112587)\n",
+    "script error: script threw: https://b.stripecdn.com/mkt-ssr-statics/assets/_next/static/chunks/22074.bd02a94640605868.js: cannot read property 'webpackChunk_N_E' of undefined\n--- JS stack ---\n    at <eval> (eval_script:1:24)\n",
+    "script error: script threw: https://b.stripecdn.com/mkt-ssr-statics/assets/_next/static/chunks/49450.ba8bdeacb2ae3f4e.js: cannot read property 'webpackChunk_N_E' of undefined\n--- JS stack ---\n    at <eval> (eval_script:1:37)\n",
+    "script error: script threw: https://b.stripecdn.com/mkt-ssr-statics/assets/_next/static/chunks/99791.a7f741b779b23047.js: cannot read property 'webpackChunk_N_E' of undefined\n--- JS stack ---\n    at <eval> (eval_script:1:37)\n",
+    "script error: script threw: https://b.stripecdn.com/mkt-ssr-statics/assets/_next/static/chunks/60864.f462ab64ab99a6d2.js: cannot read property 'webpackChunk_N_E' of undefined\n--- JS stack ---\n    at <eval> (eval_script:1:37)\n",
+    "script error: script threw: https://b.stripecdn.com/mkt-ssr-statics/assets/_next/static/chunks/85969.c6ee2fb87b405979.js: cannot read property 'webpackChunk_N_E' of undefined\n--- JS stack ---\n    at <eval> (eval_script:1:37)\n",
+    "script error: script threw: https://b.stripecdn.com/mkt-ssr-statics/assets/_next/static/chunks/33429.ebf4f50cc61d4859.js: cannot read property 'webpackChunk_N_E' of undefined\n--- JS stack ---\n    at <eval> (eval_script:1:37)\n",
+    "script error: script threw: https://b.stripecdn.com/mkt-ssr-statics/assets/_next/static/chunks/7205.b1fa6a14487cf1a1.js: cannot read property 'webpackChunk_N_E' of undefined\n--- JS stack ---\n    at <eval> (eval_script:1:37)\n",
+    "script error: script threw: https://b.stripecdn.com/mkt-ssr-statics/assets/_next/static/chunks/29658.230298d5fcee0081.js: cannot read property 'webpackChunk_N_E' of undefined\n--- JS stack ---\n    at <eval> (eval_script:1:37)\n",
+    "script error: script threw: https://b.stripecdn.com/mkt-ssr-statics/assets/_next/static/chunks/68609.45b93cf2f844686c.js: cannot read property 'webpackChunk_N_E' of undefined\n--- JS stack ---\n    at <eval> (eval_script:1:37)\n",
+    "script error: script threw: https://b.stripecdn.com/mkt-ssr-statics/assets/_next/static/chunks/72252.cdfab8a8c6c7e3e4.js: cannot read property 'webpackChunk_N_E' of undefined\n--- JS stack ---\n    at <eval> (eval_script:1:37)\n",
+    "script error: script threw: https://b.stripecdn.com/mkt-ssr-statics/assets/_next/static/chunks/1302.f583cec229735251.js: cannot read property 'webpackChunk_N_E' of undefined\n--- JS stack ---\n    at <eval> (eval_script:1:37)\n",
+    "script error: script threw: https://b.stripecdn.com/mkt-ssr-statics/assets/_next/static/chunks/8653.b1423805849013a7.js: cannot read property 'webpackChunk_N_E' of undefined\n--- JS stack ---\n    at <eval> (eval_script:1:37)\n",
+    "script error: script threw: https://b.stripecdn.com/mkt-ssr-statics/assets/_next/static/chunks/66084.2df5c58fcbb72480.js: cannot read property 'webpackChunk_N_E' of undefined\n--- JS stack ---\n    at <eval> (eval_script:1:37)\n",
+    "script error: script threw: https://b.stripecdn.com/mkt-ssr-statics/assets/_next/static/chunks/11013.3df12a89976d8d99.js: cannot read property 'webpackChunk_N_E' of undefined\n--- JS stack ---\n    at <eval> (eval_script:1:37)\n",
+    "script error: script threw: https://b.stripecdn.com/mkt-ssr-statics/assets/_next/static/chunks/53278.5c65af5222d93d5e.js: cannot read property 'webpackChunk_N_E' of undefined\n--- JS stack ---\n    at <eval> (eval_script:1:37)\n"
+  ],
+  "engine": "brows12 v0.2.0",
+  "error": null,
+  "final_url": "https://stripe.com/en-hk",
+  "input": "https://stripe.com",
+  "loaded": true,
+  "render": {
+    "compositor": null,
+    "png_bytes": 119351,
+    "scroll_y": 0.0
+  },
+  "screenshot": "/home/z/my-project/brows12-fresh/validation/run/final-v1/stripe.png",
+  "timing": {
+    "full_pipeline_ms": 40806
+  },
+  "title": "Stripe | Financial Infrastructure to Grow Your Revenue",
+  "viewport": {
+    "height": 800,
+    "width": 1280
+  }
+}

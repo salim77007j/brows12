@@ -1,0 +1,36 @@
+{
+  "console": [
+    "script error: script threw: https://www.googletagmanager.com/gtag/js?id=G-B1E83PJ3RT: cannot read property 'CLOSURE_FLAGS' of undefined\n--- JS stack ---\n    at <anonymous> (eval_script:398:366)\n    at <eval> (eval_script:1018:1)\n",
+    "script error: script threw: /_next/static/chunks/polyfills-42372ed130431b0a.js: invalid 'in' operand\n--- JS stack ---\n    at <anonymous> (eval_script:1:104032)\n    at <eval> (eval_script:1:112587)\n",
+    "script error: script threw: /_next/static/chunks/webpack-95fc1f1713249e81.js: cannot read property 'webpackChunk_N_E' of undefined\n--- JS stack ---\n    at <anonymous> (eval_script:1:3971)\n    at <anonymous> (eval_script:1:4053)\n    at <eval> (eval_script:1:4071)\n",
+    "script error: script threw: /_next/static/chunks/framework-76ad44d61c11f057.js: cannot read property 'webpackChunk_N_E' of undefined\n--- JS stack ---\n    at <eval> (eval_script:1:37)\n",
+    "script error: script threw: /_next/static/chunks/main-8bc660a98b463b2d.js: cannot read property 'webpackChunk_N_E' of undefined\n--- JS stack ---\n    at <eval> (eval_script:1:24)\n",
+    "script error: script threw: /_next/static/chunks/pages/_app-6d7b64b3b21a9551.js: cannot read property 'webpackChunk_N_E' of undefined\n--- JS stack ---\n    at <eval> (eval_script:1:24)\n",
+    "script error: script threw: /_next/static/chunks/668-9be9de6fa7660277.js: cannot read property 'webpackChunk_N_E' of undefined\n--- JS stack ---\n    at <eval> (eval_script:1:24)\n",
+    "script error: script threw: /_next/static/chunks/928-132eeb57d328ee63.js: cannot read property 'webpackChunk_N_E' of undefined\n--- JS stack ---\n    at <eval> (eval_script:1:37)\n",
+    "script error: script threw: /_next/static/chunks/pages/%5B%5B...markdownPath%5D%5D-5093e36719d692c5.js: cannot read property 'webpackChunk_N_E' of undefined\n--- JS stack ---\n    at <eval> (eval_script:1:24)\n",
+    "script error: script threw: /_next/static/TOk-LnAWXW_zcjxmhmWFI/_buildManifest.js: cannot set property '__BUILD_MANIFEST' of undefined\n--- JS stack ---\n    at <eval> (eval_script:1:1144)\n",
+    "script error: script threw: /_next/static/TOk-LnAWXW_zcjxmhmWFI/_ssgManifest.js: cannot set property '__SSG_MANIFEST' of undefined\n--- JS stack ---\n    at <eval> (eval_script:1:25)\n",
+    "script error: script threw: inline#2: not a function\n--- JS stack ---\n    at <anonymous> (eval_script:33:29)\n    at <eval> (eval_script:46:17)\n",
+    "script error: script threw: inline#2: expecting ';'\n--- JS stack ---\n    at eval_script:1:9\n"
+  ],
+  "engine": "brows12 v0.2.0",
+  "error": null,
+  "final_url": "https://react.dev",
+  "input": "https://react.dev",
+  "loaded": true,
+  "render": {
+    "compositor": null,
+    "png_bytes": 41717,
+    "scroll_y": 0.0
+  },
+  "screenshot": "/home/z/my-project/brows12-fresh/validation/run/final-v1/react_dev.png",
+  "timing": {
+    "full_pipeline_ms": 11488
+  },
+  "title": "React",
+  "viewport": {
+    "height": 800,
+    "width": 1280
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "console": [
+    "script error: script threw: inline#3: Cannot convert undefined or null to object\n--- JS stack ---\n    at assign (native)\n    at <eval> (eval_script:5:19)\n",
+    "script error: script threw: inline#3: URL is not defined\n--- JS stack ---\n    at <eval> (eval_script:4:17)\n"
+  ],
+  "engine": "brows12 v0.2.0",
+  "error": null,
+  "final_url": "https://svelte.dev",
+  "input": "https://svelte.dev",
+  "loaded": true,
+  "render": {
+    "compositor": null,
+    "png_bytes": 316598,
+    "scroll_y": 0.0
+  },
+  "screenshot": "/home/z/my-project/brows12-fresh/validation/run/final-v1/svelte_dev.png",
+  "timing": {
+    "full_pipeline_ms": 14226
+  },
+  "title": "Svelte • Web development for the rest of us",
+  "viewport": {
+    "height": 800,
+    "width": 1280
+  }
+}

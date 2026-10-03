@@ -1,0 +1,33 @@
+{
+  "console": [
+    "script error: script threw: inline#5: value has no property\n--- JS stack ---\n    at <eval> (eval_script:1:28)\n",
+    "script error: script threw: inline#5: cannot set property 'colorScheme' of undefined\n--- JS stack ---\n    at R (eval_script:10:48)\n    at p (eval_script:7:9)\n    at <anonymous> (eval_script:15:11)\n    at <eval> (eval_script:20:1)\n",
+    "script error: script threw: inline#6: value has no property\n--- JS stack ---\n    at <eval> (eval_script:1:14)\n",
+    "script error: script threw: inline#6: value has no property\n--- JS stack ---\n    at <eval> (eval_script:1:14)\n",
+    "script error: script threw: inline#6: value has no property\n--- JS stack ---\n    at <eval> (eval_script:1:14)\n",
+    "script error: script threw: inline#6: value has no property\n--- JS stack ---\n    at <eval> (eval_script:1:14)\n",
+    "script error: script threw: inline#6: value has no property\n--- JS stack ---\n    at <eval> (eval_script:1:14)\n",
+    "script error: script threw: inline#6: value has no property\n--- JS stack ---\n    at <eval> (eval_script:1:14)\n",
+    "script error: script threw: inline#6: value has no property\n--- JS stack ---\n    at <eval> (eval_script:1:14)\n",
+    "script error: script threw: inline#6: value has no property\n--- JS stack ---\n    at <eval> (eval_script:1:14)\n"
+  ],
+  "engine": "brows12 v0.2.0",
+  "error": null,
+  "final_url": "https://linear.app",
+  "input": "https://linear.app",
+  "loaded": true,
+  "render": {
+    "compositor": null,
+    "png_bytes": 23785,
+    "scroll_y": 0.0
+  },
+  "screenshot": "/home/z/my-project/brows12-fresh/validation/run/final-v1/linear_app.png",
+  "timing": {
+    "full_pipeline_ms": 9692
+  },
+  "title": "Linear – The system for product development",
+  "viewport": {
+    "height": 800,
+    "width": 1280
+  }
+}

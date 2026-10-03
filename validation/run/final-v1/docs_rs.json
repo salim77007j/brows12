@@ -1,0 +1,25 @@
+{
+  "console": [
+    "script error: script threw: /-/static/menu.js?0-0-0-6b0955898af88db642c5ce7420d9dbef2c65d5d9-2026-09-30: cannot read property 'setAttribute' of undefined\n--- JS stack ---\n    at <anonymous> (eval_script:302:9)\n    at <eval> (eval_script:378:1)\n",
+    "script error: script threw: /-/static/index.js?0-0-0-6b0955898af88db642c5ce7420d9dbef2c65d5d9-2026-09-30: Error converting from js 'undefined' into type 'i32'\n--- JS stack ---\n    at get innerHTML (eval_script:426:53)\n    at <anonymous> (eval_script:5:36)\n    at <eval> (eval_script:35:1)\n"
+  ],
+  "engine": "brows12 v0.2.0",
+  "error": null,
+  "final_url": "https://docs.rs",
+  "input": "https://docs.rs",
+  "loaded": true,
+  "render": {
+    "compositor": null,
+    "png_bytes": 141038,
+    "scroll_y": 0.0
+  },
+  "screenshot": "/home/z/my-project/brows12-fresh/validation/run/final-v1/docs_rs.png",
+  "timing": {
+    "full_pipeline_ms": 8254
+  },
+  "title": "Docs.rs",
+  "viewport": {
+    "height": 800,
+    "width": 1280
+  }
+}

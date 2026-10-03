@@ -1,0 +1,27 @@
+{
+  "console": [
+    "script error: script threw: inline#5: cannot read property 'responseStart' of undefined\n--- JS stack ---\n    at <anonymous> (eval_script:4:79)\n    at <eval> (eval_script:5:377)\n",
+    "script error: script threw: inline#5: Image is not defined\n--- JS stack ---\n    at ytPrewarmYtimg (eval_script:1:43)\n    at <eval> (eval_script:1:56)\n",
+    "script error: script threw: https://www.youtube.com/s/desktop/85a3164d/jsbin/web-animations-next-lite.min.vflset/web-animations-next-lite.min.js: not a function\n--- JS stack ---\n    at <anonymous> (eval_script:43:382)\n    at <anonymous> (eval_script:47:352)\n    at <eval> (eval_script:126:247)\n",
+    "script error: script threw: https://www.youtube.com/s/desktop/85a3164d/jsbin/webcomponents-all-noPatch.vflset/webcomponents-all-noPatch.js: not a function\n--- JS stack ---\n    at <anonymous> (eval_script:17:268)\n    at <eval> (eval_script:291:433)\n"
+  ],
+  "engine": "brows12 v0.2.0",
+  "error": null,
+  "final_url": "https://www.youtube.com",
+  "input": "https://www.youtube.com",
+  "loaded": true,
+  "render": {
+    "compositor": null,
+    "png_bytes": 7588,
+    "scroll_y": 0.0
+  },
+  "screenshot": "/home/z/my-project/brows12-fresh/validation/run/final-v1/youtube.png",
+  "timing": {
+    "full_pipeline_ms": 77957
+  },
+  "title": "YouTube",
+  "viewport": {
+    "height": 800,
+    "width": 1280
+  }
+}

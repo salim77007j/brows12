@@ -1,0 +1,24 @@
+{
+  "console": [
+    "script error: script threw: /vc-ap-vercel-marketing/_next/static/immutable/chunks/turbopack-3m7pt-k5xqwlg.js: cannot read property 'TURBOPACK_ASSET_SUFFIX' of undefined\n--- JS stack ---\n    at <anonymous> (eval_script:2:1046)\n    at <anonymous> (eval_script:2:1203)\n    at <eval> (eval_script:2:13043)\n"
+  ],
+  "engine": "brows12 v0.2.0",
+  "error": null,
+  "final_url": "https://vercel.com",
+  "input": "https://vercel.com",
+  "loaded": true,
+  "render": {
+    "compositor": null,
+    "png_bytes": 22652,
+    "scroll_y": 0.0
+  },
+  "screenshot": "/home/z/my-project/brows12-fresh/validation/run/final-v1/vercel.png",
+  "timing": {
+    "full_pipeline_ms": 82777
+  },
+  "title": "Agentic Infrastructure - Vercel",
+  "viewport": {
+    "height": 800,
+    "width": 1280
+  }
+}
