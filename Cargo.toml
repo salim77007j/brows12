@@ -1,24 +1,28 @@
 [workspace]
 exclude = [
     "validation/x11driver",
-]
-resolver = "2"
-members = [
+    # --- v2.0 legacy engine (retired with the Servo pivot; recoverable from
+    # git history; tag v1.0.0-rc1 preserves the custom-engine snapshot) ---
     "parsing/html",
     "parsing/css",
     "layout",
     "rendering",
     "compositor",
-    "harness",
     "networking",
-    "storage",
-    "privacy",
     "js",
     "engine",
     "api",
     "tests",
     "benchmarks",
+    "fuzz",
+    # retired until rebuilt on top of servo-host (Phase 1.4)
     "ui",
+    "harness",
+]
+resolver = "2"
+members = [
+    "storage",
+    "privacy",
     "servo-host",
 ]
 

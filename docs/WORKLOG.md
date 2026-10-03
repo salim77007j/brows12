@@ -242,3 +242,25 @@ Stage Summary:
   so far: it converted GitHub from "chrome only" to fully interactive-class
   render without touching engine code. requestIdleCallback remains a genuine
   Servo gap (polyfill candidate via UserContentManager in Phase 4).
+
+---
+Task ID: v2-phase1.3
+Agent: Super Z (main)
+Task: Phase 1.3 — retire legacy engine crates from the build graph.
+
+Work Log:
+- Workspace members reduced to storage, privacy, servo-host. Legacy crates
+  (parsing/html, parsing/css, layout, rendering, compositor, networking, js,
+  engine, api, tests, benchmarks, fuzz) moved to workspace exclude with a
+  pointer to git history + tag v1.0.0-rc1. ui + harness excluded until
+  rebuilt on servo-host (Phase 1.4/1.5).
+- cargo build --workspace -j 1 GREEN (6m52s). Note: -j 2 OOM-kills on the
+  4 GB box (servo-script codegen); all heavy builds must run -j 1 here.
+  Box has NO swap.
+- Feature unification note: adding privacy/storage to the graph recompiled
+  servo-script once (two url feature sets unified); expected one-time cost.
+
+Stage Summary:
+- Build graph now contains only the Servo-backed stack + privacy + storage.
+  Custom engine remains fully recoverable from history; v1.0.0-rc1 tag
+  preserves the complete v1 snapshot.
