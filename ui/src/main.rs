@@ -630,9 +630,11 @@ impl Gui {
         }
         let rss_before = servo_host::metrics::rss_kb().unwrap_or(0);
         if let Some(rt) = self.runtimes.remove(&id) {
+            let weight = rt.state.page_requests();
             rt.webview.set_throttled(true);
             rt.webview.hide();
             // rt (WebView + offscreen ctx) dropped here.
+            model::emit(format!("hibernate_weight tab={id} page_requests={weight}"));
         }
         self.tabs[index].suspended = true;
         self.tabs[index].status = Status::Idle;
@@ -686,12 +688,15 @@ impl Gui {
         self.dirty = true;
     }
 
-    /// Phase 2.1 — the governor: while RSS is over budget, hibernate the
-    /// least-recently-active background tabs until under budget or out of
-    /// candidates.
+    /// Phase 2.1 + 3.9 — the governor. At `Elevated` RSS (80-99% of
+    /// budget) only HEAVY background tabs are reclaimed; at `Critical`
+    /// every tab past its (weight-dependent) delay is. Heavy = the page
+    /// issued many resource requests (~100MB-class sites), and heavy tabs
+    /// become eligible far sooner (`BROWS12_HEAVY_SUSPEND_SECS`).
     fn governor_tick(&mut self) {
         let Some(rss) = servo_host::metrics::rss_kb() else { return };
-        if memory::pressure(&self.governor, rss) != Pressure::Critical {
+        let level = memory::pressure(&self.governor, rss);
+        if level == Pressure::Nominal {
             return;
         }
         let now = Instant::now();
@@ -701,17 +706,36 @@ impl Gui {
             .iter()
             .enumerate()
             .filter(|(_, t)| {
-                t.id.is_some()
-                    && Some(t.id.unwrap()) != active_id
-                    && !t.suspended
-                    && now.duration_since(t.last_active) >= self.governor.suspend_after
+                let Some(id) = t.id else { return false };
+                if Some(id) == active_id || t.suspended {
+                    return false;
+                }
+                let weight = self
+                    .runtimes
+                    .get(&id)
+                    .map(|rt| rt.state.page_requests())
+                    .unwrap_or(0);
+                memory::eligible_under_pressure(
+                    weight,
+                    now.duration_since(t.last_active),
+                    level,
+                    &self.governor,
+                )
             })
             .map(|(i, _)| i)
             .collect();
-        candidates.sort_by_key(|&i| self.tabs[i].last_active);
+        // Reclaim heaviest first, then least-recently-active.
+        candidates.sort_by_key(|&i| {
+            let weight = self.tabs[i]
+                .id
+                .and_then(|id| self.runtimes.get(&id))
+                .map(|rt| rt.state.page_requests())
+                .unwrap_or(0);
+            (std::cmp::Reverse(weight), self.tabs[i].last_active)
+        });
         let mut rss_now = rss;
         for i in candidates {
-            if memory::pressure(&self.governor, rss_now) != Pressure::Critical {
+            if memory::pressure(&self.governor, rss_now) == Pressure::Nominal {
                 break;
             }
             self.hibernate(i);

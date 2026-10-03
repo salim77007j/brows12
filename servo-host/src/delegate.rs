@@ -32,6 +32,10 @@ pub struct HostState {
     pub animating: AtomicBool,
     pub complete_at: Mutex<Option<Instant>>,
     pub state: Mutex<DelegateState>,
+    /// Phase 3.9: resources requested by the current document (both
+    /// blocked and passed). Proxy for page weight — feeds the governor's
+    /// heavy-tab policy. Reset on each navigation.
+    pub page_requests: AtomicU64,
 }
 
 impl HostState {
@@ -61,6 +65,11 @@ impl HostState {
 
     pub fn crash(&self) -> Option<String> {
         self.state.lock().unwrap().crash.clone()
+    }
+
+    /// Phase 3.9: page weight proxy — resource requests this document made.
+    pub fn page_requests(&self) -> u64 {
+        self.page_requests.load(Ordering::Relaxed)
     }
 }
 
@@ -119,6 +128,8 @@ impl WebViewDelegate for HostDelegate {
     }
 
     fn request_navigation(&self, _webview: WebView, navigation: NavigationRequest) {
+        // Phase 3.9: a new document starts from a fresh page-weight count.
+        self.state.page_requests.store(0, Ordering::Relaxed);
         // Install cosmetic filters for the destination document before it
         // loads (UCM stylesheet changes apply to the next document).
         self.privacy.set_cosmetic_filters(navigation.url.as_str());
@@ -135,6 +146,10 @@ impl WebViewDelegate for HostDelegate {
             .map(|u| u.host_str().unwrap_or_default().to_string())
             .unwrap_or_default();
         let kind = destination_to_kind(&request.destination);
+
+        // Phase 3.9: every resource the page asks for counts toward its
+        // weight, blocked or not (blocked ones still cost a cache slot).
+        self.state.page_requests.fetch_add(1, Ordering::Relaxed);
 
         if let Some(reason) = self.privacy.should_block(&url_str, &source, kind) {
             self.privacy.record_block(reason, &url_str);

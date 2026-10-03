@@ -29,6 +29,14 @@ pub struct GovernorConfig {
     /// inactive this long (protects alt-tab flaps).
     /// Env: `BROWS12_TAB_SUSPEND_SECS` (default 180).
     pub suspend_after: Duration,
+    /// A tab whose page issued at least this many resource requests is
+    /// classified HEAVY (proxy for large DOM + asset count on ~100MB-class
+    /// sites). Heavy tabs suspend far sooner in the background.
+    /// Env: `BROWS12_HEAVY_REQUESTS` (default 60; 0 disables weighting).
+    pub heavy_page_requests: u64,
+    /// Hibernation delay for HEAVY background tabs.
+    /// Env: `BROWS12_HEAVY_SUSPEND_SECS` (default 20).
+    pub heavy_suspend_after: Duration,
 }
 
 impl Default for GovernorConfig {
@@ -38,6 +46,8 @@ impl Default for GovernorConfig {
             enabled: true,
             interval: Duration::from_millis(5_000),
             suspend_after: Duration::from_secs(180),
+            heavy_page_requests: 60,
+            heavy_suspend_after: Duration::from_secs(20),
         }
     }
 }
@@ -61,6 +71,16 @@ impl GovernorConfig {
         if let Ok(v) = std::env::var("BROWS12_TAB_SUSPEND_SECS") {
             if let Ok(s) = v.parse::<u64>() {
                 cfg.suspend_after = Duration::from_secs(s);
+            }
+        }
+        if let Ok(v) = std::env::var("BROWS12_HEAVY_REQUESTS") {
+            if let Ok(n) = v.parse::<u64>() {
+                cfg.heavy_page_requests = n;
+            }
+        }
+        if let Ok(v) = std::env::var("BROWS12_HEAVY_SUSPEND_SECS") {
+            if let Ok(s) = v.parse::<u64>() {
+                cfg.heavy_suspend_after = Duration::from_secs(s);
             }
         }
         cfg
@@ -93,6 +113,40 @@ pub fn pressure(cfg: &GovernorConfig, rss_kb: u64) -> Pressure {
         Pressure::Elevated
     } else {
         Pressure::Nominal
+    }
+}
+
+/// Phase 3.9 — how long a background tab with this page weight waits
+/// before it is a hibernation candidate. Heavy pages (many resources:
+/// large DOMs, big image sets) give up their pipeline much sooner than
+/// light pages, which keeps ~100MB-class sites from dominating RSS.
+pub fn suspend_delay(page_requests: u64, cfg: &GovernorConfig) -> Duration {
+    let heavy = cfg.heavy_page_requests > 0 && page_requests >= cfg.heavy_page_requests;
+    if heavy {
+        cfg.heavy_suspend_after
+    } else {
+        cfg.suspend_after
+    }
+}
+
+/// Phase 3.9 — whether a tab is hibernation-eligible under the current
+/// pressure level. At `Elevated` only HEAVY tabs are reclaimed (light
+/// tabs keep their pipelines); at `Critical` everything eligible goes.
+pub fn eligible_under_pressure(
+    page_requests: u64,
+    inactive_for: Duration,
+    level: Pressure,
+    cfg: &GovernorConfig,
+) -> bool {
+    if inactive_for < suspend_delay(page_requests, cfg) {
+        return false;
+    }
+    match level {
+        Pressure::Nominal => false,
+        Pressure::Elevated => {
+            cfg.heavy_page_requests > 0 && page_requests >= cfg.heavy_page_requests
+        },
+        Pressure::Critical => true,
     }
 }
 
@@ -134,5 +188,42 @@ mod tests {
         let cfg = GovernorConfig::from_env();
         assert_eq!(cfg.budget_kb, 100 * 1024);
         std::env::remove_var("BROWS12_MEM_BUDGET_MB");
+    }
+
+    #[test]
+    fn heavy_page_policy() {
+        let cfg = GovernorConfig {
+            suspend_after: Duration::from_secs(180),
+            heavy_page_requests: 60,
+            heavy_suspend_after: Duration::from_secs(20),
+            ..Default::default()
+        };
+        assert_eq!(suspend_delay(10, &cfg), Duration::from_secs(180));
+        assert_eq!(suspend_delay(60, &cfg), Duration::from_secs(20));
+        assert_eq!(suspend_delay(5000, &cfg), Duration::from_secs(20));
+        let no_weight = GovernorConfig { heavy_page_requests: 0, ..cfg };
+        assert_eq!(suspend_delay(5000, &no_weight), Duration::from_secs(180));
+    }
+
+    #[test]
+    fn elevated_pressures_only_heavy() {
+        let cfg = GovernorConfig {
+            suspend_after: Duration::from_secs(180),
+            heavy_page_requests: 60,
+            heavy_suspend_after: Duration::from_secs(20),
+            ..Default::default()
+        };
+        let young_heavy = Duration::from_secs(10);
+        let old_heavy = Duration::from_secs(25);
+        let old_light = Duration::from_secs(200);
+        // Elevated: heavy + old enough → eligible; light or young → not.
+        assert!(eligible_under_pressure(100, old_heavy, Pressure::Elevated, &cfg));
+        assert!(!eligible_under_pressure(100, young_heavy, Pressure::Elevated, &cfg));
+        assert!(!eligible_under_pressure(10, old_light, Pressure::Elevated, &cfg));
+        // Critical: everything past its (weight-dependent) delay is eligible.
+        assert!(eligible_under_pressure(10, old_light, Pressure::Critical, &cfg));
+        assert!(eligible_under_pressure(100, old_heavy, Pressure::Critical, &cfg));
+        assert!(!eligible_under_pressure(10, young_heavy, Pressure::Critical, &cfg));
+        assert!(!eligible_under_pressure(10, old_light, Pressure::Nominal, &cfg));
     }
 }
