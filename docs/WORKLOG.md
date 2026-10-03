@@ -132,3 +132,50 @@ Stage Summary:
 - Tag v1.0.0-rc1 marks the audit-complete state with P0 closed, Group A1
   + B2 core done, suite + report delivered; remaining gaps documented
   for v1.0+.
+
+---
+Task ID: v2-audit
+Agent: Super Z (main)
+Task: v2.0.0 pivot — fresh clone, audit, Servo crate research, integration plan.
+
+Work Log:
+- Fresh clone verified against origin/main @ 8f006ac ("docs(v1): final report
+  + site suite + CI thread-sanitizer job"); tags v0.2.0..v1.0.0-rc1 present.
+  (Container snapshot had contaminated the old working copy with UUID commits;
+  brows12-v2/ is now the authoritative working directory.)
+- Read docs/V1_FINAL_REPORT.md + docs/V1_PLAN.md: v1.0.0-rc1 = ~75% correct-or-
+  mostly across 25 sites; top gaps: CPU-bound style/layout (10-80s/page),
+  background-image url() + WOFF2, SPA hydration fidelity.
+- Servo crate research (crates.io API + vendored servo-0.6.0 source, not docs):
+  * versions: main line 0.1.0 (2026-04-13) -> 0.6.0 (2026-09-25); separate
+    0.1.x maintenance track (0.1.4, 2026-10-02). Decision D1: use 0.6.0.
+  * deps verified: stylo 0.21, webrender 0.70, surfman 0.13, mozjs 0.26.3 ->
+    mozjs_sys 153.3.0-0 (SpiderMonkey 153 ESR).
+  * embedding API verified in source: ServoBuilder(opts/preferences/
+    event_loop_waker/protocol_registry), WebViewBuilder(url/delegate/hidpi),
+    WebView(load/paint/set_throttled/hide/notify_input_event/resize),
+    WebViewDelegate(load_web_resource->intercept, request_navigation,
+    request_create_new, notify_new_frame_ready/history/url/title/cursor),
+    UserContentManager, SiteDataManager, NetworkManager(cache_entries/
+    clear_cache), Servo::create_memory_report, RenderingContext::read_to_image.
+  * build feasibility probed: rustup stable 1.99.0 installed (env was wiped);
+    2 CPUs / 3 GB RAM / 8.5 GB disk / no root. SpiderMonkey ships PREBUILT for
+    our exact pin (release mozjs-sys-v153.3.0-0,
+    libmozjs-x86_64-unknown-linux-gnu.tar.gz; bindgen not on prebuilt path) —
+    no cmake/clang needed. Headless GL: Xvfb + xvfb-run + Mesa swrast present;
+    WindowRenderingContext (GLX) is the primary path, user-space libEGL
+    extract is the documented fallback.
+- Decisions recorded in docs/SERVO_INTEGRATION_PLAN.md: D1 servo 0.6.0;
+  D2 initial features (baked-in-resources, js_jit, brotli-compression-stream);
+  D3 use Servo's networking stack (privacy via load_web_resource interception
+  is strictly more precise than socket ownership); D4 privacy layer preserved
+  through delegates + prefs; D5 harness CLI contract kept; D6 side-by-side
+  verification protocol unchanged; D7 ships as v2.0.0, v1.0.0-rc1 preserved.
+- docs/SERVO_INTEGRATION_PLAN.md written (replaced/kept table, targets:
+  <50MB/tab, <20MB suspended, <500ms cold start, <1% idle CPU, 60 FPS scroll;
+  phase gates + risks) and committed BEFORE any implementation.
+
+Stage Summary:
+- Audit + research complete; plan committed and pushed prior to
+  implementation (mission rule). Next: Phase 1.1 — servo-host crate +
+  chunked build of the servo 0.6.0 graph.
