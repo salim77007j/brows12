@@ -1,0 +1,19 @@
+{
+  "css_shadows_radius": {
+    "chrome_report": [
+      "RESULT: ALL PASS (11/11)",
+      "PASS  box-shadow offset+no-blur",
+      "PASS  box-shadow rgba blur",
+      "PASS  box-shadow 0 0 0 4px ring",
+      "PASS  two box-shadows",
+      "PASS  inset box-shadow",
+      "PASS  border-radius 16px",
+      "PASS  border-radius 50%",
+      "PASS  asymmetric radii",
+      "PASS  elliptical radii (/)",
+      "PASS  text-shadow set",
+      "PASS  text-shadow multi"
+    ],
+    "brows12_rendered": true
+  }
+}

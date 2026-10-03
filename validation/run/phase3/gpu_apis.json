@@ -1,0 +1,23 @@
+{
+  "engine": "servo 0.6.0 (stylo 0.21, webrender 0.70, spidermonkey 153, brows12 v2)",
+  "url": "http://127.0.0.1:8123/gpu_apis.html",
+  "final_url": "http://127.0.0.1:8123/gpu_apis.html",
+  "title": "FAIL",
+  "width": 1280,
+  "height": 800,
+  "frames": 335,
+  "complete": true,
+  "crashed": false,
+  "crash_reason": null,
+  "console_messages": [],
+  "privacy": {
+    "enabled": true,
+    "ads_blocked": 0,
+    "trackers_blocked": 0,
+    "blocked_requests": []
+  },
+  "load_complete_ms": 66,
+  "total_ms": 2757,
+  "png": "/home/z/my-project/brows12-v2/validation/run/phase3/ours/gpu_apis.png",
+  "error": null
+}

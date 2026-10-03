@@ -1,0 +1,25 @@
+{
+  "engine": "servo 0.6.0 (stylo 0.21, webrender 0.70, spidermonkey 153, brows12 v2)",
+  "url": "https://github.com/",
+  "final_url": "https://github.com/",
+  "title": "GitHub · Change is constant. GitHub keeps you ahead. · GitHub",
+  "width": 1280,
+  "height": 800,
+  "frames": 1017,
+  "complete": true,
+  "crashed": false,
+  "crash_reason": null,
+  "console_messages": [
+    "No valid entry type provided to observe()."
+  ],
+  "privacy": {
+    "enabled": true,
+    "ads_blocked": 0,
+    "trackers_blocked": 0,
+    "blocked_requests": []
+  },
+  "load_complete_ms": 3433,
+  "total_ms": 8483,
+  "png": "/home/z/my-project/brows12-v2/validation/run/phase3/ours/rw_github_home.png",
+  "error": null
+}

@@ -1,0 +1,25 @@
+{
+  "engine": "servo 0.6.0 (stylo 0.21, webrender 0.70, spidermonkey 153, brows12 v2)",
+  "url": "https://wpt.fyi/results",
+  "final_url": "https://wpt.fyi/results/?label=experimental&label=master&aligned",
+  "title": "web-platform-tests dashboard",
+  "width": 1280,
+  "height": 800,
+  "frames": 1027,
+  "complete": true,
+  "crashed": false,
+  "crash_reason": null,
+  "console_messages": [],
+  "privacy": {
+    "enabled": true,
+    "ads_blocked": 1,
+    "trackers_blocked": 0,
+    "blocked_requests": [
+      "https://www.googletagmanager.com/gtag/js?id=G-R9Z49K7QCN"
+    ]
+  },
+  "load_complete_ms": 2879,
+  "total_ms": 7305,
+  "png": "/home/z/my-project/brows12-v2/validation/run/phase3/ours/rw_wpt_fyi.png",
+  "error": null
+}
