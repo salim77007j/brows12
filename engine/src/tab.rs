@@ -376,24 +376,42 @@ impl Tab {
             doc.get_elements_by_tag_name("img")
         };
         let mut out = page.images.lock().unwrap().clone();
-        for (i, node) in nodes.into_iter().enumerate() {
-            if i >= 24 {
-                break;
-            }
-            if let Some(style) = probe_styles.get(node) {
-                if style.display == Display::None {
-                    continue;
+        // Collect fetch targets first (display:none + src-less filtered),
+        // then fetch ALL of them concurrently: serial block_on per image
+        // made 24-image pages spend ~1s per request (~29s on Wikipedia)
+        // before paint, starving every render of remote images.
+        let targets: Vec<(brows12_html::NodeId, String)> = nodes
+            .into_iter()
+            .enumerate()
+            .take(24)
+            .filter_map(|(i, node)| {
+                if i >= 24 {
+                    return None;
                 }
+                if let Some(style) = probe_styles.get(node) {
+                    if style.display == Display::None {
+                        return None;
+                    }
+                }
+                let src = page.document.lock().unwrap().attr(node, "src").map(|s| s.to_string())?;
+                let resolved = base.join(&src).ok()?.to_string();
+                Some((node, resolved))
+            })
+            .collect();
+
+        let futures = targets.iter().map(|(node, url)| {
+            let net = self.engine.net.clone();
+            let top = top_site.clone();
+            let node = *node;
+            async move {
+                let resp = net.send(brows12_net::NetRequest::get(url.clone(), top)).await;
+                (node, resp)
             }
-            let Some(src) = page.document.lock().unwrap().attr(node, "src").map(|s| s.to_string())
-            else {
-                continue;
-            };
-            let Ok(resolved) = base.join(&src) else { continue };
-            let resolved = resolved.to_string();
-            if let Ok(resp) = self.engine.tokio.block_on(
-                self.engine.net.send(brows12_net::NetRequest::get(resolved, top_site.clone())),
-            ) {
+        });
+        let results =
+            self.engine.tokio.block_on(async { futures_util::future::join_all(futures).await });
+        for (node, resp) in results {
+            if let Ok(resp) = resp {
                 if resp.is_success() {
                     if let Ok(img) = decode_image(&resp.body) {
                         out.insert(node, Arc::new(img));

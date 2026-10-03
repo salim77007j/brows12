@@ -379,6 +379,7 @@ dependencies = [
  "brows12-storage",
  "cosmic-text",
  "flate2",
+ "futures-util",
  "jiff",
  "thiserror 2.0.21",
  "tiny-skia 0.12.0",
