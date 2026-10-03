@@ -52,7 +52,56 @@ code { font-size: 0.92em; }
 hr { display: block; margin: 0.5em auto; border-top-width: 1px; border-style: solid; }
 
 img, video, canvas, svg { overflow: hidden; }
-input, select, button, textarea { display: inline-block; }
+
+/* Form controls: Chromium-like default chrome. Text content inside
+   buttons paints through the normal inline path; typed values in text
+   fields and checked-glyph painting are documented gaps. */
+input {
+  display: inline-block;
+  width: 177px; height: 21px;
+  background-color: #ffffff;
+  border: 1px solid #767676;
+  border-radius: 2px;
+  padding: 1px 2px;
+  overflow: hidden;
+}
+input[type=checkbox] {
+  width: 13px; height: 13px; padding: 0; border-radius: 0;
+}
+input[type=radio] {
+  width: 13px; height: 13px; padding: 0; border-radius: 7px;
+}
+input[type=submit], input[type=button], input[type=reset] {
+  width: auto; height: auto;
+  background-color: #efefef;
+  padding: 1px 6px;
+  text-align: center;
+}
+input[type=hidden] { display: none; }
+button {
+  display: inline-block;
+  background-color: #efefef;
+  border: 1px solid #767676;
+  border-radius: 2px;
+  padding: 1px 6px;
+  text-align: center;
+}
+select {
+  display: inline-block;
+  background-color: #ffffff;
+  border: 1px solid #767676;
+  border-radius: 2px;
+  padding: 1px 4px;
+}
+textarea {
+  display: inline-block;
+  width: 177px; height: 58px;
+  background-color: #ffffff;
+  border: 1px solid #767676;
+  padding: 2px;
+  overflow: hidden;
+  white-space: pre;
+}
 
 center { text-align: center; }
 caption { text-align: center; }

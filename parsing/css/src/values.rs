@@ -124,6 +124,11 @@ pub enum Display {
     #[default]
     Block,
     Inline,
+    /// `display: inline-block`: shrink-to-fit box (max-content when width
+    /// is auto). In block flow v1 stacks it (atomic inline placement is a
+    /// documented gap); inside flex/grid/table rows it content-sizes like
+    /// Chromium.
+    InlineBlock,
     Flex,
     None,
     /// CSS table boxes are laid out as anonymous flex structures

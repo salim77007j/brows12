@@ -138,6 +138,11 @@ fn compute_inner(
                 let mut style = ComputedStyle::inherit_from(parent_style);
                 style.font_size = parent_style.font_size;
 
+                // Presentational attributes (HTML rendering spec §15.3):
+                // authored before any CSS so author rules win, exactly like
+                // the "presentational hints" origin in real browsers.
+                apply_presentational_attrs(doc, node, &mut style, ctx);
+
                 // Cascade matching rules that pass their at-rule context.
                 let matched: Vec<&StyleRule> = engine
                     .rules()
@@ -294,6 +299,88 @@ fn apply_inline(
             style.custom.entry(k).or_insert(v);
         }
     }
+}
+
+/// HTML presentational attributes → computed styles (bgcolor, width,
+/// height, cellpadding/cellspacing, color, border on tables). Lowest
+/// cascade priority: applied before rules, overridden by any author CSS.
+fn apply_presentational_attrs(
+    doc: &Document,
+    node: NodeId,
+    style: &mut ComputedStyle,
+    ctx: &CascadeCtx,
+) {
+    use crate::values::{AutoPx, Len};
+    let attr = |name: &str| doc.attr(node, name).map(|v| v.to_string());
+    let lctx = crate::computed::LengthContext {
+        font_size: style.font_size,
+        root_font_size: ctx.root_font_size,
+        viewport_width: ctx.viewport_width,
+        viewport_height: ctx.viewport_height,
+    };
+    if let Some(bg) = attr("bgcolor") {
+        if let Some(c) = parse_attr_color(&bg) {
+            style.background_color = c;
+        }
+    }
+    if let Some(c) = attr("color") {
+        if let Some(c) = parse_attr_color(&c) {
+            style.color = c;
+        }
+    }
+    let dim = |v: &str| -> Option<AutoPx> {
+        let v = v.trim();
+        if let Some(p) = v.strip_suffix('%') {
+            p.trim().parse::<f32>().ok().map(|p| AutoPx::Len(Len::Percent(p / 100.0)))
+        } else {
+            v.parse::<f32>().ok().map(|px| AutoPx::Len(Len::Px(px)))
+        }
+    };
+    if let Some(w) = attr("width") {
+        if let Some(d) = dim(&w) {
+            style.width = d;
+        }
+    }
+    if let Some(h) = attr("height") {
+        if let Some(d) = dim(&h) {
+            style.height = d;
+        }
+    }
+    if let Some(cellpad) = attr("cellpadding").and_then(|v| v.trim().parse::<f32>().ok()) {
+        style.padding = crate::values::Edges::splat(Len::Px(cellpad));
+    }
+    if let Some(cellspace) = attr("cellspacing").and_then(|v| v.trim().parse::<f32>().ok()) {
+        style.column_gap = Len::Px(cellspace);
+        style.row_gap = Len::Px(cellspace);
+    }
+    let _ = lctx;
+}
+
+/// Attribute color parser: #rgb/#rrggbb, rgb(), and the common named set.
+fn parse_attr_color(text: &str) -> Option<crate::values::Rgba> {
+    let t = text.trim();
+    // Parse as a color literal via lightningcss's CssColor, then resolve.
+    use lightningcss::stylesheet::ParserOptions;
+    let decl = format!("x{{color:{t}}}");
+    let Ok(sheet) = lightningcss::stylesheet::StyleSheet::parse(
+        &decl,
+        ParserOptions { error_recovery: true, ..ParserOptions::default() },
+    ) else {
+        return None;
+    };
+    for rule in sheet.rules.0.iter() {
+        if let lightningcss::rules::CssRule::Style(st) = rule {
+            for prop in &st.declarations.declarations {
+                if let lightningcss::properties::Property::Color(c) = prop {
+                    return crate::stylesheet::resolve_color(
+                        c,
+                        [0, 0, 0, 255],
+                    );
+                }
+            }
+        }
+    }
+    None
 }
 
 /// Convenience: build a `StyleEngine` from author sheets plus the UA sheet.

@@ -393,7 +393,9 @@ fn build_taffy_style(
     let display = match style.display {
         Display::None => taffy::Display::None,
         Display::Flex | Display::Table | Display::TableRow => taffy::Display::Flex,
-        Display::Block | Display::Inline | Display::TableCell => taffy::Display::Block,
+        Display::Block | Display::Inline | Display::TableCell | Display::InlineBlock => {
+            taffy::Display::Block
+        }
         Display::Grid => taffy::Display::Grid,
     };
     let mut taffy_style = taffy::Style {
@@ -452,6 +454,12 @@ fn build_taffy_style(
         },
         ..taffy::Style::default()
     };
+
+    // Inline-block: shrink-to-fit. Width auto + not in a stretching row
+    // context -> max-content so buttons/inputs size to their content.
+    if style.display == Display::InlineBlock && style.width == AutoPx::Auto {
+        taffy_style.size.width = taffy::Dimension::max_content();
+    }
 
     // CSS tables map onto anonymous flex structures: table = column flex,
     // row = row flex with stretching items, cell = block flex item.
@@ -717,6 +725,8 @@ pub fn compute_layout(
         let style = styles.get(node)?;
         if style.display == Display::None {
             return None;
+        }
+        if std::env::var("BROWS_DEBUG").is_ok() {
         }
         let data = doc.node(node).data.clone();
         match &data {
@@ -1209,8 +1219,15 @@ pub fn compute_layout(
                 taffy::Rect { left: 0.0, right: w, top: 0.0, bottom: h },
             );
         }
+        // Context-less leaves (empty boxes: spacers, buttons with padding,
+        // fixed-size divs) must honor their style size — known_dimensions
+        // carries the resolved style width/height. Returning 0 here made
+        // every empty box collapse to 0x0 and skip painting entirely.
         taffy::LayoutOutput::from_sizes(
-            taffy::Size { width: 0.0, height: 0.0 },
+            taffy::Size {
+                width: input.known_dimensions.width.unwrap_or(0.0),
+                height: input.known_dimensions.height.unwrap_or(0.0),
+            },
             taffy::Rect { left: 0.0, right: 0.0, top: 0.0, bottom: 0.0 },
         )
     };
@@ -1245,6 +1262,17 @@ pub fn compute_layout(
         )
     };
     let _ = run_compute(&mut tree, layout_root, &measure_fn);
+    if std::env::var("BROWS_DEBUG").is_ok() {
+        for (d, t) in &node_ids {
+            if let Some(NodeData::Element { name, .. }) = Some(&doc.node(*d).data.clone()) {
+                if name == "input" {
+                    if let Ok(l) = tree.layout(*t) {
+                        eprintln!("INPUT_FINAL size={:?}x{:?} loc={:?}", l.size.width, l.size.height, l.location);
+                    }
+                }
+            }
+        }
+    }
 
     // Extract absolute rects via depth-first accumulation.
     let taffy_to_dom: HashMap<taffy::NodeId, NodeId> =
@@ -1379,6 +1407,17 @@ pub fn compute_layout(
         let _ = tree.mark_dirty(tn);
     }
     let _ = run_compute(&mut tree, layout_root, &measure_fn);
+    if std::env::var("BROWS_DEBUG").is_ok() {
+        for (d, t) in &node_ids {
+            if let Some(NodeData::Element { name, .. }) = Some(&doc.node(*d).data.clone()) {
+                if name == "input" {
+                    if let Ok(l) = tree.layout(*t) {
+                        eprintln!("INPUT_FINAL size={:?}x{:?} loc={:?}", l.size.width, l.size.height, l.location);
+                    }
+                }
+            }
+        }
+    }
 
     // ---- Final extraction + float placement on final rects ----
     let mut result = LayoutResult::default();

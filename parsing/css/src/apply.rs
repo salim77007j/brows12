@@ -1097,6 +1097,12 @@ fn map_display(d: &LcDisplay) -> Display {
             // CSS tables → anonymous flex structures (v1 approximation).
             DisplayInside::Table => Display::Table,
             DisplayInside::Flow if matches!(p.outside, DisplayOutside::Inline) => Display::Inline,
+            // inline-block / inline flow-root: shrink-to-fit atomic box.
+            DisplayInside::Flow | DisplayInside::FlowRoot
+                if matches!(p.outside, DisplayOutside::Inline) =>
+            {
+                Display::InlineBlock
+            }
             _ => Display::Block,
         },
     }
