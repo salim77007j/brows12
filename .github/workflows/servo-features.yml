@@ -1,0 +1,59 @@
+name: servo-features (GPU/media verification)
+
+# Phase 3.6/3.7: WebGL2, WebGPU and WebRTC are compile-time cargo
+# features of the servo crate (see docs/BUILDING.md "v2 build notes").
+# This workflow builds the feature-full profile on a full-size runner
+# and executes the Phase 3 GPU/WebRTC probe fixtures against it, so the
+# feature-gated verdicts get CI coverage even though the local dev
+# container cannot compile them (disk/RAM ceiling, no sudo for GStreamer).
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths: ["servo-host/**", "fixtures/phase3/**", ".github/workflows/servo-features.yml"]
+
+jobs:
+  feature-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: System deps (GStreamer + GL)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+            libgstreamer-plugins-bad1.0-dev gstreamer1.0-plugins-good \
+            gstreamer1.0-plugins-bad gstreamer1.0-libav \
+            libegl1-mesa-dev libgl1-mesa-dev xvfb
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: servo-features
+
+      - name: Build feature-full profile
+        run: |
+          cargo build -p servo-host --bin brows-servo -- \
+            --features servo/webgl,servo/webgpu,servo/media-gstreamer
+        # NOTE: if the `--features servo/...` form is rejected by this
+        # cargo version, temporarily extend servo-host's `features = [...]`
+        # list for the servo dependency and build normally.
+
+      - name: Probe fixtures under Xvfb
+        run: |
+          export DISPLAY=:99
+          Xvfb :99 -screen 0 1280x800x24 -nolisten tcp &
+          sleep 2
+          export XDG_RUNTIME_DIR=/tmp/xdg && mkdir -p /tmp/xdg
+          python3 -m http.server 8123 --directory fixtures/phase3 &
+          sleep 1
+          B=target/debug/brows-servo
+          for f in gpu_apis webrtc_probe; do
+            $B --url http://127.0.0.1:8123/$f.html --png /tmp/$f.png \
+               --json /tmp/$f.json --timeout-ms 60000
+            cat /tmp/$f.json
+          done

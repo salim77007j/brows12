@@ -59,3 +59,38 @@ cargo +nightly fuzz run cookie_parse
 
 `./ci/run-local.sh` runs fmt-check, clippy `-D warnings`, the full test
 suite and docs — the same gates as the GitHub workflow.
+
+---
+
+# v2 (Servo-backed) build notes
+
+The v2 workspace (`servo-host`, `ui`, `privacy`, `storage`) embeds
+**servo 0.6.0**. Several web-platform APIs are **compile-time cargo
+features** of the `servo` crate — prefs alone cannot enable them.
+
+## Servo feature flags (servo-host/Cargo.toml)
+
+| Feature | What it enables | Verified locally (Phase 3) |
+|---|---|---|
+| *(current)* `baked-in-resources`, `js_jit`, `brotli-compression-stream`, `webcrypto` | default browsing profile | Yes — full fixture suite |
+| `webgl` | `getContext('webgl'/'webgl2')` (servo-webgl crate + script/paint hooks) | **No — disk/RAM ceiling in the dev container**; probe returns `null` |
+| `webgpu` | `navigator.gpu` (wgpu/naga stack) | **No — same constraint** |
+| `media-gstreamer` | `<audio>/<video>`, WebRTC via servo-media-gstreamer | **No — needs system GStreamer 1.x dev libs (no sudo in container)** |
+
+To build the full-feature browser on a capable machine:
+
+```sh
+cargo build -p servo-host --release \
+    --features servo/webgl,servo/webgpu,servo/media-gstreamer
+# system deps (Debian/Ubuntu):
+apt install libgstreamer1.0-dev libgstreamer-plugins-bad1.0-dev \
+    libgstreamer-plugins-base1.0-dev gstreamer1.0-plugins-good \
+    gstreamer10-plugins-bad libudev-dev
+```
+
+Phase 3 verdicts for the feature-gated APIs (WebGL1/2, WebGPU, WebRTC)
+were captured against the feature-gated build and are honest `No (this
+build)` results — see `docs/PHASE3_REPORT.md` and the `gpu_apis` /
+`webrtc_probe` fixtures. CI (`.github/workflows/servo-features.yml`)
+builds the feature-full profile on GitHub runners and runs the same
+fixture suite there.
