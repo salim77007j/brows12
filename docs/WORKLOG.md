@@ -215,3 +215,30 @@ Stage Summary:
   faster page completion than the v1 custom engine. Phase 1.1 gate GREEN.
 - Next: enable webcrypto + observer prefs (likely fixes GitHub hydration),
   retire legacy crates, wire privacy layer, then commit per sub-step.
+
+---
+Task ID: v2-phase1.2
+Agent: Super Z (main)
+Task: Phase 1.2 — compat preferences + webcrypto; GitHub hydration fixed.
+
+Work Log:
+- Grep of servo-config 0.6.0 prefs.rs found the real-world knobs:
+  dom_intersection_observer_enabled (default FALSE), dom_adoptedstylesheet_enabled
+  (default FALSE), dom_fontface_enabled (default FALSE), dom_crypto_subtle_enabled
+  (default true but implementation requires the webcrypto cargo feature).
+- servo-host/src/prefs.rs: compat_preferences() — brows12 "real-world sites"
+  profile (intersection observer, adopted stylesheets, font loading API,
+  crypto/webcrypto, resize observer), wired into both headless runners via
+  ServoBuilder::preferences().
+- servo dep: + "webcrypto" feature (SpiderMonkey WebCrypto impl; rebuild needed
+  -j 1 on the 4GB box — first attempt OOM-killed servo-script at default -j2).
+- GitHub re-render: console errors 80+ -> 1 ("No valid entry type provided to
+  observe()", minor); React app fully hydrates; file table, commit history,
+  About/Languages sidebar all render (github_home_v2.png). complete=true in
+  2432 ms (v1 custom engine: 50.7 s).
+
+Stage Summary:
+- The compat-prefs profile is the single highest-leverage integration change
+  so far: it converted GitHub from "chrome only" to fully interactive-class
+  render without touching engine code. requestIdleCallback remains a genuine
+  Servo gap (polyfill candidate via UserContentManager in Phase 4).

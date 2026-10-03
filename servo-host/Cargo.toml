@@ -12,6 +12,7 @@ servo = { version = "=0.6.0", default-features = false, features = [
     "baked-in-resources",
     "js_jit",
     "brotli-compression-stream",
+    "webcrypto",
 ] }
 url = "2.5"
 winit = "0.30"

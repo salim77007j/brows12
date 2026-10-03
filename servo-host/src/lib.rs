@@ -7,6 +7,8 @@
 pub mod capture;
 pub mod delegate;
 pub mod headless;
+pub mod prefs;
 pub mod waker;
 
 pub use headless::{run_headless, HeadlessConfig, HeadlessReport};
+pub use prefs::compat_preferences;

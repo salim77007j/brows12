@@ -136,6 +136,7 @@ fn run_without_window(
     let waker = crate::waker::CondvarWaker::default();
     let servo: Servo = ServoBuilder::default()
         .event_loop_waker(Box::new(waker.clone()))
+        .preferences(crate::prefs::compat_preferences())
         .build();
     let delegate = HostDelegate::new(state.clone());
     let webview = WebViewBuilder::new(&servo, context.clone())
@@ -258,6 +259,7 @@ impl ApplicationHandler<HostWakerEvent> for HeadlessApp {
         let waker = ProxyWaker::new(self.proxy.clone());
         let servo: Servo = ServoBuilder::default()
             .event_loop_waker(Box::new(waker))
+            .preferences(crate::prefs::compat_preferences())
             .build();
         let delegate = HostDelegate::new(state.clone());
         let webview = WebViewBuilder::new(&servo, ctx.clone())
