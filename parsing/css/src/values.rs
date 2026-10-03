@@ -1,23 +1,97 @@
 //! Owned value types shared between the cascade, layout and rendering.
 
-/// A resolved horizontal/vertical length: absolute pixels or a percentage
+/// A symbolic CSS math expression (`calc()`, `min()`, `max()`, `clamp()`)
+/// kept unresolved so the layout engine can supply the percentage base
+/// (containing-block width, font size, ...) at used-value time — exactly
+/// how the CSS Values 4 spec models it.
+#[derive(Debug, Clone, PartialEq)]
+pub enum CalcExpr {
+    Px(f32),
+    Percent(f32),
+    Sum(Box<CalcExpr>, Box<CalcExpr>),
+    /// Coefficient product: `number * expr` (calc products always have at
+    /// least one number side after parsing).
+    Product(f32, Box<CalcExpr>),
+    Min(Vec<CalcExpr>),
+    Max(Vec<CalcExpr>),
+    /// clamp(MIN, VAL, MAX)
+    Clamp(Box<CalcExpr>, Box<CalcExpr>, Box<CalcExpr>),
+}
+
+impl CalcExpr {
+    /// Resolve against a percentage base (the length the percent part is
+    /// taken against). Mixed px/percent sums evaluate exactly.
+    pub fn resolve(&self, base: f32) -> f32 {
+        match self {
+            CalcExpr::Px(v) => *v,
+            CalcExpr::Percent(p) => *p * base,
+            CalcExpr::Sum(a, b) => a.resolve(base) + b.resolve(base),
+            CalcExpr::Product(n, v) => *n * v.resolve(base),
+            CalcExpr::Min(args) => args
+                .iter()
+                .map(|a| a.resolve(base))
+                .fold(f32::INFINITY, f32::min),
+            CalcExpr::Max(args) => args
+                .iter()
+                .map(|a| a.resolve(base))
+                .fold(f32::NEG_INFINITY, f32::max),
+            CalcExpr::Clamp(min, val, max) => {
+                let m = min.resolve(base);
+                let v = val.resolve(base);
+                let x = max.resolve(base);
+                v.max(m).min(x)
+            }
+        }
+    }
+
+    /// Best-effort px component for consumers with no percentage base
+    /// (fallback paths). Mixed expressions contribute only their px part.
+    pub fn px_part(&self) -> f32 {
+        match self {
+            CalcExpr::Px(v) => *v,
+            CalcExpr::Percent(_) => 0.0,
+            CalcExpr::Sum(a, b) => a.px_part() + b.px_part(),
+            CalcExpr::Product(n, v) => *n * v.px_part(),
+            CalcExpr::Min(args) | CalcExpr::Max(args) => args
+                .first()
+                .map(|a| a.px_part())
+                .unwrap_or(0.0),
+            CalcExpr::Clamp(_, val, _) => val.px_part(),
+        }
+    }
+}
+
+/// A resolved horizontal/vertical length: absolute pixels, a percentage
 /// (left symbolic so the layout engine can resolve it against the used
-/// available space, exactly like the CSS layout algorithms expect).
-#[derive(Debug, Clone, Copy, PartialEq)]
+/// available space, exactly like the CSS layout algorithms expect), or a
+/// symbolic calc() expression.
+#[derive(Debug, Clone, PartialEq)]
 pub enum Len {
     Px(f32),
     Percent(f32),
+    Calc(CalcExpr),
+}
+
+impl Len {
+    /// Resolve to px against the given percentage base.
+    pub fn resolve(&self, base: f32) -> f32 {
+        match self {
+            Len::Px(v) => *v,
+            Len::Percent(p) => *p * base,
+            Len::Calc(c) => c.resolve(base),
+        }
+    }
 }
 
 /// A length or the `auto` keyword.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum AutoPx {
     Auto,
     Len(Len),
 }
 
 /// Per-edge box values (top, right, bottom, left).
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct Edges<T> {
     pub top: T,
     pub right: T,
@@ -25,10 +99,15 @@ pub struct Edges<T> {
     pub left: T,
 }
 
-impl<T: Copy> Edges<T> {
+impl<T: Clone> Edges<T> {
     /// Same value on all four edges.
     pub fn splat(v: T) -> Self {
-        Edges { top: v, right: v, bottom: v, left: v }
+        Edges {
+            left: v.clone(),
+            bottom: v.clone(),
+            right: v.clone(),
+            top: v,
+        }
     }
 }
 

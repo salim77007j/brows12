@@ -28,6 +28,7 @@ pub mod computed;
 pub mod matcher;
 pub mod stylesheet;
 pub mod values;
+pub mod calc;
 pub mod vartext;
 
 pub use animation::{apply_keyframes, AnimationStatus, TransitionEngine};

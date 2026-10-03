@@ -409,6 +409,7 @@ impl ExtractPx for brows12_css::values::Len {
         match self {
             brows12_css::values::Len::Px(px) => *px,
             brows12_css::values::Len::Percent(_) => 0.0,
+            brows12_css::values::Len::Calc(c) => c.px_part(),
         }
     }
 }

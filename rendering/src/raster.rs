@@ -234,6 +234,7 @@ impl Rasterizer {
 
     /// Shape + blit a text run with swash images (alpha coverage tinted by
     /// the style color, or full-color images for emoji).
+    #[allow(clippy::too_many_arguments)]
     fn paint_text(
         &mut self,
         pixmap: &mut Pixmap,

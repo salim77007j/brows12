@@ -95,10 +95,8 @@ pub(crate) fn apply_property(
             lctx_fs.font_size = parent_size;
             let resolved = match fs {
                 FontSize::Length(lp) => {
-                    crate::computed::length_percentage_to_len(lp, &lctx_fs).map(|len| match len {
-                        Len::Px(px) => px,
-                        Len::Percent(p) => parent_size * p,
-                    })
+                    crate::computed::length_percentage_to_len(lp, &lctx_fs)
+                        .map(|len| len.resolve(parent_size))
                 }
                 FontSize::Absolute(kw) => Some(absolute_font_size(*kw)),
                 FontSize::Relative(r) => Some(match r {
@@ -143,12 +141,62 @@ pub(crate) fn apply_property(
                 LcLH::Normal => LineHeight::Normal,
                 LcLH::Number(n) => LineHeight::Number(*n),
                 LcLH::Length(lp) => crate::computed::length_percentage_to_len(lp, &lctx)
-                    .map(|len| match len {
-                        Len::Px(px) => LineHeight::Px(px),
-                        Len::Percent(p) => LineHeight::Px(s.font_size * p),
-                    })
+                    .map(|len| LineHeight::Px(len.resolve(s.font_size)))
                     .unwrap_or(LineHeight::Normal),
             };
+        }
+        // Logical margins/paddings/insets map onto the physical axes
+        // (horizontal-tb writing mode only — documented).
+        Property::MarginInline(m) => {
+            let (start, end) = (&m.inline_start, &m.inline_end);
+            s.margin.left = logical_lpa(start, &lctx).unwrap_or_else(|| s.margin.left.clone());
+            s.margin.right = logical_lpa(end, &lctx).unwrap_or_else(|| s.margin.right.clone());
+        }
+        Property::MarginInlineStart(v) => {
+            if let Some(x) = logical_lpa(v, &lctx) {
+                s.margin.left = x;
+            }
+        }
+        Property::MarginInlineEnd(v) => {
+            if let Some(x) = logical_lpa(v, &lctx) {
+                s.margin.right = x;
+            }
+        }
+        Property::PaddingInline(m) => {
+            if let Some(AutoPx::Len(len)) = logical_lpa(&m.inline_start, &lctx) {
+                s.padding.left = len;
+            }
+            if let Some(AutoPx::Len(len)) = logical_lpa(&m.inline_end, &lctx) {
+                s.padding.right = len;
+            }
+        }
+        Property::PaddingInlineStart(v) => {
+            if let Some(AutoPx::Len(len)) = logical_lpa(v, &lctx) {
+                s.padding.left = len;
+            }
+        }
+        Property::PaddingInlineEnd(v) => {
+            if let Some(AutoPx::Len(len)) = logical_lpa(v, &lctx) {
+                s.padding.right = len;
+            }
+        }
+        Property::InsetInline(m) => {
+            if let Some(x) = lpa_auto(&m.inline_start, &lctx) {
+                s.insets.left = x;
+            }
+            if let Some(x) = lpa_auto(&m.inline_end, &lctx) {
+                s.insets.right = x;
+            }
+        }
+        Property::InsetInlineStart(v) => {
+            if let Some(x) = lpa_auto(v, &lctx) {
+                s.insets.left = x;
+            }
+        }
+        Property::InsetInlineEnd(v) => {
+            if let Some(x) = lpa_auto(v, &lctx) {
+                s.insets.right = x;
+            }
         }
         Property::Margin(m) => {
             if let (Some(t), Some(r), Some(b), Some(l)) = (
@@ -254,7 +302,7 @@ pub(crate) fn apply_property(
         // `border` shorthand: width + style + color on all four sides.
         Property::Border(b) => {
             let w = side_width(&b.width, &lctx);
-            let w = style_width(w, &b.style);
+            let w = style_width(&w, &b.style);
             s.border_width = Edges::splat(w);
             if let Some(rgba) = color(&b.color, s.color) {
                 s.border_color = rgba;
@@ -272,14 +320,14 @@ pub(crate) fn apply_property(
         Property::BorderRightWidth(v) => s.border_width.right = side_width(v, &lctx),
         Property::BorderBottomWidth(v) => s.border_width.bottom = side_width(v, &lctx),
         Property::BorderLeftWidth(v) => s.border_width.left = side_width(v, &lctx),
-        Property::BorderTopStyle(v) => s.border_width.top = style_width(s.border_width.top, v),
+        Property::BorderTopStyle(v) => s.border_width.top = style_width(&s.border_width.top, v),
         Property::BorderRightStyle(v) => {
-            s.border_width.right = style_width(s.border_width.right, v)
+            s.border_width.right = style_width(&s.border_width.right, v)
         }
         Property::BorderBottomStyle(v) => {
-            s.border_width.bottom = style_width(s.border_width.bottom, v)
+            s.border_width.bottom = style_width(&s.border_width.bottom, v)
         }
-        Property::BorderLeftStyle(v) => s.border_width.left = style_width(s.border_width.left, v),
+        Property::BorderLeftStyle(v) => s.border_width.left = style_width(&s.border_width.left, v),
         Property::BorderColor(c) => {
             if let Some(rgba) = color(&c.top, s.border_color) {
                 s.border_color = rgba;
@@ -826,6 +874,28 @@ fn max_size(v: &MaxSize, lctx: &LengthContext) -> Option<AutoPx> {
     }
 }
 
+
+/// `<length-percentage-or-auto>` for logical margins.
+fn logical_lpa(
+    v: &lightningcss::values::length::LengthPercentageOrAuto,
+    lctx: &LengthContext,
+) -> Option<AutoPx> {
+    use lightningcss::values::length::LengthPercentageOrAuto as LPA;
+    match v {
+        LPA::Auto => Some(AutoPx::Auto),
+        LPA::LengthPercentage(lp) => {
+            crate::computed::length_percentage_to_len(lp, lctx).map(AutoPx::Len)
+        }
+    }
+}
+
+fn lpa_auto(
+    v: &lightningcss::values::length::LengthPercentageOrAuto,
+    lctx: &LengthContext,
+) -> Option<AutoPx> {
+    logical_lpa(v, lctx)
+}
+
 fn side_width(v: &BorderSideWidth, _lctx: &LengthContext) -> Len {
     match v {
         BorderSideWidth::Thin => Len::Px(1.0),
@@ -835,14 +905,14 @@ fn side_width(v: &BorderSideWidth, _lctx: &LengthContext) -> Len {
     }
 }
 
-fn style_width(current: Len, style: &LineStyle) -> Len {
+fn style_width(current: &Len, style: &LineStyle) -> Len {
     match style {
         LineStyle::None | LineStyle::Hidden => Len::Px(0.0),
         _ => {
             if matches!(current, Len::Px(0.0)) {
                 Len::Px(3.0)
             } else {
-                current
+                current.clone()
             }
         }
     }
@@ -991,6 +1061,7 @@ fn track_breadth(
         TB::Length(lp) => match length_percentage_to_len(lp, lctx) {
             Some(Len::Px(px)) => G::Px(px),
             Some(Len::Percent(p)) => G::Percent(p),
+            Some(Len::Calc(c)) => G::Px(c.px_part()),
             None => G::Auto,
         },
     }

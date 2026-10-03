@@ -207,7 +207,7 @@ impl Default for CascadeCtx {
     }
 }
 
-pub(crate) struct LengthContext {
+pub struct LengthContext {
     pub font_size: f32,
     pub root_font_size: f32,
     pub viewport_width: f32,
@@ -247,12 +247,7 @@ pub(crate) fn length_percentage_to_len(
     lp: &lightningcss::values::length::LengthPercentage,
     ctx: &LengthContext,
 ) -> Option<Len> {
-    use lightningcss::values::percentage::DimensionPercentage as DP;
-    match lp {
-        DP::Dimension(lv) => length_to_px(lv, ctx).map(Len::Px),
-        DP::Percentage(p) => Some(Len::Percent(p.0)),
-        DP::Calc(_) => None,
-    }
+    crate::calc::length_percentage_calc(lp, ctx)
 }
 
 /// Resolve a `<length-percentage | auto>`.

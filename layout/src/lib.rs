@@ -319,36 +319,32 @@ impl TextMeasurer {
     }
 }
 
-/// Map CSS values onto taffy styles.
-fn taffy_dimension(v: AutoPx) -> taffy::Dimension {
+/// Map CSS values onto taffy styles. `base` is the estimated percentage
+/// base (containing-block content width) used to resolve calc() here —
+/// taffy takes concrete values only.
+fn taffy_dimension(v: AutoPx, base: f32) -> taffy::Dimension {
     match v {
         AutoPx::Auto => taffy::Dimension::auto(),
-        AutoPx::Len(Len::Px(px)) => taffy::Dimension::length(px),
-        AutoPx::Len(Len::Percent(p)) => taffy::Dimension::percent(p),
+        AutoPx::Len(len) => taffy::Dimension::length(len.resolve(base)),
     }
 }
 
 /// `min-width/height`: auto = taffy's content-based auto minimum.
-fn taffy_auto_min(v: AutoPx) -> taffy::LengthPercentageAuto {
+fn taffy_auto_min(v: AutoPx, base: f32) -> taffy::LengthPercentageAuto {
     match v {
         AutoPx::Auto => taffy::LengthPercentageAuto::auto(),
-        AutoPx::Len(Len::Px(px)) => taffy::LengthPercentageAuto::length(px),
-        AutoPx::Len(Len::Percent(p)) => taffy::LengthPercentageAuto::percent(p),
+        AutoPx::Len(len) => taffy::LengthPercentageAuto::length(len.resolve(base)),
     }
 }
 
-fn taffy_len_or_percent(v: Len) -> taffy::LengthPercentage {
-    match v {
-        Len::Px(px) => taffy::LengthPercentage::length(px),
-        Len::Percent(p) => taffy::LengthPercentage::percent(p),
-    }
+fn taffy_len_or_percent(v: Len, base: f32) -> taffy::LengthPercentage {
+    taffy::LengthPercentage::length(v.resolve(base))
 }
 
-fn taffy_auto_len(v: AutoPx) -> taffy::LengthPercentageAuto {
+fn taffy_auto_len(v: AutoPx, base: f32) -> taffy::LengthPercentageAuto {
     match v {
         AutoPx::Auto => taffy::LengthPercentageAuto::auto(),
-        AutoPx::Len(Len::Px(px)) => taffy::LengthPercentageAuto::length(px),
-        AutoPx::Len(Len::Percent(p)) => taffy::LengthPercentageAuto::percent(p),
+        AutoPx::Len(len) => taffy::LengthPercentageAuto::length(len.resolve(base)),
     }
 }
 
@@ -373,11 +369,10 @@ fn taffy_position(style: &ComputedStyle) -> taffy::Position {
     }
 }
 
-fn taffy_inset(style: &ComputedStyle) -> taffy::Rect<taffy::LengthPercentageAuto> {
+fn taffy_inset(style: &ComputedStyle, base: f32) -> taffy::Rect<taffy::LengthPercentageAuto> {
     let f = |v: &AutoPx| match v {
         AutoPx::Auto => taffy::LengthPercentageAuto::auto(),
-        AutoPx::Len(Len::Px(px)) => taffy::LengthPercentageAuto::length(*px),
-        AutoPx::Len(Len::Percent(p)) => taffy::LengthPercentageAuto::percent(*p),
+        AutoPx::Len(len) => taffy::LengthPercentageAuto::length(len.resolve(base)),
     };
     taffy::Rect {
         top: f(&style.insets.top),
@@ -392,6 +387,7 @@ fn build_taffy_style(
     spans: &TableSpans,
     node: NodeId,
     parent_display: Option<Display>,
+    base: f32,
 ) -> taffy::Style {
     let display = match style.display {
         Display::None => taffy::Display::None,
@@ -402,16 +398,16 @@ fn build_taffy_style(
     let mut taffy_style = taffy::Style {
         display,
         position: taffy_position(style),
-        inset: taffy_inset(style),
+        inset: taffy_inset(style, base),
         size: taffy::Size {
-            width: taffy_dimension(style.width),
-            height: taffy_dimension(style.height),
+            width: taffy_dimension(style.width.clone(), base),
+            height: taffy_dimension(style.height.clone(), base),
         },
         max_size: {
             // max-height is not modelled yet: keep the vertical axis unconstrained.
             let _ = &style;
             taffy::Size {
-                width: taffy_auto_min(style.max_width),
+                width: taffy_auto_min(style.max_width.clone(), base),
                 height: taffy::LengthPercentageAuto::auto(),
             }
         },
@@ -427,31 +423,31 @@ fn build_taffy_style(
                 if !item && matches!(v, AutoPx::Auto) {
                     return taffy::LengthPercentageAuto::length(0.0);
                 }
-                taffy_auto_min(*v)
+                taffy_auto_min(v.clone(), base)
             };
             taffy::Size { width: conv(&style.min_width), height: conv(&style.min_height) }
         },
         margin: taffy::Rect {
-            top: taffy_auto_len(style.margin.top),
-            right: taffy_auto_len(style.margin.right),
-            bottom: taffy_auto_len(style.margin.bottom),
-            left: taffy_auto_len(style.margin.left),
+            top: taffy_auto_len(style.margin.top.clone(), base),
+            right: taffy_auto_len(style.margin.right.clone(), base),
+            bottom: taffy_auto_len(style.margin.bottom.clone(), base),
+            left: taffy_auto_len(style.margin.left.clone(), base),
         },
         padding: taffy::Rect {
-            top: taffy_len_or_percent(style.padding.top),
-            right: taffy_len_or_percent(style.padding.right),
-            bottom: taffy_len_or_percent(style.padding.bottom),
-            left: taffy_len_or_percent(style.padding.left),
+            top: taffy_len_or_percent(style.padding.top.clone(), base),
+            right: taffy_len_or_percent(style.padding.right.clone(), base),
+            bottom: taffy_len_or_percent(style.padding.bottom.clone(), base),
+            left: taffy_len_or_percent(style.padding.left.clone(), base),
         },
         border: taffy::Rect {
-            top: taffy_len_or_percent(style.border_width.top),
-            right: taffy_len_or_percent(style.border_width.right),
-            bottom: taffy_len_or_percent(style.border_width.bottom),
-            left: taffy_len_or_percent(style.border_width.left),
+            top: taffy_len_or_percent(style.border_width.top.clone(), base),
+            right: taffy_len_or_percent(style.border_width.right.clone(), base),
+            bottom: taffy_len_or_percent(style.border_width.bottom.clone(), base),
+            left: taffy_len_or_percent(style.border_width.left.clone(), base),
         },
         gap: taffy::Size {
-            width: taffy_len_or_percent(style.column_gap),
-            height: taffy_len_or_percent(style.row_gap),
+            width: taffy_len_or_percent(style.column_gap.clone(), base),
+            height: taffy_len_or_percent(style.row_gap.clone(), base),
         },
         ..taffy::Style::default()
     };
@@ -714,6 +710,7 @@ pub fn compute_layout(
         spans: &TableSpans,
         shrink_ctx: &HashSet<NodeId>,
         parent_display: Option<Display>,
+        parent_w: f32,
         node: NodeId,
     ) -> Option<taffy::NodeId> {
         let style = styles.get(node)?;
@@ -728,7 +725,10 @@ pub fn compute_layout(
                 }
                 let ctx = leaf_context(style, text);
                 let tnode = tree
-                    .new_leaf_with_context(build_taffy_style(style, spans, node, parent_display), ctx)
+                    .new_leaf_with_context(
+                        build_taffy_style(style, spans, node, parent_display, parent_w),
+                        ctx,
+                    )
                     .ok()?;
                 node_ids.insert(node, tnode);
                 Some(tnode)
@@ -737,7 +737,8 @@ pub fn compute_layout(
                 // Leaf elements with intrinsic size (img).
                 if doc.node(node).children.is_empty() {
                     if let Some(&(w, h)) = image_sizes.get(&node) {
-                        let taffy_style = build_taffy_style(style, spans, node, parent_display);
+                        let taffy_style =
+                            build_taffy_style(style, spans, node, parent_display, parent_w);
                         let ctx = LeafContext::Image { intrinsic_width: w, intrinsic_height: h };
                         let tnode = tree.new_leaf_with_context(taffy_style, ctx).ok()?;
                         node_ids.insert(node, tnode);
@@ -757,7 +758,8 @@ pub fn compute_layout(
                     if !shrink_ctx.contains(&node) || style.width != AutoPx::Auto {
                         if let Some(&max_cols) = spans.tables.get(&node) {
                             use taffy::prelude::TaffyAuto;
-                        let mut taffy_style = build_taffy_style(style, spans, node, parent_display);
+                        let mut taffy_style =
+                            build_taffy_style(style, spans, node, parent_display, parent_w);
                         taffy_style.display = taffy::Display::Grid;
                         taffy_style.grid_template_columns = (0..max_cols)
                             .map(|_| {
@@ -785,6 +787,7 @@ pub fn compute_layout(
                                     spans,
                                     shrink_ctx,
                                     Some(style.display),
+                                    parent_w,
                                     cell,
                                 ) {
                                     children.push(t);
@@ -802,7 +805,19 @@ pub fn compute_layout(
                     }
                 }
 
-                let taffy_style = build_taffy_style(style, spans, node, parent_display);
+                let taffy_style = build_taffy_style(style, spans, node, parent_display, parent_w);
+                // Estimated content width for percentage/calc bases in
+                // children (block-flow approximation; taffy refines the
+                // actual boxes, this only resolves calc() at build time).
+                let pad_lr = style.padding.left.resolve(parent_w)
+                    + style.padding.right.resolve(parent_w);
+                let border_lr = style.border_width.left.resolve(parent_w)
+                    + style.border_width.right.resolve(parent_w);
+                let own_w = match &style.width {
+                    AutoPx::Auto => parent_w,
+                    w => resolve_auto(w, parent_w).max(0.0),
+                };
+                let child_w = (own_w - pad_lr - border_lr).max(1.0);
                 // Partition children into inline runs and block children
                 // (CSS anonymous block boxes).
                 let pieces = group_children(doc, styles, image_sizes, node);
@@ -821,6 +836,7 @@ pub fn compute_layout(
                                 spans,
                                 shrink_ctx,
                                 Some(style.display),
+                                child_w,
                                 c,
                             ) {
                                 children.push(t);
@@ -866,6 +882,7 @@ pub fn compute_layout(
                         spans,
                         shrink_ctx,
                         parent_display,
+                        parent_w,
                         c,
                     ) {
                         return Some(t);
@@ -1123,6 +1140,11 @@ pub fn compute_layout(
         }
     }
     collect_shrink(doc, styles, start, false, &mut shrink_ctx);
+    let root_base = styles
+        .get(start)
+        .and_then(|s| inset_px(&s.max_width, viewport.width))
+        .map(|mw| mw.min(viewport.width).max(1.0))
+        .unwrap_or(viewport.width);
     let Some(root_taffy) = build(
         doc,
         styles,
@@ -1134,6 +1156,7 @@ pub fn compute_layout(
         &table_spans,
         &shrink_ctx,
         None,
+        root_base,
         start,
     ) else {
         return LayoutResult::default();
@@ -1197,7 +1220,7 @@ pub fn compute_layout(
     // the root box afterwards (margin:auto behaviour).
     let root_style = styles.get(start);
     let avail_width = root_style
-        .and_then(|s| inset_px(s.max_width, viewport.width))
+        .and_then(|s| inset_px(&s.max_width, viewport.width))
         .map(|mw| mw.min(viewport.width).max(1.0))
         .unwrap_or(viewport.width);
     type MeasureFn<'a> = &'a dyn Fn(
@@ -1265,7 +1288,7 @@ pub fn compute_layout(
                                     st.map(|s| s.position),
                                     st.map(|s| s.float),
                                     st.map(|s| s.white_space),
-                                    st.map(|s| s.width)
+                                    st.map(|s| s.width.clone())
                                 )
                             }
                             _ => "?".into(),
@@ -1469,16 +1492,16 @@ pub fn compute_layout(
             let cb_w = (p_rect.width - bl - br).max(0.0);
             let cb_h = (p_rect.height - bt - bb).max(0.0);
 
-            let mt = offset_for_margin(style.margin.top);
-            let mb = offset_for_margin(style.margin.bottom);
-            let ml = offset_for_margin(style.margin.left);
-            let mr = offset_for_margin(style.margin.right);
+            let mt = offset_for_margin(&style.margin.top);
+            let mb = offset_for_margin(&style.margin.bottom);
+            let ml = offset_for_margin(&style.margin.left);
+            let mr = offset_for_margin(&style.margin.right);
 
             // ---- X axis ----
             let nx = match (&style.insets.left, &style.insets.right) {
-                (AutoPx::Len(_), _) => cb_x + inset_px(style.insets.left, cb_w).unwrap_or(0.0) + ml,
+                (AutoPx::Len(_), _) => cb_x + inset_px(&style.insets.left, cb_w).unwrap_or(0.0) + ml,
                 (_, AutoPx::Len(_)) => {
-                    cb_x + cb_w - inset_px(style.insets.right, cb_w).unwrap_or(0.0) - r.width - mr
+                    cb_x + cb_w - inset_px(&style.insets.right, cb_w).unwrap_or(0.0) - r.width - mr
                 }
                 _ => {
                     // Static position: where the box would sit in flow.
@@ -1496,9 +1519,9 @@ pub fn compute_layout(
 
             // ---- Y axis ----
             let ny = match (&style.insets.top, &style.insets.bottom) {
-                (AutoPx::Len(_), _) => cb_y + inset_px(style.insets.top, cb_h).unwrap_or(0.0) + mt,
+                (AutoPx::Len(_), _) => cb_y + inset_px(&style.insets.top, cb_h).unwrap_or(0.0) + mt,
                 (_, AutoPx::Len(_)) => {
-                    cb_y + cb_h - inset_px(style.insets.bottom, cb_h).unwrap_or(0.0) - r.height - mb
+                    cb_y + cb_h - inset_px(&style.insets.bottom, cb_h).unwrap_or(0.0) - r.height - mb
                 }
                 _ => {
                     // Static position: after the previous in-flow siblings.
@@ -1514,7 +1537,7 @@ pub fn compute_layout(
                         if let Some(cr) = result.rects.get(&c) {
                             let cmb = styles
                                 .get(c)
-                                .map(|s| offset_for_margin(s.margin.bottom))
+                                .map(|s| offset_for_margin(&s.margin.bottom))
                                 .unwrap_or(0.0);
                             cursor_y = cursor_y.max(cr.y + cr.height + cmb);
                         }
@@ -1984,46 +2007,53 @@ fn len_px(v: &Len) -> f32 {
     match v {
         Len::Px(px) => *px,
         Len::Percent(_) => 0.0,
+        Len::Calc(c) => c.px_part(),
     }
 }
 
 /// X position for a fixed/absolute box inside its containing block.
 fn resolve_inset_x(style: &ComputedStyle, rect: Rect, cb_width: f32) -> f32 {
-    let left = inset_px(style.insets.left, cb_width);
-    let right = inset_px(style.insets.right, cb_width);
+    let left = inset_px(&style.insets.left, cb_width);
+    let right = inset_px(&style.insets.right, cb_width);
     if let Some(l) = left {
-        return l + offset_for_margin(style.margin.left);
+        return l + offset_for_margin(&style.margin.left);
     }
     if let Some(r) = right {
-        return cb_width - r - rect.width + offset_for_margin(style.margin.right);
+        return cb_width - r - rect.width + offset_for_margin(&style.margin.right);
     }
     rect.x
 }
 
 fn resolve_inset_y(style: &ComputedStyle, rect: Rect, cb_height: f32) -> f32 {
-    let top = inset_px(style.insets.top, cb_height);
-    let bottom = inset_px(style.insets.bottom, cb_height);
+    let top = inset_px(&style.insets.top, cb_height);
+    let bottom = inset_px(&style.insets.bottom, cb_height);
     if let Some(t) = top {
-        return t + offset_for_margin(style.margin.top);
+        return t + offset_for_margin(&style.margin.top);
     }
     if let Some(b) = bottom {
-        return cb_height - b - rect.height + offset_for_margin(style.margin.bottom);
+        return cb_height - b - rect.height + offset_for_margin(&style.margin.bottom);
     }
     rect.y
 }
 
-fn inset_px(v: AutoPx, basis: f32) -> Option<f32> {
+fn inset_px(v: &AutoPx, basis: f32) -> Option<f32> {
     match v {
         AutoPx::Auto => None,
-        AutoPx::Len(Len::Px(px)) => Some(px),
-        AutoPx::Len(Len::Percent(p)) => Some(p * basis),
+        AutoPx::Len(len) => Some(len.resolve(basis)),
     }
 }
 
-fn offset_for_margin(v: AutoPx) -> f32 {
+/// Resolve an `auto | <length-percentage>` to px (auto -> 0 callers guard).
+fn resolve_auto(v: &AutoPx, base: f32) -> f32 {
     match v {
-        AutoPx::Len(Len::Px(px)) => px,
-        AutoPx::Len(Len::Percent(p)) => p * 16.0,
+        AutoPx::Auto => 0.0,
+        AutoPx::Len(len) => len.resolve(base),
+    }
+}
+
+fn offset_for_margin(v: &AutoPx) -> f32 {
+    match v {
+        AutoPx::Len(len) => len.resolve(16.0),
         AutoPx::Auto => 0.0,
     }
 }
