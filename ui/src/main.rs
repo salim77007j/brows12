@@ -725,6 +725,12 @@ impl Gui {
                 }
                 std::thread::sleep(Duration::from_millis(10));
             }
+            // Return freed arena pages to the OS, otherwise RSS keeps the
+            // hibernated tabs' memory as allocator-retained pages and the
+            // governor's reclaim is invisible to /proc.
+            unsafe {
+                libc::malloc_trim(0);
+            }
             rss_now = servo_host::metrics::rss_kb().unwrap_or(rss_now);
         }
         if rss_now != rss {
