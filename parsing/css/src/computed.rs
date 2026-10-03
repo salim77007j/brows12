@@ -27,6 +27,10 @@ pub struct ComputedStyle {
     pub border_width: Edges<Len>,
     pub border_color: Rgba,
     pub border_radius: f32,
+    /// `box-shadow` layers, in declaration order (CSS Backgrounds L3 §6.1).
+    pub box_shadows: Vec<crate::values::Shadow>,
+    /// `text-shadow` layers, in declaration order (CSS Text Decor L3).
+    pub text_shadows: Vec<crate::values::Shadow>,
     pub width: AutoPx,
     pub height: AutoPx,
     /// `min-width` / `min-height`: `auto` (default) = content-based minimum;
@@ -103,6 +107,8 @@ impl Default for ComputedStyle {
             border_width: Edges::splat(Len::Px(0.0)),
             border_color: [0, 0, 0, 255],
             border_radius: 0.0,
+            box_shadows: Vec::new(),
+            text_shadows: Vec::new(),
             width: AutoPx::Auto,
             height: AutoPx::Auto,
             min_width: AutoPx::Auto,

@@ -419,6 +419,41 @@ pub(crate) fn apply_property(
             s.flex.basis = map_flex_basis(&f.basis, &lctx);
         }
         Property::FlexBasis(b, _) => s.flex.basis = map_flex_basis(b, &lctx),
+        Property::BoxShadow(list, _) => {
+            s.box_shadows = list
+                .iter()
+                .filter_map(|sh| {
+                    shadow_of(
+                        &sh.color,
+                        &sh.x_offset,
+                        &sh.y_offset,
+                        &sh.blur,
+                        &sh.spread,
+                        sh.inset,
+                        &lctx,
+                        s.color,
+                    )
+                })
+                .collect();
+        }
+        Property::TextShadow(list) => {
+            s.text_shadows = list
+                .iter()
+                .filter_map(|sh| {
+                    // text-shadow has no spread in L3; L4 spread defaults 0.
+                    shadow_of(
+                        &sh.color,
+                        &sh.x_offset,
+                        &sh.y_offset,
+                        &sh.blur,
+                        &sh.spread,
+                        false,
+                        &lctx,
+                        s.color,
+                    )
+                })
+                .collect();
+        }
         Property::FlexGrow(g, _) => s.flex.grow = *g,
         Property::JustifyContent(j, _) => {
             use lightningcss::properties::align::{
@@ -1080,6 +1115,37 @@ fn grid_line(
         GL::Line { index, .. } => S::Line(*index as i16),
         GL::Span { index, .. } => S::Span((*index).max(1) as u16),
     }
+}
+
+/// Map one lightningcss shadow layer onto our engine-friendly [`Shadow`].
+/// Lengths resolve via the cascade context (em/rem/vw/vh included); a
+/// missing color means `currentColor`.
+#[allow(clippy::too_many_arguments)]
+fn shadow_of(
+    color: &CssColor,
+    x: &lightningcss::values::length::Length,
+    y: &lightningcss::values::length::Length,
+    blur: &lightningcss::values::length::Length,
+    spread: &lightningcss::values::length::Length,
+    inset: bool,
+    lctx: &LengthContext,
+    current: Rgba,
+) -> Option<Shadow> {
+    use lightningcss::values::length::Length as LcLen;
+    let px = |l: &LcLen| match l {
+        LcLen::Value(v) => length_to_px(v, lctx),
+        // calc() inside a shadow layer is rare; skip the layer (error
+        // recovery) rather than fail the whole property.
+        LcLen::Calc(_) => None,
+    };
+    Some(Shadow {
+        color: crate::stylesheet::resolve_color(color, current)?,
+        x: px(x)?,
+        y: px(y)?,
+        blur: px(blur)?.max(0.0),
+        spread: px(spread)?,
+        inset,
+    })
 }
 
 /// `<length-percentage-or-auto>` for flex-basis: keep percentages

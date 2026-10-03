@@ -3,7 +3,7 @@
 use crate::display_list::{DisplayItem, DisplayList};
 use crate::RenderError;
 use std::sync::{Arc, Mutex};
-use tiny_skia::{Color, Paint, PathBuilder, Pixmap, Rect as SkRect};
+use tiny_skia::{Color, Paint, PathBuilder, Pixmap, Rect as SkRect, Transform};
 
 /// Counters from one paint pass (telemetry for benchmarks).
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -59,6 +59,9 @@ impl Rasterizer {
                 DisplayItem::Rect { rect, color, radius } => {
                     fill_rect(&mut pixmap, rect, *color, *radius, clip_stack.last());
                     stats.rects += 1;
+                }
+                DisplayItem::BoxShadow { rect, shadow, radius } => {
+                    paint_box_shadow(&mut pixmap, rect, shadow, *radius, clip_stack.last());
                 }
                 DisplayItem::Border { rect, widths, color, radius } => {
                     stroke_border(&mut pixmap, rect, *widths, *color, *radius, clip_stack.last());
@@ -116,6 +119,7 @@ impl Rasterizer {
             color,
             white_space_pre: false,
             align: brows12_css::values::TextAlign::Start,
+            shadows: Vec::new(),
         };
         let measurer = brows12_layout::TextMeasurer::new(self.font_system.clone());
         let leaf = brows12_layout::LeafContext::Text {
@@ -287,6 +291,59 @@ impl Rasterizer {
         let tint =
             tiny_skia::Color::from_rgba8(style.color[0], style.color[1], style.color[2], 255);
 
+        // ---- text-shadow passes (painted beneath the ink) ----
+        // Each layer renders its glyph silhouette into a tight offscreen
+        // pixmap, blurs it once, tints and blends. Rendering the silhouette
+        // white lets one blur helper serve both box and text shadows.
+        let ink_white = tiny_skia::Color::from_rgba8(255, 255, 255, 255);
+        for shadow in &style.shadows {
+            if shadow.color[3] == 0 {
+                continue;
+            }
+            let m = (shadow.blur * 1.5).ceil() + 2.0;
+            let min_x = (rect.x - m).floor().max(0.0);
+            let min_y = (rect.y - m).floor().max(0.0);
+            let max_x = (rect.x + rect.width + m).ceil().min(pixmap.width() as f32);
+            let max_y = (rect.y + rect.height + m).ceil().min(pixmap.height() as f32);
+            let lw = ((max_x - min_x).ceil() as i32).max(1) as u32;
+            let lh = ((max_y - min_y).ceil() as i32).max(1) as u32;
+            let Some(mut layer) = Pixmap::new(lw, lh) else { continue };
+
+            for run in buffer.layout_runs() {
+                let line_x = match style.align {
+                    brows12_css::values::TextAlign::Center => {
+                        rect.x + (rect.width - run.line_w).max(0.0) / 2.0
+                    }
+                    brows12_css::values::TextAlign::Right => {
+                        rect.x + (rect.width - run.line_w).max(0.0)
+                    }
+                    _ => rect.x,
+                };
+                for glyph in run.glyphs {
+                    let physical = glyph.physical((line_x, rect.y + run.line_y), 1.0);
+                    if let Some(image) = cache.get_image(&mut fs, physical.cache_key) {
+                        // swash placement is applied exactly once here (see
+                        // blit_swash_image notes): bitmap origin relative to
+                        // the offscreen layer's top-left corner.
+                        let x = (physical.x as f32
+                            + image.placement.left as f32
+                            + shadow.x
+                            - min_x) as i32;
+                        let y = (physical.y as f32
+                            - image.placement.top as f32
+                            + shadow.y
+                            - min_y) as i32;
+                        blit_swash_image(&mut layer, image, x, y, ink_white, None);
+                    }
+                }
+            }
+
+            if shadow.blur > 0.0 {
+                blur_pixmap_alpha(&mut layer, shadow.blur / 2.0);
+            }
+            tint_and_composite_layer(&mut layer, shadow.color, min_x, min_y, pixmap, mask);
+        }
+
         for run in buffer.layout_runs() {
             // Align lines horizontally per text-align.
             let line_x = match style.align {
@@ -332,6 +389,63 @@ impl Rasterizer {
             }
         }
     }
+}
+
+/// Tint a white blurred silhouette layer with the shadow color and blend it
+/// into the target frame, intersecting the active clip mask.
+fn tint_and_composite_layer(
+    layer: &mut Pixmap,
+    color: [u8; 4],
+    min_x: f32,
+    min_y: f32,
+    target: &mut Pixmap,
+    mask: Option<&tiny_skia::Mask>,
+) {
+    let (cr, cg, cb, ca) = (color[0] as u32, color[1] as u32, color[2] as u32, color[3] as u32);
+    // Data is premultiplied RGBA (byteorder: R,G,B,A). The layer holds an
+    // opaque-white silhouette whose alpha was blurred: rgb == alpha.
+    // Retint keeps the premultiplied invariant:
+    // alpha' = alpha * ca/255, rgb' = rgb * ca/255 = alpha'.
+    for px in layer.data_mut().chunks_exact_mut(4) {
+        let a0 = px[3] as u32;
+        let a1 = a0 * ca / 255;
+        px[0] = (cr * a1 / 255) as u8;
+        px[1] = (cg * a1 / 255) as u8;
+        px[2] = (cb * a1 / 255) as u8;
+        px[3] = a1 as u8;
+    }
+    if let Some(m) = mask {
+        let mw = m.data();
+        let lw = layer.width() as usize;
+        let lh = layer.height() as usize;
+        let tw = target.width() as usize;
+        for y in 0..lh {
+            let ay = min_y as usize + y;
+            if ay >= target.height() as usize {
+                break;
+            }
+            for x in 0..lw {
+                let ax = min_x as usize + x;
+                if ax >= tw {
+                    break;
+                }
+                let clip = mw[ay * tw + ax] as u32;
+                if clip < 255 {
+                    let idx = y * lw + x;
+                    let a = layer.data_mut()[idx * 4 + 3] as u32;
+                    layer.data_mut()[idx * 4 + 3] = (a * clip / 255) as u8;
+                }
+            }
+        }
+    }
+    target.draw_pixmap(
+        min_x as i32,
+        min_y as i32,
+        layer.as_ref(),
+        &tiny_skia::PixmapPaint::default(),
+        Transform::identity(),
+        None,
+    );
 }
 
 /// Paint a CSS gradient into a rect (per-pixel projection; v1 covers the
@@ -468,6 +582,209 @@ fn sample_stops(pos: &[f32], stops: &[brows12_css::values::GradientStop], t: f32
         }
     }
     stops[stops.len() - 1].color
+}
+
+/// Paint one `box-shadow` layer beneath its box (CSS Backgrounds L3 §6.1).
+///
+/// The shadow shape is rendered into a tight offscreen layer, blurred with
+/// a 3-pass box blur (an accepted gaussian approximation, std dev =
+/// blur/2 per spec), tinted, clipped by the active clip stack and blended
+/// beneath. Inset shadows approximate the spec by blurring the *hole*
+/// (box minus shape) inside the box.
+fn paint_box_shadow(
+    pixmap: &mut Pixmap,
+    rect: &brows12_layout::Rect,
+    shadow: &brows12_css::values::Shadow,
+    radius: f32,
+    mask: Option<&tiny_skia::Mask>,
+) {
+    if shadow.color[3] == 0 {
+        return;
+    }
+    // The blurred silhouette spreads roughly blur*1.5 past the shape.
+    let margin = (shadow.blur * 1.5).ceil() + 2.0;
+
+    // Shape rect: outset grows by spread and moves by (x, y).
+    let shape = brows12_layout::Rect {
+        x: rect.x + shadow.x - shadow.spread,
+        y: rect.y + shadow.y - shadow.spread,
+        width: (rect.width + shadow.spread * 2.0).max(0.0),
+        height: (rect.height + shadow.spread * 2.0).max(0.0),
+    };
+
+    // Layer bounds cover shape OR box (inset shadows stay in the box).
+    let bounds_x = if shadow.inset { rect.x } else { shape.x };
+    let bounds_y = if shadow.inset { rect.y } else { shape.y };
+    let bounds_r = if shadow.inset { rect.x + rect.width } else { shape.x + shape.width };
+    let bounds_b = if shadow.inset { rect.y + rect.height } else { shape.y + shape.height };
+    let min_x = (bounds_x - margin).floor().max(0.0);
+    let min_y = (bounds_y - margin).floor().max(0.0);
+    let max_x = (bounds_r + margin).ceil().min(pixmap.width() as f32);
+    let max_y = (bounds_b + margin).ceil().min(pixmap.height() as f32);
+    let lw = (max_x - min_x).ceil().max(1.0) as u32;
+    let lh = (max_y - min_y).ceil().max(1.0) as u32;
+    if lw < 2 || lh < 2 {
+        return;
+    }
+    let Some(mut layer) = Pixmap::new(lw, lh) else { return };
+    let off = (min_x, min_y);
+    let white = Color::from_rgba8(255, 255, 255, 255);
+    let mut paint = Paint::default();
+    paint.set_color(white);
+    paint.anti_alias = true;
+
+    if shadow.inset {
+        // Inset v1 approximation: the visible shadow is the blurred ring
+        // between the box edge and the (offset, spread-shrunk) hole.
+        let hole = brows12_layout::Rect {
+            x: rect.x + shadow.x + shadow.spread,
+            y: rect.y + shadow.y + shadow.spread,
+            width: (rect.width - shadow.spread * 2.0).max(0.0),
+            height: (rect.height - shadow.spread * 2.0).max(0.0),
+        };
+        let box_rect = brows12_layout::Rect {
+            x: rect.x - off.0,
+            y: rect.y - off.1,
+            width: rect.width,
+            height: rect.height,
+        };
+        if let Some(path) = rounded_rect_path(&box_rect, radius) {
+            layer.fill_path(
+                &path,
+                &paint,
+                tiny_skia::FillRule::Winding,
+                Transform::identity(),
+                None,
+            );
+        }
+        // Erase the hole with a destination-out pass.
+        if hole.width > 0.5 && hole.height > 0.5 {
+            let mut erase = paint.clone();
+            erase.blend_mode = tiny_skia::BlendMode::DestinationOut;
+            let hole_local = brows12_layout::Rect {
+                x: hole.x - off.0,
+                y: hole.y - off.1,
+                width: hole.width,
+                height: hole.height,
+            };
+            if let Some(path) = rounded_rect_path(&hole_local, radius) {
+                layer.fill_path(
+                    &path,
+                    &erase,
+                    tiny_skia::FillRule::Winding,
+                    Transform::identity(),
+                    None,
+                );
+            }
+        }
+    } else {
+        let shape_local = brows12_layout::Rect {
+            x: shape.x - off.0,
+            y: shape.y - off.1,
+            width: shape.width,
+            height: shape.height,
+        };
+        if let Some(path) = rounded_rect_path(&shape_local, radius) {
+            layer.fill_path(
+                &path,
+                &paint,
+                tiny_skia::FillRule::Winding,
+                Transform::identity(),
+                None,
+            );
+        }
+    }
+
+    if shadow.blur > 0.0 {
+        blur_pixmap_alpha(&mut layer, shadow.blur / 2.0);
+    }
+
+    tint_and_composite_layer(&mut layer, shadow.color, min_x, min_y, pixmap, mask);
+}
+
+fn blur_pixmap_alpha(pixmap: &mut Pixmap, sigma: f32) {
+    if sigma < 0.3 {
+        return;
+    }
+    let radius = (sigma * 1.2).ceil().max(1.0) as usize;
+    let w = pixmap.width() as usize;
+    let h = pixmap.height() as usize;
+    let src: Vec<u32> = {
+        let data = pixmap.data();
+        (0..w * h).map(|i| data[i * 4 + 3] as u32).collect()
+    };
+    let mut cur = src;
+    let mut next = vec![0u32; w * h];
+    // 3 box-blur passes approximate a gaussian (state of the art for
+    // cheap soft shadows). Each pass slides a clamped window via prefix
+    // sums so every pixel is the mean of its (2r+1) neighbourhood.
+    for _ in 0..3 {
+        // Horizontal.
+        {
+            let mut prefix = vec![0u64; w + 1];
+            for y in 0..h {
+                let row = y * w;
+                for x in 0..w {
+                    prefix[x + 1] = prefix[x] + cur[row + x] as u64;
+                }
+                for x in 0..w {
+                    let lo = x.saturating_sub(radius);
+                    let hi = (x + radius + 1).min(w);
+                    next[row + x] =
+                        (((prefix[hi] - prefix[lo]) / (hi - lo) as u64) as u32).min(255);
+                }
+            }
+        }
+        // Vertical (reads the horizontal result in `next`).
+        {
+            let mut prefix = vec![0u64; h + 1];
+            for x in 0..w {
+                for y in 0..h {
+                    prefix[y + 1] = prefix[y] + next[y * w + x] as u64;
+                }
+                for y in 0..h {
+                    let lo = y.saturating_sub(radius);
+                    let hi = (y + radius + 1).min(h);
+                    next[y * w + x] =
+                        (((prefix[hi] - prefix[lo]) / (hi - lo) as u64) as u32).min(255);
+                }
+            }
+        }
+        std::mem::swap(&mut cur, &mut next);
+    }
+    let data = pixmap.data_mut();
+    for (i, v) in cur.iter().enumerate() {
+        data[i * 4 + 3] = *v as u8;
+    }
+}
+
+/// Build a rounded-rect path via 4-corner quadratic curves (tiny-skia-path
+/// has no push_round_rect; manual construction matches the border renderer).
+fn rounded_rect_path(rect: &brows12_layout::Rect, radius: f32) -> Option<tiny_skia::Path> {
+    let mut pb = PathBuilder::new();
+    let x = rect.x;
+    let y = rect.y;
+    let w = rect.width;
+    let h = rect.height;
+    if w <= 0.0 || h <= 0.0 {
+        return None;
+    }
+    let r = radius.max(0.0).min(w / 2.0).min(h / 2.0);
+    if r < 0.5 {
+        pb.push_rect(SkRect::from_xywh(x, y, w, h)?);
+    } else {
+        pb.move_to(x + r, y);
+        pb.line_to(x + w - r, y);
+        pb.quad_to(x + w, y, x + w, y + r);
+        pb.line_to(x + w, y + h - r);
+        pb.quad_to(x + w, y + h, x + w - r, y + h);
+        pb.line_to(x + r, y + h);
+        pb.quad_to(x, y + h, x, y + h - r);
+        pb.line_to(x, y + r);
+        pb.quad_to(x, y, x + r, y);
+        pb.close();
+    }
+    pb.finish()
 }
 
 /// Fill an axis-aligned (optionally rounded) rect with premultiplied blending.
@@ -849,6 +1166,7 @@ mod tests {
             color: [0, 0, 0, 255],
             white_space_pre: false,
             align: brows12_css::values::TextAlign::Start,
+            shadows: Vec::new(),
         };
         let list = DisplayList {
             tagged: Vec::new(),
@@ -912,6 +1230,7 @@ mod tests {
                     DisplayItem::Image { .. } => "image",
                     DisplayItem::GradientRect { .. } => "gradient",
                     DisplayItem::PushClip { .. } | DisplayItem::PopClip => "clip",
+                    DisplayItem::BoxShadow { .. } => "shadow",
                 })
                 .collect::<Vec<_>>()
         );

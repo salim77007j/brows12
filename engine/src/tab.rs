@@ -434,6 +434,7 @@ impl Tab {
                     brows12_render::display_list::DisplayItem::Image { .. } => "image",
                     brows12_render::display_list::DisplayItem::PushClip { .. } => "pushclip",
                     brows12_render::display_list::DisplayItem::PopClip => "popclip",
+                    brows12_render::display_list::DisplayItem::BoxShadow { .. } => "shadow",
                 };
                 *kinds.entry(k).or_insert(0) += 1;
             }

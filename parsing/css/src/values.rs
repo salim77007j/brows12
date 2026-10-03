@@ -354,6 +354,18 @@ pub enum LineHeight {
 /// RGBA color, 8 bit per channel.
 pub type Rgba = [u8; 4];
 
+/// One shadow of a box or text run (`box-shadow` / `text-shadow`).
+/// Lengths are resolved px; `inset` is only meaningful for box shadows.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Shadow {
+    pub color: Rgba,
+    pub x: f32,
+    pub y: f32,
+    pub blur: f32,
+    pub spread: f32,
+    pub inset: bool,
+}
+
 pub const TRANSPARENT: Rgba = [0, 0, 0, 0];
 
 use crate::atr::EasingKeyword;
