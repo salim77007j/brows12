@@ -116,7 +116,7 @@ impl Default for ComputedStyle {
             z_index: ZIndex::Auto,
             flex_direction: FlexDirection::Row,
             flex_wrap: FlexWrap::NoWrap,
-            flex: FlexBox { grow: 0.0, shrink: 1.0 },
+            flex: FlexBox { grow: 0.0, shrink: 1.0, basis: FlexBasis::Auto },
             justify_content: JustifyContent::FlexStart,
             align_items: AlignItems::Stretch,
             row_gap: Len::Px(0.0),

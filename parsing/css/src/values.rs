@@ -27,14 +27,12 @@ impl CalcExpr {
             CalcExpr::Percent(p) => *p * base,
             CalcExpr::Sum(a, b) => a.resolve(base) + b.resolve(base),
             CalcExpr::Product(n, v) => *n * v.resolve(base),
-            CalcExpr::Min(args) => args
-                .iter()
-                .map(|a| a.resolve(base))
-                .fold(f32::INFINITY, f32::min),
-            CalcExpr::Max(args) => args
-                .iter()
-                .map(|a| a.resolve(base))
-                .fold(f32::NEG_INFINITY, f32::max),
+            CalcExpr::Min(args) => {
+                args.iter().map(|a| a.resolve(base)).fold(f32::INFINITY, f32::min)
+            }
+            CalcExpr::Max(args) => {
+                args.iter().map(|a| a.resolve(base)).fold(f32::NEG_INFINITY, f32::max)
+            }
             CalcExpr::Clamp(min, val, max) => {
                 let m = min.resolve(base);
                 let v = val.resolve(base);
@@ -52,10 +50,9 @@ impl CalcExpr {
             CalcExpr::Percent(_) => 0.0,
             CalcExpr::Sum(a, b) => a.px_part() + b.px_part(),
             CalcExpr::Product(n, v) => *n * v.px_part(),
-            CalcExpr::Min(args) | CalcExpr::Max(args) => args
-                .first()
-                .map(|a| a.px_part())
-                .unwrap_or(0.0),
+            CalcExpr::Min(args) | CalcExpr::Max(args) => {
+                args.first().map(|a| a.px_part()).unwrap_or(0.0)
+            }
             CalcExpr::Clamp(_, val, _) => val.px_part(),
         }
     }
@@ -102,12 +99,7 @@ pub struct Edges<T> {
 impl<T: Clone> Edges<T> {
     /// Same value on all four edges.
     pub fn splat(v: T) -> Self {
-        Edges {
-            left: v.clone(),
-            bottom: v.clone(),
-            right: v.clone(),
-            top: v,
-        }
+        Edges { left: v.clone(), bottom: v.clone(), right: v.clone(), top: v }
     }
 }
 
@@ -130,6 +122,11 @@ pub enum Display {
     /// Chromium.
     InlineBlock,
     Flex,
+    /// `display: inline-flex`: an inline-level flex container. It lays its
+    /// children out with flexbox but sizes shrink-to-fit (max-content when
+    /// width is auto) and participates in flow as an atomic box, like
+    /// inline-block. Pill/tag/button groups on real sites rely on it.
+    InlineFlex,
     None,
     /// CSS table boxes are laid out as anonymous flex structures
     /// (table → column flex, row → row flex, cell → flex item).
@@ -317,10 +314,26 @@ pub enum AlignItems {
     End,
 }
 
+/// `flex-basis`: the initial main size of a flex item before free space
+/// is distributed. `Auto` defers to the `width`/`height` property (and,
+/// when that is also auto, to the item's content size); `Content` always
+/// sizes to the content. Percentages resolve against the flex container's
+/// inner main size.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum FlexBasis {
+    #[default]
+    Auto,
+    /// `flex-basis: content` (and the deferred part of `flex: 1 auto`)
+    Content,
+    Px(f32),
+    Percent(f32),
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct FlexBox {
     pub grow: f32,
     pub shrink: f32,
+    pub basis: FlexBasis,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]

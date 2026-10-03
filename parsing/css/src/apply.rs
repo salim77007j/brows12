@@ -34,12 +34,8 @@ pub(crate) fn apply_property(
         // `--brows-clear` into typed fields afterwards.
         Property::Custom(cp) => {
             let name = match &cp.name {
-                lightningcss::properties::custom::CustomPropertyName::Custom(d) => {
-                    d.0.to_string()
-                }
-                lightningcss::properties::custom::CustomPropertyName::Unknown(i) => {
-                    i.0.to_string()
-                }
+                lightningcss::properties::custom::CustomPropertyName::Custom(d) => d.0.to_string(),
+                lightningcss::properties::custom::CustomPropertyName::Unknown(i) => i.0.to_string(),
             };
             if name.starts_with("--brows-") {
                 // Reserved values are simple keywords (left/right/none/both);
@@ -94,10 +90,8 @@ pub(crate) fn apply_property(
             let mut lctx_fs = lctx;
             lctx_fs.font_size = parent_size;
             let resolved = match fs {
-                FontSize::Length(lp) => {
-                    crate::computed::length_percentage_to_len(lp, &lctx_fs)
-                        .map(|len| len.resolve(parent_size))
-                }
+                FontSize::Length(lp) => crate::computed::length_percentage_to_len(lp, &lctx_fs)
+                    .map(|len| len.resolve(parent_size)),
                 FontSize::Absolute(kw) => Some(absolute_font_size(*kw)),
                 FontSize::Relative(r) => Some(match r {
                     RelativeFontSize::Larger => parent_size * 1.2,
@@ -422,7 +416,9 @@ pub(crate) fn apply_property(
         Property::Flex(f, _) => {
             s.flex.grow = f.grow;
             s.flex.shrink = f.shrink;
+            s.flex.basis = map_flex_basis(&f.basis, &lctx);
         }
+        Property::FlexBasis(b, _) => s.flex.basis = map_flex_basis(b, &lctx),
         Property::FlexGrow(g, _) => s.flex.grow = *g,
         Property::JustifyContent(j, _) => {
             use lightningcss::properties::align::{
@@ -482,8 +478,10 @@ pub(crate) fn apply_property(
             s.grid_auto_rows = track_size_list(&list.0, &lctx);
         }
         Property::GridAutoFlow(flow) => {
-            s.grid_auto_flow_column = flow.contains(lightningcss::properties::grid::GridAutoFlow::Column);
-            s.grid_auto_flow_dense = flow.contains(lightningcss::properties::grid::GridAutoFlow::Dense);
+            s.grid_auto_flow_column =
+                flow.contains(lightningcss::properties::grid::GridAutoFlow::Column);
+            s.grid_auto_flow_dense =
+                flow.contains(lightningcss::properties::grid::GridAutoFlow::Dense);
         }
         Property::GridColumn(gc) => {
             s.grid_column = (grid_line(&gc.start), grid_line(&gc.end));
@@ -858,8 +856,13 @@ fn size(v: &Size, lctx: &LengthContext) -> Option<AutoPx> {
 /// their content size — the `min-width: 0` idiom real skins depend on.
 fn min_size(v: &Size, lctx: &LengthContext) -> Option<AutoPx> {
     match v {
-        Size::Auto | Size::MinContent(_) | Size::MaxContent(_) | Size::FitContent(_)
-        | Size::FitContentFunction(_) | Size::Stretch(_) | Size::Contain => Some(AutoPx::Auto),
+        Size::Auto
+        | Size::MinContent(_)
+        | Size::MaxContent(_)
+        | Size::FitContent(_)
+        | Size::FitContentFunction(_)
+        | Size::Stretch(_)
+        | Size::Contain => Some(AutoPx::Auto),
         Size::LengthPercentage(lp) => length_percentage_to_len(lp, lctx).map(AutoPx::Len),
     }
 }
@@ -873,7 +876,6 @@ fn max_size(v: &MaxSize, lctx: &LengthContext) -> Option<AutoPx> {
         _ => None,
     }
 }
-
 
 /// `<length-percentage-or-auto>` for logical margins.
 fn logical_lpa(
@@ -1068,13 +1070,36 @@ fn track_breadth(
 }
 
 /// One `<grid-line>` → symbolic line spec (named lines/areas unsupported).
-fn grid_line(gl: &lightningcss::properties::grid::GridLine<'static>) -> crate::values::GridLineSpec {
+fn grid_line(
+    gl: &lightningcss::properties::grid::GridLine<'static>,
+) -> crate::values::GridLineSpec {
     use crate::values::GridLineSpec as S;
     use lightningcss::properties::grid::GridLine as GL;
     match gl {
         GL::Auto | GL::Area { .. } => S::Auto,
         GL::Line { index, .. } => S::Line(*index as i16),
         GL::Span { index, .. } => S::Span((*index).max(1) as u16),
+    }
+}
+
+/// `<length-percentage-or-auto>` for flex-basis: keep percentages
+/// symbolic so the layout engine can resolve them against the flex
+/// container's inner main size (taffy does this natively).
+fn map_flex_basis(
+    v: &lightningcss::values::length::LengthPercentageOrAuto,
+    lctx: &LengthContext,
+) -> FlexBasis {
+    use lightningcss::values::length::LengthPercentageOrAuto as LPA;
+    match v {
+        LPA::Auto => FlexBasis::Auto,
+        LPA::LengthPercentage(lp) => match length_percentage_to_len(lp, lctx) {
+            Some(Len::Px(px)) => FlexBasis::Px(px),
+            Some(Len::Percent(p)) => FlexBasis::Percent(p),
+            // A calc we cannot classify: resolve eagerly at base 0 and let
+            // taffy treat it as a fixed length.
+            Some(Len::Calc(c)) => FlexBasis::Px(c.resolve(0.0)),
+            None => FlexBasis::Auto,
+        },
     }
 }
 
@@ -1092,8 +1117,22 @@ fn map_display(d: &LcDisplay) -> Display {
         LcDisplay::Keyword(DisplayKeyword::TableCell) => Display::TableCell,
         LcDisplay::Keyword(_) => Display::Block,
         LcDisplay::Pair(p) => match &p.inside {
-            DisplayInside::Flex(_) | DisplayInside::Box(_) => Display::Flex,
-            DisplayInside::Grid => Display::Grid,
+            // Flex: block-level when outside is block, inline-level
+            // (shrink-to-fit atomic box) when outside is inline.
+            DisplayInside::Flex(_) | DisplayInside::Box(_) => {
+                if matches!(p.outside, DisplayOutside::Inline) {
+                    Display::InlineFlex
+                } else {
+                    Display::Flex
+                }
+            }
+            DisplayInside::Grid => {
+                if matches!(p.outside, DisplayOutside::Inline) {
+                    Display::InlineFlex
+                } else {
+                    Display::Grid
+                }
+            }
             // CSS tables → anonymous flex structures (v1 approximation).
             DisplayInside::Table => Display::Table,
             DisplayInside::Flow if matches!(p.outside, DisplayOutside::Inline) => Display::Inline,

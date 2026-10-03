@@ -1,0 +1,91 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { margin: 0; font: 14px/1.4 sans-serif; background: #fff; }
+  .case { padding: 8px 12px; border-bottom: 1px solid #ddd; }
+  h4 { margin: 6px 0 4px; font-size: 12px; color: #666; }
+
+  /* 1. flex:1 + min-width:0 truncation */
+  .row1 { display: flex; width: 400px; border: 1px solid #999; }
+  .row1 .grow { flex: 1; min-width: 0; background: #cfe; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .row1 .fixed { flex: 0 0 120px; background: #fec; }
+
+  /* 2. flex:1 without min-width:0 — automatic minimum size floors at min-content */
+  .row2 { display: flex; width: 400px; border: 1px solid #999; }
+  .row2 > div { flex: 1; background: #eef; }
+  .row2 .longword { background: #fee; }
+
+  /* 3. nested flex */
+  .row3 { display: flex; width: 500px; gap: 6px; border: 1px solid #999; }
+  .row3 .col { display: flex; flex-direction: column; flex: 1; gap: 4px; }
+  .row3 .cell { background: #dfd; flex: 1; }
+  .row3 .side { width: 100px; background: #ffd; }
+
+  /* 4. inline-flex pills */
+  .pills { display: inline-flex; gap: 6px; padding: 4px 8px; background: #e8e8ff; border: 1px solid #88f; border-radius: 10px; }
+  .pills span { background: #fff; padding: 2px 8px; border: 1px solid #aad; border-radius: 8px; }
+  .pillrow { display: flex; align-items: center; gap: 10px; }
+  .pillrow .label { flex: 0 0 auto; }
+
+  /* 5. flex-basis explicit */
+  .row5 { display: flex; width: 420px; border: 1px solid #999; }
+  .row5 > div { background: #fdf; }
+  .row5 .b1 { flex: 1 1 60px; background: #dff; }
+  .row5 .b2 { flex: 2 1 30%; background: #ffd; }
+  .row5 .b3 { flex: 0 0 80px; background: #fdd; }
+
+  /* 6. shrink below content */
+  .row6 { display: flex; width: 300px; border: 1px solid #999; }
+  .row6 > div { flex-shrink: 1; background: #efe; padding: 4px; }
+</style>
+</head>
+<body>
+  <div class="case">
+    <h4>1. flex:1 + min-width:0 (ellipsis) beside fixed 120px item</h4>
+    <div class="row1">
+      <div class="grow">supercalifragilisticexpialidocious-and-more-text-here-truncates</div>
+      <div class="fixed">fixed 120px</div>
+    </div>
+  </div>
+  <div class="case">
+    <h4>2. flex:1 items — automatic minimum size floors at min-content</h4>
+    <div class="row2">
+      <div class="longword">unbreakablewordgoesherewithoutspaces</div>
+      <div>short text</div>
+    </div>
+  </div>
+  <div class="case">
+    <h4>3. nested flex: row of two column-flex cells + fixed side</h4>
+    <div class="row3">
+      <div class="col"><div class="cell">A1</div><div class="cell">A2</div></div>
+      <div class="col"><div class="cell">B1</div><div class="cell">B2</div></div>
+      <div class="side">side</div>
+    </div>
+  </div>
+  <div class="case">
+    <h4>4. inline-flex pill group inside flex row</h4>
+    <div class="pillrow">
+      <span class="label">Tags:</span>
+      <div class="pills"><span>rust</span><span>browsers</span><span>engines</span></div>
+      <span class="label">end</span>
+    </div>
+  </div>
+  <div class="case">
+    <h4>5. flex-basis: 60px / 30% / 80px with grow 1/2/0</h4>
+    <div class="row5">
+      <div class="b1">grow1</div>
+      <div class="b2">grow2</div>
+      <div class="b3">no-grow</div>
+    </div>
+  </div>
+  <div class="case">
+    <h4>6. shrink: two padded items squeezed into 300px</h4>
+    <div class="row6">
+      <div>first flexible item with padding</div>
+      <div>second item shrinks too</div>
+    </div>
+  </div>
+</body>
+</html>

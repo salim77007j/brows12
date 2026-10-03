@@ -9,7 +9,9 @@
 //! Inline flow (mixed inline boxes on one line), floats and tables are
 //! tracked in docs/ROADMAP.md.
 
-use brows12_css::values::{AutoPx, ClearSide, Display, FloatSide, Len, Position as CssPosition, TextAlign};
+use brows12_css::values::{
+    AutoPx, ClearSide, Display, FlexBasis, FloatSide, Len, Position as CssPosition, TextAlign,
+};
 use brows12_css::ComputedStyle;
 use brows12_html::{Document, NodeData, NodeId};
 use std::cell::RefCell;
@@ -18,7 +20,8 @@ use std::sync::{Arc, Mutex};
 
 pub mod inline;
 pub use inline::{
-    apply_alignment, collapse_ws, FloatBand, InlineFlowLayout, InlineItem, InlineLine, InlineSegment,
+    apply_alignment, collapse_ws, FloatBand, InlineFlowLayout, InlineItem, InlineLine,
+    InlineSegment,
 };
 
 /// Viewport the page lays out into.
@@ -95,21 +98,13 @@ pub struct TableSpans {
 
 /// Compute table slot assignments (the CSS 2.1 table algorithm's
 /// column-assignment step) for every table that has spanning cells.
-fn compute_table_spans(
-    doc: &Document,
-    styles: &brows12_css::StyleMap,
-) -> TableSpans {
+fn compute_table_spans(doc: &Document, styles: &brows12_css::StyleMap) -> TableSpans {
     let mut out = TableSpans::default();
     let Some(body) = doc.body().or_else(|| doc.document_element()) else {
         return out;
     };
     // Walk the whole tree; each table gets its own slot pass.
-    fn walk(
-        doc: &Document,
-        styles: &brows12_css::StyleMap,
-        node: NodeId,
-        out: &mut TableSpans,
-    ) {
+    fn walk(doc: &Document, styles: &brows12_css::StyleMap, node: NodeId, out: &mut TableSpans) {
         if !doc.is_element(node) {
             for &c in &doc.node(node).children {
                 walk(doc, styles, c, out);
@@ -139,11 +134,7 @@ fn compute_table_spans(
 /// Rows of a table: TableRow elements that directly contain cells, with
 /// row-group containers (also mapped to TableRow) recursed through.
 /// Nested tables are pruned (they compute their own slots).
-fn table_rows_of(
-    doc: &Document,
-    styles: &brows12_css::StyleMap,
-    table: NodeId,
-) -> Vec<NodeId> {
+fn table_rows_of(doc: &Document, styles: &brows12_css::StyleMap, table: NodeId) -> Vec<NodeId> {
     let mut rows = Vec::new();
     fn visit(doc: &Document, styles: &brows12_css::StyleMap, node: NodeId, rows: &mut Vec<NodeId>) {
         for &c in &doc.node(node).children {
@@ -154,7 +145,8 @@ fn table_rows_of(
             match st.display {
                 Display::TableRow => {
                     let is_group = doc.node(c).children.iter().any(|&g| {
-                        doc.is_element(g) && styles.get(g).map(|s| s.display) == Some(Display::TableRow)
+                        doc.is_element(g)
+                            && styles.get(g).map(|s| s.display) == Some(Display::TableRow)
                     });
                     if is_group {
                         visit(doc, styles, c, rows);
@@ -194,8 +186,7 @@ fn assign_table_slots(
     };
     let has_span = rows.iter().any(|&r| {
         doc.node(r).children.iter().any(|&c| {
-            doc.is_element(c)
-                && (raw_attr(c, "colspan") > 1 || raw_attr(c, "rowspan") > 1)
+            doc.is_element(c) && (raw_attr(c, "colspan") > 1 || raw_attr(c, "rowspan") > 1)
         })
     });
     if !has_span {
@@ -320,11 +311,11 @@ impl TextMeasurer {
 }
 
 /// Map CSS values onto taffy styles. `base` is the estimated percentage
-/// base (containing-block content width) used to resolve calc() here —
-/// taffy takes concrete values only.
+/// base (containing-block content width) used to resolve calc() here.
 fn taffy_dimension(v: AutoPx, base: f32) -> taffy::Dimension {
     match v {
         AutoPx::Auto => taffy::Dimension::auto(),
+        AutoPx::Len(Len::Percent(p)) => taffy::Dimension::percent(p),
         AutoPx::Len(len) => taffy::Dimension::length(len.resolve(base)),
     }
 }
@@ -333,17 +324,22 @@ fn taffy_dimension(v: AutoPx, base: f32) -> taffy::Dimension {
 fn taffy_auto_min(v: AutoPx, base: f32) -> taffy::LengthPercentageAuto {
     match v {
         AutoPx::Auto => taffy::LengthPercentageAuto::auto(),
+        AutoPx::Len(Len::Percent(p)) => taffy::LengthPercentageAuto::percent(p),
         AutoPx::Len(len) => taffy::LengthPercentageAuto::length(len.resolve(base)),
     }
 }
 
 fn taffy_len_or_percent(v: Len, base: f32) -> taffy::LengthPercentage {
-    taffy::LengthPercentage::length(v.resolve(base))
+    match v {
+        Len::Percent(p) => taffy::LengthPercentage::percent(p),
+        len => taffy::LengthPercentage::length(len.resolve(base)),
+    }
 }
 
 fn taffy_auto_len(v: AutoPx, base: f32) -> taffy::LengthPercentageAuto {
     match v {
         AutoPx::Auto => taffy::LengthPercentageAuto::auto(),
+        AutoPx::Len(Len::Percent(p)) => taffy::LengthPercentageAuto::percent(p),
         AutoPx::Len(len) => taffy::LengthPercentageAuto::length(len.resolve(base)),
     }
 }
@@ -392,7 +388,12 @@ fn build_taffy_style(
 ) -> taffy::Style {
     let display = match style.display {
         Display::None => taffy::Display::None,
-        Display::Flex | Display::Table | Display::TableRow => taffy::Display::Flex,
+        // inline-flex is inline-level, but taffy is block-only: the flex
+        // engine is identical and the inline-ness is modelled through the
+        // shrink-to-fit sizing below (same approximation as inline-block).
+        Display::Flex | Display::InlineFlex | Display::Table | Display::TableRow => {
+            taffy::Display::Flex
+        }
         Display::Block | Display::Inline | Display::TableCell | Display::InlineBlock => {
             taffy::Display::Block
         }
@@ -421,7 +422,10 @@ fn build_taffy_style(
             // the content floor to block children too, which blew up the
             // Vector-2022 containers to max-content widths, so floor at 0
             // outside flex/grid parents (an explicit min-width still wins).
-            let item = matches!(parent_display, Some(Display::Flex) | Some(Display::Grid));
+            let item = matches!(
+                parent_display,
+                Some(Display::Flex) | Some(Display::InlineFlex) | Some(Display::Grid)
+            );
             let conv = |v: &AutoPx| -> taffy::LengthPercentageAuto {
                 if !item && matches!(v, AutoPx::Auto) {
                     return taffy::LengthPercentageAuto::length(0.0);
@@ -455,9 +459,34 @@ fn build_taffy_style(
         ..taffy::Style::default()
     };
 
-    // Inline-block: shrink-to-fit. Width auto + not in a stretching row
-    // context -> max-content so buttons/inputs size to their content.
-    if style.display == Display::InlineBlock && style.width == AutoPx::Auto {
+    // Flex ITEM properties: grow/shrink/basis live on the item's own style
+    // and are read by the PARENT's flex algorithm. They were previously
+    // applied only inside the container block below, so a plain block item
+    // (display:block) never received `flex: ...` — every such item kept
+    // taffy's defaults (grow 0, basis auto) and content-sized instead of
+    // sharing free space. taffy ignores these on non-items, so applying
+    // them unconditionally is safe and matches the spec's "no effect on
+    // non-items" rule. Placed BEFORE the table-cell/row overrides below so
+    // the anonymous-flex table mapping keeps winning.
+    taffy_style.flex_grow = style.flex.grow;
+    taffy_style.flex_shrink = style.flex.shrink;
+    taffy_style.flex_basis = match style.flex.basis {
+        // `auto` defers to the size property and then content, which is
+        // the spec behaviour; `content` has no taffy equivalent, so the
+        // same auto fallback is used (documented approximation).
+        FlexBasis::Auto | FlexBasis::Content => taffy::Dimension::auto(),
+        FlexBasis::Px(px) => taffy::Dimension::length(px),
+        // Percentages stay symbolic: taffy resolves them against the
+        // flex container's inner main size.
+        FlexBasis::Percent(p) => taffy::Dimension::percent(p),
+    };
+
+    // Inline-block / inline-flex: shrink-to-fit. Width auto + not in a
+    // stretching row context -> max-content so buttons/inputs/pill groups
+    // size to their content.
+    if (style.display == Display::InlineBlock || style.display == Display::InlineFlex)
+        && style.width == AutoPx::Auto
+    {
         taffy_style.size.width = taffy::Dimension::max_content();
     }
 
@@ -562,7 +591,8 @@ fn build_taffy_style(
         } else {
             taffy_style.grid_auto_rows = vec![taffy::style::TrackSizingFunction::AUTO];
         }
-        taffy_style.grid_auto_flow = match (style.grid_auto_flow_column, style.grid_auto_flow_dense) {
+        taffy_style.grid_auto_flow = match (style.grid_auto_flow_column, style.grid_auto_flow_dense)
+        {
             (false, false) => taffy::style::GridAutoFlow::Row,
             (true, false) => taffy::style::GridAutoFlow::Column,
             (false, true) => taffy::style::GridAutoFlow::RowDense,
@@ -584,16 +614,12 @@ fn build_taffy_style(
                 }
             }
         };
-        taffy_style.grid_column = taffy::Line {
-            start: place(style.grid_column.0),
-            end: place(style.grid_column.1),
-        };
-        taffy_style.grid_row = taffy::Line {
-            start: place(style.grid_row.0),
-            end: place(style.grid_row.1),
-        };
+        taffy_style.grid_column =
+            taffy::Line { start: place(style.grid_column.0), end: place(style.grid_column.1) };
+        taffy_style.grid_row =
+            taffy::Line { start: place(style.grid_row.0), end: place(style.grid_row.1) };
     }
-    if style.display == Display::Flex {
+    if style.display == Display::Flex || style.display == Display::InlineFlex {
         taffy_style.flex_direction = match style.flex_direction {
             brows12_css::values::FlexDirection::Row => taffy::FlexDirection::Row,
             brows12_css::values::FlexDirection::RowReverse => taffy::FlexDirection::RowReverse,
@@ -626,8 +652,6 @@ fn build_taffy_style(
             brows12_css::values::AlignItems::Start => taffy::AlignItems::START,
             brows12_css::values::AlignItems::End => taffy::AlignItems::END,
         });
-        taffy_style.flex_grow = style.flex.grow;
-        taffy_style.flex_shrink = style.flex.shrink;
     }
 
     // Spanning table cells: explicit grid placement from the slot
@@ -767,49 +791,50 @@ pub fn compute_layout(
                     if !shrink_ctx.contains(&node) || style.width != AutoPx::Auto {
                         if let Some(&max_cols) = spans.tables.get(&node) {
                             use taffy::prelude::TaffyAuto;
-                        let mut taffy_style =
-                            build_taffy_style(style, spans, node, parent_display, parent_w);
-                        taffy_style.display = taffy::Display::Grid;
-                        taffy_style.grid_template_columns = (0..max_cols)
-                            .map(|_| {
-                                taffy::style::GridTemplateComponent::Single(
-                                    taffy::style::TrackSizingFunction::AUTO,
-                                )
-                            })
-                            .collect();
-                        taffy_style.grid_auto_rows = vec![taffy::style::TrackSizingFunction::AUTO];
-                        let mut children: Vec<taffy::NodeId> = Vec::new();
-                        for row in table_rows_of(doc, styles, node) {
-                            for &cell in &doc.node(row).children {
-                                let Some(cs) = styles.get(cell) else { continue };
-                                if !doc.is_element(cell) || cs.display != Display::TableCell {
-                                    continue;
-                                }
-                                if let Some(t) = build(
-                                    doc,
-                                    styles,
-                                    tree,
-                                    node_ids,
-                                    image_sizes,
-                                    inline_ctx,
-                                    covered,
-                                    spans,
-                                    shrink_ctx,
-                                    Some(style.display),
-                                    parent_w,
-                                    cell,
-                                ) {
-                                    children.push(t);
+                            let mut taffy_style =
+                                build_taffy_style(style, spans, node, parent_display, parent_w);
+                            taffy_style.display = taffy::Display::Grid;
+                            taffy_style.grid_template_columns = (0..max_cols)
+                                .map(|_| {
+                                    taffy::style::GridTemplateComponent::Single(
+                                        taffy::style::TrackSizingFunction::AUTO,
+                                    )
+                                })
+                                .collect();
+                            taffy_style.grid_auto_rows =
+                                vec![taffy::style::TrackSizingFunction::AUTO];
+                            let mut children: Vec<taffy::NodeId> = Vec::new();
+                            for row in table_rows_of(doc, styles, node) {
+                                for &cell in &doc.node(row).children {
+                                    let Some(cs) = styles.get(cell) else { continue };
+                                    if !doc.is_element(cell) || cs.display != Display::TableCell {
+                                        continue;
+                                    }
+                                    if let Some(t) = build(
+                                        doc,
+                                        styles,
+                                        tree,
+                                        node_ids,
+                                        image_sizes,
+                                        inline_ctx,
+                                        covered,
+                                        spans,
+                                        shrink_ctx,
+                                        Some(style.display),
+                                        parent_w,
+                                        cell,
+                                    ) {
+                                        children.push(t);
+                                    }
                                 }
                             }
-                        }
-                        let tnode = if children.is_empty() {
-                            tree.new_leaf(taffy_style).ok()?
-                        } else {
-                            tree.new_with_children(taffy_style, &children).ok()?
-                        };
-                        node_ids.insert(node, tnode);
-                        return Some(tnode);
+                            let tnode = if children.is_empty() {
+                                tree.new_leaf(taffy_style).ok()?
+                            } else {
+                                tree.new_with_children(taffy_style, &children).ok()?
+                            };
+                            node_ids.insert(node, tnode);
+                            return Some(tnode);
                         }
                     }
                 }
@@ -818,8 +843,8 @@ pub fn compute_layout(
                 // Estimated content width for percentage/calc bases in
                 // children (block-flow approximation; taffy refines the
                 // actual boxes, this only resolves calc() at build time).
-                let pad_lr = style.padding.left.resolve(parent_w)
-                    + style.padding.right.resolve(parent_w);
+                let pad_lr =
+                    style.padding.left.resolve(parent_w) + style.padding.right.resolve(parent_w);
                 let border_lr = style.border_width.left.resolve(parent_w)
                     + style.border_width.right.resolve(parent_w);
                 let own_w = match &style.width {
@@ -919,7 +944,7 @@ pub fn compute_layout(
         // containers (each child is its own flex item).
         if matches!(
             styles.get(node).map(|s| s.display),
-            Some(Display::Flex) | Some(Display::Grid)
+            Some(Display::Flex) | Some(Display::InlineFlex) | Some(Display::Grid)
         ) {
             return doc.node(node).children.iter().map(|&c| Piece::Block(c)).collect();
         }
@@ -1194,23 +1219,29 @@ pub fn compute_layout(
                 taffy::AvailableSpace::MaxContent => None,
                 taffy::AvailableSpace::MinContent => Some(0.0),
             });
+            let measure_desc = if std::env::var("BROWS_MEASURE_DEBUG").is_ok() {
+                Some(match leaf {
+                    LeafContext::Text { text, font_size, .. } => format!(
+                        "Text {:?} font_size={font_size}",
+                        text.chars().take(30).collect::<String>()
+                    ),
+                    LeafContext::Inline { .. } => "Inline".to_string(),
+                    LeafContext::Image { .. } => "Image".to_string(),
+                })
+            } else {
+                None
+            };
             let (w, h) = match leaf {
                 LeafContext::Inline { items, .. } => {
-                    let bands = bands_cell
-                        .borrow()
-                        .get(&node)
-                        .cloned()
-                        .unwrap_or_default();
-                    let flow = inline::layout_inline_banded(
-                        measurer_ref,
-                        items,
-                        max_width,
-                        &bands,
-                    );
+                    let bands = bands_cell.borrow().get(&node).cloned().unwrap_or_default();
+                    let flow = inline::layout_inline_banded(measurer_ref, items, max_width, &bands);
                     (flow.width, flow.height.max(0.0))
                 }
                 other => measurer_ref.measure(other, max_width),
             };
+            if let Some(desc) = measure_desc {
+                eprintln!("MEASURE {desc} max_width={max_width:?} -> {w}x{h}");
+            }
             let size = taffy::Size { width: w, height: h };
             return taffy::LayoutOutput::from_sizes(
                 size,
@@ -1249,7 +1280,7 @@ pub fn compute_layout(
     let run_compute = |tree: &mut taffy::TaffyTree<LeafContext>,
                        root: taffy::NodeId,
                        measure: MeasureFn<'_>|
-    -> Result<(), taffy::TaffyError> {
+     -> Result<(), taffy::TaffyError> {
         tree.compute_layout_with_measure(
             root,
             taffy::Size {
@@ -1260,12 +1291,42 @@ pub fn compute_layout(
         )
     };
     let _ = run_compute(&mut tree, layout_root, &measure_fn);
+    if std::env::var("BROWS_ROOT_DEBUG").is_ok() {
+        if let Ok(rs) = tree.style(layout_root) {
+            eprintln!(
+                "ROOT_STYLE display={:?} size={:?}x{:?} min_h={:?} max_h={:?} basis={:?} grow={} shrink={} flex_dir={:?}",
+                rs.display, rs.size.width, rs.size.height,
+                rs.min_size.height, rs.max_size.height,
+                rs.flex_basis, rs.flex_grow, rs.flex_shrink, rs.flex_direction
+            );
+        }
+        if let Ok(rl) = tree.layout(layout_root) {
+            eprintln!("ROOT_LAYOUT {}x{}", rl.size.width, rl.size.height);
+        }
+        let kids = tree.children(layout_root).unwrap_or_default();
+        for (i, k) in kids.iter().take(4).enumerate() {
+            if let (Ok(ks), Ok(kl)) = (tree.style(*k), tree.layout(*k)) {
+                eprintln!(
+                    "ROOT_CHILD[{i}] display={:?} size={:?}x{:?} basis={:?} grow={} min_h={:?}",
+                    ks.display,
+                    kl.size.width,
+                    kl.size.height,
+                    ks.flex_basis,
+                    ks.flex_grow,
+                    ks.min_size.height
+                );
+            }
+        }
+    }
     if std::env::var("BROWS_DEBUG").is_ok() {
         for (d, t) in &node_ids {
             if let Some(NodeData::Element { name, .. }) = Some(&doc.node(*d).data.clone()) {
                 if name == "input" {
                     if let Ok(l) = tree.layout(*t) {
-                        eprintln!("INPUT_FINAL size={:?}x{:?} loc={:?}", l.size.width, l.size.height, l.location);
+                        eprintln!(
+                            "INPUT_FINAL size={:?}x{:?} loc={:?}",
+                            l.size.width, l.size.height, l.location
+                        );
                     }
                 }
             }
@@ -1405,12 +1466,20 @@ pub fn compute_layout(
         let _ = tree.mark_dirty(tn);
     }
     let _ = run_compute(&mut tree, layout_root, &measure_fn);
+    if std::env::var("BROWS_ROOT_DEBUG").is_ok() {
+        if let Ok(rl) = tree.layout(layout_root) {
+            eprintln!("PASS2_ROOT_LAYOUT {}x{}", rl.size.width, rl.size.height);
+        }
+    }
     if std::env::var("BROWS_DEBUG").is_ok() {
         for (d, t) in &node_ids {
             if let Some(NodeData::Element { name, .. }) = Some(&doc.node(*d).data.clone()) {
                 if name == "input" {
                     if let Ok(l) = tree.layout(*t) {
-                        eprintln!("INPUT_FINAL size={:?}x{:?} loc={:?}", l.size.width, l.size.height, l.location);
+                        eprintln!(
+                            "INPUT_FINAL size={:?}x{:?} loc={:?}",
+                            l.size.width, l.size.height, l.location
+                        );
                     }
                 }
             }
@@ -1419,16 +1488,35 @@ pub fn compute_layout(
 
     // ---- Final extraction + float placement on final rects ----
     let mut result = LayoutResult::default();
-    extract(doc, styles, &parent_of, &taffy_to_dom, &tree, &mut result.rects, root_taffy, (0.0, 0.0));
+    extract(
+        doc,
+        styles,
+        &parent_of,
+        &taffy_to_dom,
+        &tree,
+        &mut result.rects,
+        root_taffy,
+        (0.0, 0.0),
+    );
+    if std::env::var("BROWS_ROOT_DEBUG").is_ok() {
+        if let Ok(rl) = tree.layout(root_taffy) {
+            eprintln!(
+                "FINAL_ROOT taffy_layout={}x{} recorded={:?}",
+                rl.size.width,
+                rl.size.height,
+                result.rects.get(&start)
+            );
+        }
+    }
 
     // Center a width-constrained root with auto horizontal margins.
     if avail_width < viewport.width {
         let auto_margins = root_style.map(|s| {
             matches!(s.margin.left, AutoPx::Auto) && matches!(s.margin.right, AutoPx::Auto)
         }) == Some(true);
-        let auto_single = root_style
-            .map(|s| matches!(s.margin.left, AutoPx::Auto) || matches!(s.margin.right, AutoPx::Auto))
-            == Some(true);
+        let auto_single = root_style.map(|s| {
+            matches!(s.margin.left, AutoPx::Auto) || matches!(s.margin.right, AutoPx::Auto)
+        }) == Some(true);
         if auto_margins || auto_single {
             let dx = ((viewport.width - avail_width) / 2.0).max(0.0);
             if dx > 0.0 {
@@ -1537,7 +1625,9 @@ pub fn compute_layout(
 
             // ---- X axis ----
             let nx = match (&style.insets.left, &style.insets.right) {
-                (AutoPx::Len(_), _) => cb_x + inset_px(&style.insets.left, cb_w).unwrap_or(0.0) + ml,
+                (AutoPx::Len(_), _) => {
+                    cb_x + inset_px(&style.insets.left, cb_w).unwrap_or(0.0) + ml
+                }
                 (_, AutoPx::Len(_)) => {
                     cb_x + cb_w - inset_px(&style.insets.right, cb_w).unwrap_or(0.0) - r.width - mr
                 }
@@ -1559,7 +1649,10 @@ pub fn compute_layout(
             let ny = match (&style.insets.top, &style.insets.bottom) {
                 (AutoPx::Len(_), _) => cb_y + inset_px(&style.insets.top, cb_h).unwrap_or(0.0) + mt,
                 (_, AutoPx::Len(_)) => {
-                    cb_y + cb_h - inset_px(&style.insets.bottom, cb_h).unwrap_or(0.0) - r.height - mb
+                    cb_y + cb_h
+                        - inset_px(&style.insets.bottom, cb_h).unwrap_or(0.0)
+                        - r.height
+                        - mb
                 }
                 _ => {
                     // Static position: after the previous in-flow siblings.
@@ -1715,7 +1808,11 @@ fn container_content_width(
             + len_px(&ps.border_width.left)
             + len_px(&ps.border_width.right);
     }
-    if w > 0.5 { w } else { fallback }
+    if w > 0.5 {
+        w
+    } else {
+        fallback
+    }
 }
 
 /// Place every floated element with the CSS 2.1 §9.5 float rules:
@@ -1760,10 +1857,8 @@ fn place_floats(
             Some(ps) => (
                 p_rect.x + len_px(&ps.border_width.left),
                 p_rect.y + len_px(&ps.border_width.top),
-                (p_rect.width
-                    - len_px(&ps.border_width.left)
-                    - len_px(&ps.border_width.right))
-                .max(0.0),
+                (p_rect.width - len_px(&ps.border_width.left) - len_px(&ps.border_width.right))
+                    .max(0.0),
             ),
             None => (p_rect.x, p_rect.y, p_rect.width),
         };
@@ -1886,7 +1981,10 @@ fn place_floats(
                     s.overflow != brows12_css::values::OverflowKeyword::Visible
                         || matches!(
                             s.display,
-                            Display::Flex | Display::Table | Display::TableCell
+                            Display::Flex
+                                | Display::InlineFlex
+                                | Display::Table
+                                | Display::TableCell
                         )
                 }) == Some(true);
             if bfc {
@@ -1990,8 +2088,8 @@ fn apply_clear_and_bfc(
             if !in_chain(parent_of, n, pf.cb) {
                 continue;
             }
-            let h_overlap = pf.rect.x + pf.rect.width > r.x + 0.5
-                && pf.rect.x < r.x + r.width - 0.5;
+            let h_overlap =
+                pf.rect.x + pf.rect.width > r.x + 0.5 && pf.rect.x < r.x + r.width - 0.5;
             let v_overlap = pf.rect.y < r.y + r.height && pf.rect.y + pf.rect.height > r.y;
             let bottom = pf.rect.y + pf.rect.height;
             if wants_clear {

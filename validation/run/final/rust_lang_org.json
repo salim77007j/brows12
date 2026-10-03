@@ -7,12 +7,12 @@
   "loaded": true,
   "render": {
     "compositor": null,
-    "png_bytes": 52869,
+    "png_bytes": 77173,
     "scroll_y": 0.0
   },
   "screenshot": "validation/run/final/rust_lang_org.png",
   "timing": {
-    "full_pipeline_ms": 8256
+    "full_pipeline_ms": 11839
   },
   "title": "\n            Rust Programming Language\n        ",
   "viewport": {
