@@ -19,6 +19,7 @@ members = [
     "tests",
     "benchmarks",
     "ui",
+    "servo-host",
 ]
 
 [workspace.package]

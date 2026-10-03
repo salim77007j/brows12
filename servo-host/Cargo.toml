@@ -1,0 +1,20 @@
+[package]
+name = "servo-host"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Servo-backed host for brows12: embeds the Servo engine behind the brows12 shell and harness."
+
+[dependencies]
+servo = { version = "=0.6.0", default-features = false, features = [
+    "baked-in-resources",
+    "js_jit",
+    "brotli-compression-stream",
+] }
+url = "2.5"
+winit = "0.30"
+image = { version = "0.25", default-features = false, features = ["png"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

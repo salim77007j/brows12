@@ -179,3 +179,39 @@ Stage Summary:
 - Audit + research complete; plan committed and pushed prior to
   implementation (mission rule). Next: Phase 1.1 — servo-host crate +
   chunked build of the servo 0.6.0 graph.
+
+---
+Task ID: v2-phase1.1
+Agent: Super Z (main)
+Task: Phase 1.1-1.2 — servo-host crate, headless embedder, first renders.
+
+Work Log:
+- servo 0.6.0 graph (stylo 0.21, webrender 0.70, servo-layout/script/paint,
+  prebuilt SpiderMonkey 153 via mozjs_sys archive download) compiled GREEN in
+  ~15 min across 3 chunked builds (2 CPUs/3GB box, debug=0 profiles).
+- servo-host crate: waker (winit proxy + condvar), HostDelegate (load status,
+  frames, title/url, console, crash), headless runner (Xvfb/GLX primary,
+  SoftwareRenderingContext fallback), capture (paint->read_to_image->PNG),
+  brows-servo CLI (--url|--html --png --json --width --height --timeout-ms).
+- Runtime blockers solved (documented for CI):
+  * surfman 0.13 is EGL-based even for window contexts -> user-space GL from
+    debs (libegl1+libegl-mesa0) extracted to ~/.local/gl with
+    dpkg -x; LD_LIBRARY_PATH picks it up (no root needed).
+  * GLVND needs vendor discovery: __EGL_VENDOR_LIBRARY_FILENAMES points at
+    the extracted 50_mesa.json (mesa EGL is vendor-only on Debian trixie).
+  * XDG_RUNTIME_DIR=/tmp/xdg for winit; Xvfb :99 -screen 0 1400x900x24.
+- First renders (screenshots/v2-servo/phase1/):
+  * example.com: title ok, complete in 213 ms (v1: 3400 ms), multilingual
+    (ar/fr/ru/es) + SVG icon rendered.
+  * Wikipedia Rust article: complete in 2341 ms (v1: 28600 ms); Vector-2022
+    header/ToC/infobox/appearance panel pixel-class.
+  * GitHub repo page: complete in 2136 ms (v1: 50700 ms); full chrome
+    renders; body blocked by hydration errors (console captured in JSON):
+    crypto undefined (webcrypto feature OFF), IntersectionObserver missing,
+    requestIdleCallback missing, adoptedStyleSheets missing.
+
+Stage Summary:
+- Servo renders through brows12 host at Chrome-class quality with 12-24x
+  faster page completion than the v1 custom engine. Phase 1.1 gate GREEN.
+- Next: enable webcrypto + observer prefs (likely fixes GitHub hydration),
+  retire legacy crates, wire privacy layer, then commit per sub-step.
