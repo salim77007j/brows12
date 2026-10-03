@@ -726,8 +726,6 @@ pub fn compute_layout(
         if style.display == Display::None {
             return None;
         }
-        if std::env::var("BROWS_DEBUG").is_ok() {
-        }
         let data = doc.node(node).data.clone();
         match &data {
             NodeData::Text(text) => {
