@@ -485,9 +485,15 @@ impl Tab {
             doc.visit_all(|node| {
                 if doc.is_element(node) && doc.local_name(node) == "style" {
                     let css = doc.text_content(node);
-                    if let Ok(sheet) =
-                        brows12_css::Stylesheet::parse(&css, brows12_css::Origin::Author)
-                    {
+                    if let Ok(sheet) = brows12_css::Stylesheet::parse_with_env(
+                        &css,
+                        brows12_css::Origin::Author,
+                        brows12_css::vartext::ScopeEnv {
+                            dark_preferred: false,
+                            viewport_width: self.engine.config.viewport.width as f32,
+                            viewport_height: self.engine.config.viewport.height as f32,
+                        },
+                    ) {
                         sheets.push(sheet);
                     }
                 }
@@ -682,7 +688,15 @@ impl Tab {
             ) {
                 if resp.is_success() {
                     let css = String::from_utf8_lossy(&resp.body).to_string();
-                    if let Ok(sheet) = Stylesheet::parse(&css, brows12_css::Origin::Author) {
+                    if let Ok(sheet) = Stylesheet::parse_with_env(
+                        &css,
+                        brows12_css::Origin::Author,
+                        brows12_css::vartext::ScopeEnv {
+                            dark_preferred: false,
+                            viewport_width: self.engine.config.viewport.width as f32,
+                            viewport_height: self.engine.config.viewport.height as f32,
+                        },
+                    ) {
                         sheets.push(sheet);
                     }
                 }

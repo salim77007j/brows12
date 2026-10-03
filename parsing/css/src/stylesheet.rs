@@ -208,14 +208,28 @@ impl Stylesheet {
     /// (see `vartext`): this makes `var()` design tokens work for the
     /// document-global scope model v0.2 ships.
     pub fn parse(css: &str, origin: Origin) -> Result<Self, crate::CssError> {
+        Self::parse_with_env(css, origin, crate::vartext::ScopeEnv::default())
+    }
+
+    /// Like [`parse`], with the device facts the scoped design-token
+    /// collector needs (`prefers-color-scheme`, viewport queries).
+    pub fn parse_with_env(
+        css: &str,
+        origin: Origin,
+        env: crate::vartext::ScopeEnv,
+    ) -> Result<Self, crate::CssError> {
         // lightningcss does not model `float`/`clear`; rewrite them into
         // reserved custom properties (declaration-position only) so they
         // survive parsing and reach the cascade.
         let css = rewrite_float_decls(css);
 
-        // Harvest custom property definitions from the raw text.
+        // Harvest custom property definitions from the raw text — only
+        // where the document-global scope model is sound (root-scoped
+        // selectors under at-rule conditions that hold for this device).
+        // A theme-qualified rule like `html.skin-x { --bg: #111 }` must
+        // not repaint pages whose root never matches it.
         let mut custom_defs = std::collections::HashMap::new();
-        crate::vartext::collect_custom_defs(&css, &mut custom_defs);
+        crate::vartext::collect_root_scoped_defs(&css, &mut custom_defs, &env);
 
         // If the sheet references vars, substitute and re-parse.
         let effective = if css.contains("var(") {
