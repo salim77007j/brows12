@@ -24,6 +24,7 @@ use content_security_policy::Destination;
 use servo::UserContentManager;
 use embedder_traits::user_contents::UserStyleSheet;
 
+#[allow(clippy::arc_with_non_send_sync)]
 pub struct PrivacyHost {
     pub blocker: PrivacyBlocker,
     pub enabled: AtomicBool,
@@ -37,6 +38,7 @@ pub struct PrivacyHost {
 }
 
 impl PrivacyHost {
+    #[allow(clippy::arc_with_non_send_sync)]
     pub fn new() -> Arc<Self> {
         Arc::new(Self {
             blocker: PrivacyBlocker::new(),

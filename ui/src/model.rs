@@ -1,10 +1,8 @@
 //! Browser-shell state model: tabs, per-tab status + history, omnibox
 //! input normalization (URL vs search query), and the internal start page.
 //!
-//! Tabs live in the engine host thread; the UI keeps lightweight metadata
-//! (`UiTab`) plus the newest `Frame` snapshot per tab id.
-
-use brows12_api::Frame;
+//! v2: Servo runs on the UI thread; each tab owns a Servo `WebView` whose
+//! newest frame is captured straight from its offscreen rendering context.
 
 /// The viewport rect the engine renders into (below tab strip + toolbar).
 pub const VIEWPORT_W: u32 = 1280;
@@ -12,6 +10,7 @@ pub const VIEWPORT_H: u32 = 728; // window 800 - 32 tab strip - 40 toolbar
 
 /// Status of one tab, driven by engine events and load results.
 #[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
 pub enum Status {
     Idle,
     Loading,
@@ -30,8 +29,8 @@ impl Status {
     }
 }
 
-/// Shell metadata for one tab. `id` is `None` until the engine host
-/// confirms creation (`UiMsg::TabCreated`).
+/// Shell metadata for one tab. `id` is the key into the shell's
+/// webview runtimes (assigned when the tab is created).
 pub struct UiTab {
     pub id: Option<u64>,
     pub title: String,
@@ -66,29 +65,6 @@ impl UiTab {
     pub fn can_forward(&self) -> bool {
         self.hindex + 1 < self.history.len()
     }
-}
-
-/// UI → engine host commands.
-pub enum UiCmd {
-    NewTab,
-    CloseTab { id: Option<u64> },
-    Navigate { tab: u64, url: String },
-    Scroll { tab: u64, dy: f32 },
-}
-
-/// Engine host → UI messages.
-pub enum UiMsg {
-    /// Forwarded engine event (status/title/url bookkeeping).
-    Engine(brows12_api::EngineEvent),
-    /// Newest frame snapshot of a tab.
-    Frame { tab: u64, frame: Option<Frame> },
-    /// A `load_url` finished (Err surfaces load failures).
-    LoadResult { tab: u64, result: Result<(), String> },
-    /// The engine created the tab a pending `NewTab` asked for.
-    TabCreated { id: u64 },
-    /// Automation-channel command, routed through the same handlers as
-    /// real mouse/keyboard input (validation under Xvfb; akin to CDP).
-    Inject(InjectCmd),
 }
 
 /// Commands understood on the `BROWS12_UI_CMD_FIFO` automation channel.
@@ -220,6 +196,7 @@ pub fn percent_encode(s: &str) -> String {
 }
 
 /// Internal start page rendered for fresh tabs (zero network).
+#[allow(dead_code)]
 pub const START_URL: &str = "brows12://start";
 
 pub const START_HTML: &str = r#"<!DOCTYPE html>

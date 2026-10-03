@@ -293,3 +293,42 @@ Work Log:
 Stage Summary:
 - The v1 privacy investment survives the pivot: adblock lists, counters and
   CHIPS policy compile unchanged against Servo's interception hooks.
+
+---
+Task ID: v2-phase1.4
+Agent: Super Z (main)
+Task: Phase 1.4 — interactive shell rebuilt on Servo (ui/ v2).
+
+Work Log:
+- ui/ rewritten on servo-host: Servo runs on the UI thread; each tab owns a
+  WebView on Rc<OffscreenRenderingContext> (parent = WindowRenderingContext of
+  the winit window). Redraw = spin_event_loop -> webview.paint() ->
+  read_to_image -> tiny-skia chrome composite -> softbuffer present.
+- chrome.rs kept (same hit-test geometry + drawing), text swapped from the
+  legacy brows12-render Rasterizer to ui/src/text.rs (cosmic-text 0.19 +
+  SwashCache glyph images -> tiny-skia; rasterize_text + measure).
+- Input: clicks/moves/wheel below chrome forwarded in viewport coords
+  (InputEvent::MouseButton/MouseMove/Wheel); keyboard mapped winit ->
+  keyboard_types 0.8 (NamedKey enum, no Space variant — space is a Character).
+- Tabs: per-tab HostState; omnibox/history/title sync from delegate state
+  (Loading->Loaded transition emits the v1 automation event `loaded ...`).
+- Automation protocol (BROWS12_UI_CMD_FIFO/_EVENT_FIFO) restored; commands
+  cross threads via a static channel (thread_local PENDING was the bug —
+  reader thread and UI thread share nothing).
+- BROWS12_UI_SNAPSHOT=<path> dumps one composited frame per loaded
+  generation (validation).
+- Smoke test under Xvfb: start -> omni -> return -> loaded url=https://example.com/
+  -> nav -> quit, all events delivered; chrome composite screenshot captured
+  (screenshots/v2-servo/phase1/shell_example.png — snapshot timing catches
+  the blank-page frame; cosmetic, tracked for Phase 4 UI polish).
+- clippy clean for brows12-ui + servo-host.
+- Disk management: full servo debug tree = 7.4 GB target on the 9.9 GB box;
+  cleaned incremental caches + stripped binaries + registry .crate cache;
+  note for CI: CARGO_INCREMENTAL=0 recommended.
+
+Stage Summary:
+- PHASE 1 COMPLETE: Servo integrated end-to-end (headless harness + privacy
+  hooks + interactive shell). example.com / Wikipedia / GitHub all render
+  Chrome-class with 12-24x faster completion than the v1 engine.
+  Remaining phases: 2 (memory/perf), 3 (platform features), 4 (innovations),
+  5 (30-site suite + final report + tag v2.0.0).

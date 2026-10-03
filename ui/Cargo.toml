@@ -4,17 +4,24 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "Brows12 minimal native browser shell: window, omnibox, tabs, wired to brows12-api"
+description = "Brows12 browser shell (v2): winit + softbuffer chrome over Servo webviews"
 publish = false
 
 [dependencies]
-brows12-api = { path = "../api" }
-brows12-render = { path = "../rendering" }
-brows12-layout = { path = "../layout" }
+servo = { version = "=0.6.0", default-features = false, features = [
+    "baked-in-resources",
+    "js_jit",
+    "brotli-compression-stream",
+    "webcrypto",
+] }
+servo-host = { path = "../servo-host" }
+keyboard-types = "0.8"
 cosmic-text = "0.19"
 tiny-skia = "0.12"
 winit = "0.30"
 softbuffer = "0.4"
+url = "2.5"
+image = { version = "0.25", default-features = false, features = ["png"] }
 
 [[bin]]
 name = "brows12-ui"

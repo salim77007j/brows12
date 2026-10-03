@@ -1,64 +1,120 @@
-//! brows12-ui — a minimal, real browser shell proving the engine
-//! end-to-end: window + viewport + omnibox + back/forward/reload + tabs.
+//! brows12-ui (v2) — the real browser shell on top of the Servo engine.
 //!
-//! Architecture: the UI thread (winit + softbuffer + tiny-skia chrome) owns
-//! presentation only. All engine calls happen on the engine host thread
-//! (`engine_host.rs`); the two halves talk over channels and the UI blits
-//! the newest `Frame` snapshot of the active tab.
+//! Architecture: Servo runs on the UI thread (its WebViews are
+//! main-thread-bound, like winit). Each tab owns a `WebView` bound to an
+//! offscreen rendering context; on every redraw we spin Servo's event
+//! loop, paint the active webview, read the framebuffer back, and
+//! composite the tiny-skia chrome (tab strip + toolbar + omnibox) over it
+//! with softbuffer presentation. Mouse/keyboard input below the chrome is
+//! forwarded to the active webview in viewport coordinates.
 
 mod chrome;
-mod engine_host;
 mod model;
-
-use chrome::Hit;
-use model::{InjectCmd, Status, UiCmd, UiMsg, UiTab, VIEWPORT_H, VIEWPORT_W};
+mod text;
 
 use std::collections::HashMap;
-use std::sync::mpsc::{channel, Sender};
+use std::rc::Rc;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+use keyboard_types::{Code, Key as KKey, KeyState, KeyboardEvent, Location, Modifiers};
+use servo::input_events::{
+    InputEvent, MouseButtonAction, MouseButtonEvent, MouseMoveEvent,
+};
+use servo::{
+    DeviceIntRect, DeviceIntSize, DevicePoint, KeyboardEvent as ServoKeyboardEvent,
+    OffscreenRenderingContext, RenderingContext, Servo, ServoBuilder, UserContentManager,
+    WebView, WebViewBuilder, WheelDelta, WheelEvent, WheelMode, WindowRenderingContext,
+};
+use servo_host::delegate::{HostDelegate, HostState};
+use servo_host::privacy::PrivacyHost;
+use servo_host::waker::HostWakerEvent;
 use tiny_skia::{Pixmap, PremultipliedColorU8};
+use url::Url;
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
-use winit::event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
-use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
+use winit::dpi::PhysicalSize;
+use winit::event::{ElementState, KeyEvent, MouseButton as WinitButton, MouseScrollDelta, WindowEvent};
+use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy};
 use winit::keyboard::{Key, NamedKey};
+use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use winit::window::{Window, WindowId};
 
+use chrome::Hit;
+use model::{InjectCmd, Status, UiTab, START_HTML, VIEWPORT_H, VIEWPORT_W};
+use text::UiText;
+
 fn main() {
-    let event_loop = EventLoop::new().expect("event loop");
+    let event_loop = EventLoop::with_user_event()
+        .build()
+        .expect("event loop");
     event_loop.set_control_flow(ControlFlow::Wait);
-    let mut app = App::default();
+    let mut app = App {
+        proxy: Some(event_loop.create_proxy()),
+        inner: None,
+    };
+    init_pending_channel();
     event_loop.run_app(&mut app).expect("run loop");
 }
 
 #[derive(Default)]
 struct App {
     inner: Option<Gui>,
+    proxy: Option<EventLoopProxy<HostWakerEvent>>,
 }
 
+/// Per-tab Servo runtime: the webview plus its offscreen context and state.
+struct TabRuntime {
+    webview: WebView,
+    state: Arc<HostState>,
+    #[allow(dead_code)]
+    ctx: Rc<OffscreenRenderingContext>,
+    last_painted_frame: u64,
+}
+
+#[allow(dead_code)]
 struct Gui {
     window: Arc<Window>,
-    #[allow(dead_code)]
     context: softbuffer::Context<Arc<Window>>,
     surface: softbuffer::Surface<Arc<Window>, Arc<Window>>,
-    host_tx: Sender<UiCmd>,
-    rx: std::sync::mpsc::Receiver<UiMsg>,
+    proxy: EventLoopProxy<HostWakerEvent>,
+    servo: Option<Servo>,
+    parent_ctx: Option<Rc<WindowRenderingContext>>,
+    ucm: Rc<UserContentManager>,
+    privacy: Arc<PrivacyHost>,
     tabs: Vec<UiTab>,
+    runtimes: HashMap<u64, TabRuntime>,
+    next_tab_id: u64,
     active: usize,
-    frames: HashMap<u64, brows12_api::Frame>,
-    raster: brows12_render::raster::Rasterizer,
+    text: UiText,
     cursor: (f32, f32),
     hover: Hit,
     caret_on: bool,
     dirty: bool,
-    /// Set by the automation `<QUIT>` command; `about_to_wait` exits.
     quit: bool,
-    /// Blink phase (530 ms ticks) the last paint used, so the caret only
-    /// repaints when its visibility actually flips.
     blink_phase: u64,
+    /// Bumped on every Loading→Loaded transition of the active tab; the
+    /// validation snapshot hook saves one composited frame per generation.
+    snapshot_gen: u64,
 }
 
-impl ApplicationHandler for App {
+/// Marker prefix so the start page shows as `brows12://start` in the omnibox.
+const START_MARKER: &str = "data:text/html;base64,";
+
+fn start_page_url() -> Url {
+    let b64 = base64_encode(START_HTML.as_bytes());
+    Url::parse(&format!("{START_MARKER}{b64}")).expect("start url")
+}
+
+fn display_url(u: &str) -> String {
+    if u.starts_with(START_MARKER) {
+        "brows12://start".to_string()
+    } else {
+        u.to_string()
+    }
+}
+
+impl ApplicationHandler<HostWakerEvent> for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.inner.is_some() {
             return;
@@ -75,58 +131,60 @@ impl ApplicationHandler for App {
         );
 
         let context = softbuffer::Context::new(window.clone()).expect("softbuffer context");
-        // Surface owns its display/window handles; the context is kept for
-        // drop ordering (dropped after the surface).
         let surface =
             softbuffer::Surface::new(&context, window.clone()).expect("softbuffer surface");
 
-        // Engine host thread owns the Browser and all tabs.
-        let (tx, rx) = channel::<UiMsg>();
-        let (cmd_tx, cmd_rx) = channel::<UiCmd>();
-        let (tx_fifo, wake_fifo) = (tx.clone(), window.clone());
-        {
-            let wake = window.clone();
-            std::thread::spawn(move || {
-                let browser = brows12_api::Browser::builder()
-                    .viewport(VIEWPORT_W, VIEWPORT_H)
-                    .privacy(|p| {
-                        p.block_ads = true;
-                        p.https_upgrade = true;
-                        p.block_cname_cloaking = true;
-                    })
-                    .max_live_pages(8)
-                    .build();
-                engine_host::run(browser, cmd_rx, tx, wake);
-            });
-        }
+        let display_handle = window.display_handle().expect("display handle");
+        let window_handle = window.window_handle().expect("window handle");
+        let size = PhysicalSize::new(chrome::WIN_W, chrome::WIN_H);
+        let parent_ctx = Rc::new(
+            WindowRenderingContext::new(display_handle, window_handle, size)
+                .expect("GL context for window (run under Xvfb or a desktop session)"),
+        );
 
-        let raster = brows12_render::raster::Rasterizer::new(Arc::new(std::sync::Mutex::new(
-            cosmic_text::FontSystem::new(),
-        )));
+        let proxy = self
+            .proxy
+            .as_ref()
+            .expect("event loop proxy")
+            .clone();
+        let waker = servo_host::waker::ProxyWaker::new(proxy.clone());
+        let servo: Servo = ServoBuilder::default()
+            .event_loop_waker(Box::new(waker))
+            .preferences(servo_host::compat_preferences())
+            .build();
+
+        let privacy = PrivacyHost::new();
+        let ucm = Rc::new(UserContentManager::new(&servo));
+        privacy.set_user_content_manager(ucm.clone());
 
         let mut gui = Gui {
             window,
             context,
             surface,
-            host_tx: cmd_tx,
-            rx,
+            proxy,
+            servo: Some(servo),
+            parent_ctx: Some(parent_ctx),
+            ucm,
+            privacy,
             tabs: Vec::new(),
+            runtimes: HashMap::new(),
+            next_tab_id: 1,
             active: 0,
-            frames: HashMap::new(),
-            raster,
+            text: UiText::new(),
             cursor: (0.0, 0.0),
             hover: Hit::None,
             caret_on: true,
             dirty: true,
             quit: false,
             blink_phase: 0,
+            snapshot_gen: 0,
         };
         gui.new_tab();
+        let start_proxy = gui.proxy.clone();
+        let start_wake = gui.window.clone();
         self.inner = Some(gui);
-        // Automation channels (validation under Xvfb): commands arrive on a
-        // named pipe and are routed through the same handlers as real
-        // mouse/keyboard input; observable moments are emitted on an event
-        // pipe so the driver can wait for real state (loaded/url/title).
+
+        // Automation channels (validation under Xvfb) — same protocol as v1.
         if let Ok(fifo) = std::env::var("BROWS12_UI_CMD_FIFO") {
             if let Ok(events) = std::env::var("BROWS12_UI_EVENT_FIFO") {
                 model::init_event_fifo(&events);
@@ -137,8 +195,6 @@ impl ApplicationHandler for App {
                 VIEWPORT_W,
                 VIEWPORT_H
             ));
-            let tx = tx_fifo;
-            let wake = wake_fifo;
             std::thread::spawn(move || {
                 use std::io::BufRead;
                 loop {
@@ -171,15 +227,17 @@ impl ApplicationHandler for App {
                                 }
                             }
                         };
-                        // Sleep is a pacing order, not UI state: keep the
-                        // sequencing here so later commands stay ordered.
                         if let Some(InjectCmd::Sleep(ms)) = cmd {
-                            std::thread::sleep(std::time::Duration::from_millis(ms));
+                            std::thread::sleep(Duration::from_millis(ms));
                             continue;
                         }
                         if let Some(cmd) = cmd {
-                            if tx.send(UiMsg::Inject(cmd)).is_ok() {
-                                wake.request_redraw();
+                            let sent = PENDING_TX
+                                .get()
+                                .map(|tx| tx.send(cmd).is_ok())
+                                .unwrap_or(false);
+                            if sent && start_proxy.send_event(HostWakerEvent).is_ok() {
+                                start_wake.request_redraw();
                             }
                         }
                     }
@@ -188,29 +246,59 @@ impl ApplicationHandler for App {
         }
     }
 
+    fn user_event(&mut self, event_loop: &ActiveEventLoop, _event: HostWakerEvent) {
+        if let Some(gui) = self.inner.as_mut() {
+            if gui.quit {
+                event_loop.exit();
+                return;
+            }
+            gui.tick();
+        }
+    }
+
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         let Some(gui) = self.inner.as_mut() else { return };
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::RedrawRequested => {
-                gui.drain_messages();
+                gui.tick();
                 gui.draw();
             }
             WindowEvent::CursorMoved { position, .. } => {
                 gui.cursor = (position.x as f32, position.y as f32);
                 gui.hover = chrome::hit_test(gui.cursor.0, gui.cursor.1, gui.tabs.len());
+                if gui.cursor.1 > chrome::CHROME_H {
+                    gui.forward_mouse_move();
+                }
             }
             WindowEvent::MouseInput {
                 state: ElementState::Pressed,
-                button: MouseButton::Left,
+                button: WinitButton::Left,
                 ..
-            } => gui.click(),
+            } => {
+                if gui.cursor.1 > chrome::CHROME_H {
+                    gui.forward_mouse_button(MouseButtonAction::Down);
+                } else {
+                    gui.click();
+                }
+            }
+            WindowEvent::MouseInput {
+                state: ElementState::Released,
+                button: WinitButton::Left,
+                ..
+            } => {
+                if gui.cursor.1 > chrome::CHROME_H {
+                    gui.forward_mouse_button(MouseButtonAction::Up);
+                }
+            }
             WindowEvent::MouseWheel { delta, .. } => {
-                let dy = match delta {
-                    MouseScrollDelta::LineDelta(_, y) => y * 64.0,
-                    MouseScrollDelta::PixelDelta(p) => p.y as f32,
+                let (dx, dy, mode) = match delta {
+                    MouseScrollDelta::LineDelta(x, y) => {
+                        ((x * 76.0) as f64, (y * 76.0) as f64, WheelMode::DeltaLine)
+                    }
+                    MouseScrollDelta::PixelDelta(p) => (p.x, p.y, WheelMode::DeltaPixel),
                 };
-                gui.scroll(-dy);
+                gui.forward_wheel(dx, dy, mode);
             }
             WindowEvent::KeyboardInput {
                 event: KeyEvent { state: ElementState::Pressed, logical_key, text, .. },
@@ -226,38 +314,152 @@ impl ApplicationHandler for App {
             event_loop.exit();
             return;
         }
-        gui.drain_messages();
-        // Caret blink: while the omnibox is in edit mode, flip the caret on
-        // a 530 ms cadence and keep the loop waking at the next flip.
-        let editing = gui.tabs.iter().any(|t| t.omni_edit.is_some());
-        if editing {
-            let phase = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_millis() as u64 / 530)
-                .unwrap_or(0);
-            if phase != gui.blink_phase {
-                gui.blink_phase = phase;
-                gui.caret_on = phase % 2 == 0;
-                gui.dirty = true;
-                gui.window.request_redraw();
-            }
-            event_loop.set_control_flow(ControlFlow::WaitUntil(
-                std::time::Instant::now() + std::time::Duration::from_millis(530),
-            ));
-        }
-        if gui.dirty {
-            gui.window.request_redraw();
-        }
+        // Servo animates pages (rAF, transitions); keep a 16 ms heartbeat.
+        event_loop.set_control_flow(ControlFlow::WaitUntil(
+            Instant::now() + Duration::from_millis(16),
+        ));
     }
 }
 
+static PENDING_TX: std::sync::OnceLock<std::sync::mpsc::Sender<InjectCmd>> =
+    std::sync::OnceLock::new();
+static PENDING_RX: std::sync::OnceLock<std::sync::Mutex<std::sync::mpsc::Receiver<InjectCmd>>> =
+    std::sync::OnceLock::new();
+
+fn init_pending_channel() {
+    let (tx, rx) = std::sync::mpsc::channel::<InjectCmd>();
+    let _ = PENDING_TX.set(tx);
+    let _ = PENDING_RX.set(std::sync::Mutex::new(rx));
+}
+
+fn base64_encode(data: &[u8]) -> String {
+    const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
+    for chunk in data.chunks(3) {
+        let b = [
+            chunk[0],
+            chunk.get(1).copied().unwrap_or(0),
+            chunk.get(2).copied().unwrap_or(0),
+        ];
+        let n = (u32::from(b[0]) << 16) | (u32::from(b[1]) << 8) | u32::from(b[2]);
+        out.push(T[(n >> 18) as usize & 63] as char);
+        out.push(T[(n >> 12) as usize & 63] as char);
+        out.push(if chunk.len() > 1 { T[(n >> 6) as usize & 63] as char } else { '=' });
+        out.push(if chunk.len() > 2 { T[n as usize & 63] as char } else { '=' });
+    }
+    out
+}
+
 impl Gui {
-    // ---- Tab management ------------------------------------------------
+    // ---- Servo plumbing ---------------------------------------------------
+
+    fn tick(&mut self) {
+        // Deliver queued automation commands through the normal handlers.
+        if let Some(rx) = PENDING_RX.get() {
+            if let Ok(rx) = rx.lock() {
+                while let Ok(cmd) = rx.try_recv() {
+                    self.inject(cmd);
+                }
+            }
+        }
+        if let Some(servo) = self.servo.as_ref() {
+            servo.spin_event_loop();
+        }
+        self.sync_active_tab_state();
+        // Repaint when the active page produced new frames.
+        let new_frames = self
+            .active_id()
+            .and_then(|id| self.runtimes.get(&id))
+            .map(|rt| rt.state.frame_count() != rt.last_painted_frame)
+            .unwrap_or(false);
+        if new_frames {
+            self.dirty = true;
+        }
+        if self.dirty {
+            self.window.request_redraw();
+        }
+    }
+
+    fn active_id(&self) -> Option<u64> {
+        self.tabs.get(self.active)?.id
+    }
+
+    fn sync_active_tab_state(&mut self) {
+        let Some(id) = self.active_id() else { return };
+        let Some(rt) = self.runtimes.get(&id) else { return };
+        let complete = rt.state.is_complete();
+        let url = rt.state.url().map(|u| display_url(&u));
+        let title = rt.state.title();
+        let t = &mut self.tabs[self.active];
+        let mut changed = false;
+        if complete && t.status == Status::Loading {
+            t.status = Status::Loaded;
+            if let Some(title) = title {
+                t.title = title;
+            }
+            if let Some(u) = &url {
+                if t.history.last().map(String::as_str) != Some(u.as_str()) {
+                    t.history.truncate(t.hindex + 1);
+                    t.history.push(u.clone());
+                    t.hindex = t.history.len() - 1;
+                }
+            }
+            model::emit(format!(
+                "loaded tab={} url={} title={}",
+                id,
+                model::ev_escape(&t.url()),
+                model::ev_escape(&t.title)
+            ));
+            self.snapshot_gen += 1;
+            changed = true;
+        } else if complete {
+            // Redirects after load: keep the omnibox honest.
+            if let Some(u) = &url {
+                if t.url() != *u {
+                    t.history.truncate(t.hindex + 1);
+                    t.history.push(u.clone());
+                    t.hindex = t.history.len() - 1;
+                    model::emit(format!("nav tab={} url={}", id, model::ev_escape(u)));
+                    changed = true;
+                }
+            }
+        }
+        if changed {
+            self.dirty = true;
+            self.sync_title();
+        }
+    }
+
+    // ---- Tab management ---------------------------------------------------
 
     fn new_tab(&mut self) {
-        self.tabs.push(UiTab::new());
+        let (Some(servo), Some(parent)) = (self.servo.as_ref(), self.parent_ctx.as_ref()) else {
+            return;
+        };
+        let id = self.next_tab_id;
+        self.next_tab_id += 1;
+        let ctx = Rc::new(parent.offscreen_context(PhysicalSize::new(VIEWPORT_W, VIEWPORT_H)));
+        let ctx_dyn: Rc<dyn RenderingContext> = ctx.clone();
+        let state = Arc::new(HostState::new());
+        let delegate = HostDelegate::new(state.clone(), self.privacy.clone());
+        let webview = WebViewBuilder::new(servo, ctx_dyn)
+            .delegate(delegate)
+            .user_content_manager(self.ucm.clone())
+            .build();
+        webview.focus();
+        webview.resize(PhysicalSize::new(VIEWPORT_W, VIEWPORT_H));
+        webview.load(start_page_url());
+        self.runtimes.insert(
+            id,
+            TabRuntime { webview, state, ctx, last_painted_frame: 0 },
+        );
+
+        let mut tab = UiTab::new();
+        tab.id = Some(id);
+        tab.status = Status::Loading;
+        tab.history.push("brows12://start".to_string());
+        self.tabs.push(tab);
         self.active = self.tabs.len() - 1;
-        let _ = self.host_tx.send(UiCmd::NewTab);
         self.dirty = true;
         self.sync_title();
     }
@@ -265,7 +467,11 @@ impl Gui {
     fn close_tab(&mut self, index: usize) {
         if index < self.tabs.len() {
             let id = self.tabs.remove(index).id;
-            let _ = self.host_tx.send(UiCmd::CloseTab { id });
+            if let Some(id) = id {
+                if let Some(rt) = self.runtimes.remove(&id) {
+                    rt.webview.hide();
+                }
+            }
             if self.tabs.is_empty() {
                 self.new_tab();
                 return;
@@ -278,10 +484,12 @@ impl Gui {
         }
     }
 
-    // ---- Navigation ------------------------------------------------------
+    // ---- Navigation -------------------------------------------------------
 
-    /// `record=false` for back/forward/reload (history already holds the URL).
     fn load_in_active(&mut self, normalized: String, record: bool) {
+        if normalized.is_empty() {
+            return;
+        }
         {
             let t = &mut self.tabs[self.active];
             t.status = Status::Loading;
@@ -292,8 +500,12 @@ impl Gui {
                 t.hindex = t.history.len() - 1;
             }
         }
-        if let Some(id) = self.tabs[self.active].id {
-            let _ = self.host_tx.send(UiCmd::Navigate { tab: id, url: normalized });
+        if let Some(id) = self.active_id() {
+            if let Some(rt) = self.runtimes.get(&id) {
+                if let Ok(url) = Url::parse(&normalized) {
+                    rt.webview.load(url);
+                }
+            }
         }
         self.dirty = true;
         self.sync_title();
@@ -301,9 +513,7 @@ impl Gui {
 
     fn navigate_input(&mut self, raw: String) {
         let normalized = model::normalize_input(&raw);
-        if !normalized.is_empty() {
-            self.load_in_active(normalized, true);
-        }
+        self.load_in_active(normalized, true);
     }
 
     fn go_back(&mut self) {
@@ -325,19 +535,65 @@ impl Gui {
     }
 
     fn reload(&mut self) {
-        let url = self.tabs[self.active].url();
-        if url.is_empty() {
-            self.load_in_active(model::START_URL.into(), true);
-        } else {
-            self.load_in_active(url, false);
+        if let Some(id) = self.active_id() {
+            if let Some(rt) = self.runtimes.get(&id) {
+                rt.webview.reload();
+            }
+        }
+        let t = &mut self.tabs[self.active];
+        t.status = Status::Loading;
+        t.omni_edit = None;
+        self.dirty = true;
+        self.sync_title();
+    }
+
+    // ---- Input ------------------------------------------------------------
+
+    fn viewport_point(&self) -> (f32, f32) {
+        (
+            self.cursor.0,
+            (self.cursor.1 - chrome::CHROME_H).max(0.0),
+        )
+    }
+
+    fn forward_mouse_move(&mut self) {
+        let (x, y) = self.viewport_point();
+        if let Some(id) = self.active_id() {
+            if let Some(rt) = self.runtimes.get(&id) {
+                rt.webview.notify_input_event(InputEvent::MouseMove(MouseMoveEvent::new(
+                    DevicePoint::new(x, y).into(),
+                )));
+            }
         }
     }
 
-    // ---- Input -----------------------------------------------------------
+    fn forward_mouse_button(&mut self, action: MouseButtonAction) {
+        let (x, y) = self.viewport_point();
+        if let Some(id) = self.active_id() {
+            if let Some(rt) = self.runtimes.get(&id) {
+                rt.webview.notify_input_event(InputEvent::MouseButton(MouseButtonEvent::new(
+                    action,
+                    servo::MouseButton::Primary,
+                    DevicePoint::new(x, y).into(),
+                )));
+            }
+        }
+    }
+
+    fn forward_wheel(&mut self, dx: f64, dy: f64, mode: WheelMode) {
+        let (x, y) = self.viewport_point();
+        if let Some(id) = self.active_id() {
+            if let Some(rt) = self.runtimes.get(&id) {
+                rt.webview.notify_input_event(InputEvent::Wheel(WheelEvent::new(
+                    WheelDelta { x: dx, y: dy, z: 0.0, mode },
+                    DevicePoint::new(x, y).into(),
+                )));
+            }
+        }
+    }
 
     fn click(&mut self) {
         let hit = chrome::hit_test(self.cursor.0, self.cursor.1, self.tabs.len());
-        eprintln!("[click] at {:?} -> {:?};", self.cursor, hit);
         match hit {
             Hit::Tab(i) => {
                 self.active = i as usize;
@@ -358,13 +614,10 @@ impl Gui {
     }
 
     fn scroll(&mut self, dy: f32) {
-        if let Some(id) = self.tabs[self.active].id {
-            let _ = self.host_tx.send(UiCmd::Scroll { tab: id, dy });
-        }
+        self.forward_wheel(0.0, -(dy as f64), WheelMode::DeltaPixel);
     }
 
-    fn key<S: std::fmt::Debug>(&mut self, logical: Key<S>, text: Option<String>) {
-        eprintln!("[key] logical={logical:?} text={text:?};");
+    fn key(&mut self, logical: Key, text: Option<String>) {
         let editing = self.tabs[self.active].omni_edit.is_some();
         if editing {
             match &logical {
@@ -393,168 +646,83 @@ impl Gui {
                     }
                 }
             }
-        } else if matches!(logical, Key::Named(NamedKey::F5)) {
-            self.reload();
+            return;
         }
-    }
-
-    // ---- Engine messages -------------------------------------------------
-
-    fn drain_messages(&mut self) {
-        let mut saw_frame = false;
-        while let Ok(msg) = self.rx.try_recv() {
-            match msg {
-                UiMsg::TabCreated { id } => {
-                    // Fill the first pending (id-less) tab slot in order.
-                    if let Some(slot) = self.tabs.iter_mut().find(|t| t.id.is_none()) {
-                        slot.id = Some(id);
-                        // The host already navigated this fresh tab to the
-                        // start page; seed the session history so the
-                        // omnibox/back-forward state has a URL from birth.
-                        if slot.history.is_empty() {
-                            slot.history.push(model::START_URL.to_string());
-                        }
-                    }
-                    model::emit(format!("tab_created id={id}"));
-                    self.dirty = true;
-                }
-                UiMsg::Frame { tab, frame } => {
-                    match frame {
-                        Some(f) => {
-                            self.frames.insert(tab, f);
-                        }
-                        None => {
-                            self.frames.remove(&tab);
-                        }
-                    }
-                    if self.tabs.get(self.active).and_then(|t| t.id) == Some(tab) {
-                        saw_frame = true;
-                    }
-                }
-                UiMsg::Engine(brows12_api::EngineEvent::LoadFinished { tab, title }) => {
-                    let url = self
-                        .tabs
-                        .iter()
-                        .find(|t| t.id == Some(tab))
-                        .map(|t| model::ev_escape(&t.url()))
-                        .unwrap_or_default();
-                    model::emit(format!(
-                        "loaded tab={tab} url={url} title={}",
-                        model::ev_escape(&title)
-                    ));
-                    if let Some(t) = self.tabs.iter_mut().find(|t| t.id == Some(tab)) {
-                        t.title = title;
-                        t.status = Status::Loaded;
-                    }
-                    self.dirty = true;
-                }
-                UiMsg::Engine(brows12_api::EngineEvent::NavigationCommitted { tab, url }) => {
-                    // Keep the history entry we just created in sync with the
-                    // URL the engine actually committed (e.g. HTTPS upgrade).
-                    if let Some(t) = self.tabs.iter_mut().find(|t| t.id == Some(tab)) {
-                        if t.status == Status::Loading && !t.history.is_empty() {
-                            t.history[t.hindex] = url.clone();
-                        }
-                    }
-                    model::emit(format!("nav tab={tab} url={}", model::ev_escape(&url)));
-                    self.dirty = true;
-                }
-                UiMsg::Engine(_) => {}
-                UiMsg::Inject(cmd) => match cmd {
-                    InjectCmd::Omni(text) => {
-                        self.tabs[self.active].omni_edit = Some(text.clone());
-                        model::emit(format!("omni text={}", model::ev_escape(&text)));
-                        self.dirty = true;
-                    }
-                    InjectCmd::Text(text) => {
-                        let t = &mut self.tabs[self.active];
-                        if t.omni_edit.is_none() {
-                            t.omni_edit = Some(String::new());
-                        }
-                        if let Some(e) = t.omni_edit.as_mut() {
-                            e.push_str(&text);
-                        }
-                        if let Some(e) = t.omni_edit.clone() {
-                            model::emit(format!("omni text={}", model::ev_escape(&e)));
-                        }
-                        self.dirty = true;
-                    }
-                    InjectCmd::Return => {
-                        let content = self.tabs[self.active].omni_edit.clone().unwrap_or_default();
-                        model::emit(format!("return input={}", model::ev_escape(&content)));
-                        self.navigate_input(content);
-                    }
-                    InjectCmd::Back => {
-                        model::emit(format!(
-                            "back from={} index={}",
-                            model::ev_escape(&self.tabs[self.active].url()),
-                            self.tabs[self.active].hindex
-                        ));
-                        self.go_back();
-                    }
-                    InjectCmd::Forward => {
-                        model::emit(format!(
-                            "forward from={} index={}",
-                            model::ev_escape(&self.tabs[self.active].url()),
-                            self.tabs[self.active].hindex
-                        ));
-                        self.go_forward();
-                    }
-                    InjectCmd::Reload => {
-                        model::emit(format!(
-                            "reload url={}",
-                            model::ev_escape(&self.tabs[self.active].url())
-                        ));
-                        self.reload();
-                    }
-                    InjectCmd::NewTab => {
-                        model::emit("newtab requested");
-                        self.new_tab();
-                    }
-                    InjectCmd::Switch(i) => {
-                        if i < self.tabs.len() {
-                            self.active = i;
-                            let url = self.tabs[self.active].url();
-                            model::emit(format!("switch index={i} url={}", model::ev_escape(&url)));
-                            self.dirty = true;
-                            self.sync_title();
-                        }
-                    }
-                    InjectCmd::Scroll(dy) => self.scroll(dy),
-                    // Sleep never reaches the UI thread: the FIFO reader
-                    // paces the script before forwarding later commands.
-                    InjectCmd::Sleep(_) => {}
-                    InjectCmd::Quit => {
-                        model::emit("quit");
-                        self.quit = true;
-                    }
-                },
-                UiMsg::LoadResult { tab, result } => {
-                    if let Some(t) = self.tabs.iter_mut().find(|t| t.id == Some(tab)) {
-                        if let Err(e) = result {
-                            model::emit(format!(
-                                "load_error tab={tab} error={}",
-                                model::ev_escape(&e)
-                            ));
-                            t.status = Status::Error(e);
-                        }
-                        // On Ok we still wait for LoadFinished (title).
-                    }
-                    self.dirty = true;
+        if matches!(&logical, Key::Named(NamedKey::F5)) {
+            self.reload();
+            return;
+        }
+        if let Some(id) = self.active_id() {
+            if let Some(rt) = self.runtimes.get(&id) {
+                if let Some(kb) = winit_to_keyboard_types(&logical, text.as_deref()) {
+                    rt.webview
+                        .notify_input_event(InputEvent::Keyboard(ServoKeyboardEvent::new(kb)));
                 }
             }
         }
-        if saw_frame {
-            self.dirty = true;
+    }
+
+    // ---- Automation ---------------------------------------------------------
+
+    fn inject(&mut self, cmd: InjectCmd) {
+        match cmd {
+            InjectCmd::Omni(text) => {
+                self.tabs[self.active].omni_edit = Some(text.clone());
+                model::emit(format!("omni text={}", model::ev_escape(&text)));
+                self.dirty = true;
+            }
+            InjectCmd::Text(text) => {
+                let t = &mut self.tabs[self.active];
+                if t.omni_edit.is_none() {
+                    t.omni_edit = Some(String::new());
+                }
+                if let Some(e) = t.omni_edit.as_mut() {
+                    e.push_str(&text);
+                }
+                if let Some(e) = t.omni_edit.clone() {
+                    model::emit(format!("omni text={}", model::ev_escape(&e)));
+                }
+                self.dirty = true;
+            }
+            InjectCmd::Return => {
+                let content = self.tabs[self.active].omni_edit.clone().unwrap_or_default();
+                model::emit(format!("return input={}", model::ev_escape(&content)));
+                self.navigate_input(content);
+            }
+            InjectCmd::Back => self.go_back(),
+            InjectCmd::Forward => self.go_forward(),
+            InjectCmd::Reload => self.reload(),
+            InjectCmd::NewTab => self.new_tab(),
+            InjectCmd::Switch(i) => {
+                if i < self.tabs.len() {
+                    self.active = i;
+                    model::emit(format!(
+                        "switch index={i} url={}",
+                        model::ev_escape(&self.tabs[self.active].url())
+                    ));
+                    self.dirty = true;
+                    self.sync_title();
+                }
+            }
+            InjectCmd::Scroll(dy) => self.scroll(dy),
+            InjectCmd::Sleep(_) => {}
+            InjectCmd::Quit => {
+                model::emit("quit");
+                self.quit = true;
+            }
         }
     }
 
-    // ---- Presentation ------------------------------------------------------
+    // ---- Presentation -------------------------------------------------------
 
     fn sync_title(&mut self) {
         let t = &self.tabs[self.active];
         let status = t.status.label();
-        let head = if status.is_empty() { t.url() } else { format!("{} — {}", t.url(), status) };
+        let head = if status.is_empty() {
+            t.url()
+        } else {
+            format!("{} — {}", t.url(), status)
+        };
         self.window.set_title(format!("brows12 | {head}").as_str());
     }
 
@@ -568,35 +736,48 @@ impl Gui {
             .resize(std::num::NonZeroU32::new(w).unwrap(), std::num::NonZeroU32::new(h).unwrap());
 
         let mut px = Pixmap::new(w, h).expect("framebuffer");
-        chrome::draw_chrome(
-            &mut px,
-            &mut self.raster,
-            &self.tabs,
-            self.active,
-            self.hover,
-            self.caret_on,
-        );
+        let hover = self.hover;
+        let active = self.active;
+        let caret_on = self.caret_on;
+        chrome::draw_chrome(&mut px, &mut self.text, &self.tabs, active, hover, caret_on);
 
-        // Blit the active tab's newest frame into the viewport.
-        if let Some(frame) = self.tabs[self.active].id.as_ref().and_then(|id| self.frames.get(id)) {
-            if frame.width > 0 && frame.height > 0 {
-                if let Some(mut page) = Pixmap::new(frame.width, frame.height) {
-                    let src = frame.rgba_premultiplied();
-                    for (i, dst) in page.pixels_mut().iter_mut().enumerate() {
-                        let b = &src[i * 4..i * 4 + 4];
-                        *dst = PremultipliedColorU8::from_rgba(b[0], b[1], b[2], b[3])
-                            .unwrap_or(PremultipliedColorU8::TRANSPARENT);
-                    }
-                    px.draw_pixmap(
-                        0,
-                        chrome::CHROME_H as i32,
-                        page.as_ref(),
-                        &tiny_skia::PixmapPaint::default(),
-                        tiny_skia::Transform::identity(),
-                        None,
-                    );
-                }
+        // Paint + read back the active tab's webview, then blit below chrome.
+        let mut captured: Option<image::RgbaImage> = None;
+        if let (Some(servo), Some(id)) = (self.servo.as_ref(), self.active_id()) {
+            if let Some(rt) = self.runtimes.get_mut(&id) {
+                servo.spin_event_loop();
+                rt.webview.paint();
+                let rect =
+                    DeviceIntRect::from_size(DeviceIntSize::new(VIEWPORT_W as i32, VIEWPORT_H as i32));
+                captured = rt.ctx.read_to_image(rect);
+                rt.last_painted_frame = rt.state.frame_count();
             }
+        }
+        if let Some(img) = captured {
+            let page_w = img.width().min(w);
+            let page_h = img.height().min(h.saturating_sub(chrome::CHROME_H as u32));
+            let mut page = Pixmap::new(page_w, page_h).expect("page pixmap");
+            let raw = img.as_raw();
+            for (i, dst) in page.pixels_mut().iter_mut().enumerate() {
+                let x = (i % page_w as usize) as u32;
+                let y = (i / page_w as usize) as u32;
+                let si = (y * img.width() + x) as usize * 4;
+                *dst = PremultipliedColorU8::from_rgba(
+                    raw[si],
+                    raw[si + 1],
+                    raw[si + 2],
+                    raw[si + 3],
+                )
+                .unwrap_or(PremultipliedColorU8::TRANSPARENT);
+            }
+            px.draw_pixmap(
+                0,
+                chrome::CHROME_H as i32,
+                page.as_ref(),
+                &tiny_skia::PixmapPaint::default(),
+                tiny_skia::Transform::identity(),
+                None,
+            );
         }
 
         let mut buffer = self.surface.buffer_mut().expect("buffer");
@@ -605,5 +786,61 @@ impl Gui {
             buffer[i] = u32::from_be_bytes([0, c.red(), c.green(), c.blue()]);
         }
         buffer.present().expect("present");
+
+        // Validation hook: dump the composited frame after each page load.
+        if let Ok(snapshot_path) = std::env::var("BROWS12_UI_SNAPSHOT") {
+            let gen = self.snapshot_gen;
+            static LAST_SAVED: std::sync::atomic::AtomicU64 =
+                std::sync::atomic::AtomicU64::new(0);
+            if gen > 0 && LAST_SAVED.load(std::sync::atomic::Ordering::Relaxed) != gen {
+                LAST_SAVED.store(gen, std::sync::atomic::Ordering::Relaxed);
+                let _ = px.save_png(&snapshot_path);
+                model::emit(format!("snapshot path={}", model::ev_escape(&snapshot_path)));
+            }
+        }
     }
+}
+
+/// winit key → keyboard_types event for the page.
+fn winit_to_keyboard_types(logical: &Key, _text: Option<&str>) -> Option<KeyboardEvent> {
+    let key: KKey = match logical {
+        Key::Character(c) => KKey::Character(c.to_string()),
+        Key::Named(n) => KKey::Named(match n {
+            NamedKey::Enter => keyboard_types::NamedKey::Enter,
+            NamedKey::Backspace => keyboard_types::NamedKey::Backspace,
+            NamedKey::Escape => keyboard_types::NamedKey::Escape,
+            NamedKey::Tab => keyboard_types::NamedKey::Tab,
+            NamedKey::ArrowUp => keyboard_types::NamedKey::ArrowUp,
+            NamedKey::ArrowDown => keyboard_types::NamedKey::ArrowDown,
+            NamedKey::ArrowLeft => keyboard_types::NamedKey::ArrowLeft,
+            NamedKey::ArrowRight => keyboard_types::NamedKey::ArrowRight,
+            NamedKey::Home => keyboard_types::NamedKey::Home,
+            NamedKey::End => keyboard_types::NamedKey::End,
+            NamedKey::PageUp => keyboard_types::NamedKey::PageUp,
+            NamedKey::PageDown => keyboard_types::NamedKey::PageDown,
+            NamedKey::Delete => keyboard_types::NamedKey::Delete,
+            _ => return None,
+        }),
+        _ => return None,
+    };
+    let code = match &key {
+        KKey::Named(keyboard_types::NamedKey::Enter) => Code::Enter,
+        KKey::Named(keyboard_types::NamedKey::Backspace) => Code::Backspace,
+        KKey::Named(keyboard_types::NamedKey::Escape) => Code::Escape,
+        KKey::Named(keyboard_types::NamedKey::Tab) => Code::Tab,
+        KKey::Named(keyboard_types::NamedKey::ArrowUp) => Code::ArrowUp,
+        KKey::Named(keyboard_types::NamedKey::ArrowDown) => Code::ArrowDown,
+        KKey::Named(keyboard_types::NamedKey::ArrowLeft) => Code::ArrowLeft,
+        KKey::Named(keyboard_types::NamedKey::ArrowRight) => Code::ArrowRight,
+        _ => Code::Unidentified,
+    };
+    Some(KeyboardEvent {
+        state: KeyState::Down,
+        key,
+        code,
+        location: Location::Standard,
+        modifiers: Modifiers::empty(),
+        repeat: false,
+        is_composing: false,
+    })
 }

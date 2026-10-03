@@ -15,8 +15,6 @@ exclude = [
     "tests",
     "benchmarks",
     "fuzz",
-    # retired until rebuilt on top of servo-host (Phase 1.4)
-    "ui",
     "harness",
 ]
 resolver = "2"
@@ -24,6 +22,7 @@ members = [
     "storage",
     "privacy",
     "servo-host",
+    "ui",
 ]
 
 [workspace.package]

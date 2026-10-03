@@ -1,10 +1,10 @@
 //! Chrome drawing + hit testing: tab strip, toolbar (back/forward/reload +
-//! omnibox + status), and the engine viewport blit. Everything is drawn
-//! into one tiny-skia pixmap each frame; text uses the engine's own
-//! rasterizer (same shaping path as Canvas2D `fillText`).
+//! omnibox + status), and the webview viewport blit. Everything is drawn
+//! into one tiny-skia pixmap each frame; text uses the shell's own
+//! cosmic-text rasterizer.
 
 use crate::model::{Status, UiTab};
-use brows12_render::raster::Rasterizer;
+use crate::text::UiText;
 use tiny_skia::{Color, FillRule, Paint, PathBuilder, Pixmap, Stroke, Transform};
 
 // ---- Layout constants (logical pixels) -------------------------------
@@ -139,11 +139,11 @@ fn fill(px: &mut Pixmap, x: f32, y: f32, w: f32, h: f32, color: [u8; 4], radius:
     }
 }
 
-/// Rasterize `text` with the engine rasterizer and blit it at (x, y).
+/// Rasterize `text` with the shell's cosmic-text rasterizer and blit it.
 #[allow(clippy::too_many_arguments)]
 fn text(
     px: &mut Pixmap,
-    raster: &mut Rasterizer,
+    raster: &mut UiText,
     s: &str,
     x: f32,
     y: f32,
@@ -180,24 +180,14 @@ fn stroke_shape(px: &mut Pixmap, build: impl FnOnce(&mut PathBuilder), width: f3
     }
 }
 
-fn measure(raster: &mut Rasterizer, s: &str, size: f32) -> f32 {
-    let measurer = brows12_layout::TextMeasurer::new(raster.font_system.clone());
-    let leaf = brows12_layout::LeafContext::Text {
-        text: s.to_string(),
-        font_size: size,
-        line_height_px: size * 1.2,
-        font_weight: 400,
-        font_style_italic: false,
-        font_family: None,
-        white_space_pre: false,
-    };
-    measurer.measure(&leaf, None).0
+fn measure(raster: &mut UiText, s: &str, size: f32) -> f32 {
+    raster.measure(s, size)
 }
 
 /// Draw the whole chrome onto `px`.
 pub fn draw_chrome(
     px: &mut Pixmap,
-    raster: &mut Rasterizer,
+    raster: &mut UiText,
     tabs: &[UiTab],
     active: usize,
     hover: Hit,

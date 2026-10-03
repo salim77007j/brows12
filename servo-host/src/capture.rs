@@ -24,5 +24,5 @@ pub fn save_png(img: &image::RgbaImage, path: &Path) -> std::io::Result<()> {
         std::fs::create_dir_all(parent)?;
     }
     img.save(path)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("png save: {e}")))
+        .map_err(|e| std::io::Error::other(format!("png save: {e}")))
 }
