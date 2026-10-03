@@ -17,6 +17,8 @@ pub struct TextStyle {
     pub color: Rgba,
     pub white_space_pre: bool,
     pub align: brows12_css::values::TextAlign,
+    /// `text-shadow` layers (paint order: shadows first, then ink).
+    pub shadows: Vec<brows12_css::values::Shadow>,
 }
 
 /// One paint operation.
@@ -24,6 +26,8 @@ pub struct TextStyle {
 pub enum DisplayItem {
     /// Solid rectangle fill (backgrounds).
     Rect { rect: Rect, color: Rgba, radius: f32 },
+    /// A blurred box shadow painted beneath its box (outset or inset).
+    BoxShadow { rect: Rect, shadow: brows12_css::values::Shadow, radius: f32 },
     /// Rectangle outline (borders).
     Border {
         rect: Rect,
@@ -188,6 +192,14 @@ pub fn build_display_list(
         if style.display == brows12_css::values::Display::None {
             return;
         }
+        // opacity: 0 hides the node AND its subtree (CSS Color L3: opacity
+        // applies to the element as a group, so children cannot out-paint a
+        // fully transparent ancestor). Real skins hide interactive chrome
+        // (e.g. Vector-2022's dropdown checkboxes) this way; without the
+        // skip they paint as black squares.
+        if style.opacity <= 0.0 {
+            return;
+        }
         // visibility: hidden keeps the box's layout space but paints
         // nothing at this node; children still recurse and each checks its
         // own (inherited, possibly overridden) visibility (CSS 2.1 §11.2).
@@ -269,6 +281,23 @@ pub fn build_display_list(
                     }
                     return;
                 };
+                // Box shadows paint beneath the background/border
+                // (CSS Backgrounds L3 §6.1: first layer on top).
+                if !own_hidden {
+                    for shadow in &style.box_shadows {
+                        if shadow.color[3] == 0 {
+                            continue;
+                        }
+                        list.tagged.push((
+                            z,
+                            DisplayItem::BoxShadow {
+                                rect,
+                                shadow: *shadow,
+                                radius: style.border_radius,
+                            },
+                        ));
+                    }
+                }
                 // Background: gradient paint wins over flat color (the
                 // color still renders beneath as fallback where possible).
                 if !own_hidden {
@@ -381,6 +410,7 @@ pub fn build_display_list(
                     color: style.color,
                     white_space_pre: style.white_space == brows12_css::values::WhiteSpace::Pre,
                     align: style.text_align,
+                    shadows: style.text_shadows.clone(),
                 };
                 let text = doc.text_content(node);
                 list.tagged.push((
