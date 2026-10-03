@@ -38,7 +38,11 @@ pub struct ClientConfig {
 impl Default for ClientConfig {
     fn default() -> Self {
         ClientConfig {
-            user_agent: format!("Brows12/{}", env!("CARGO_PKG_VERSION")),
+            // Compat UA: real browsers ship a mainstream identifier because
+            // sites UA-sniff (Wikipedia serves a broken no-JS variant to
+            // unknown UAs; Google/Bing gate results). Chrome-equivalent
+            // string, overridable via EngineConfig for transparency tools.
+            user_agent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36".into(),
             max_redirects: 10,
             connect_timeout: Duration::from_secs(10),
             response_timeout: Duration::from_secs(30),
@@ -278,7 +282,9 @@ mod tests {
     #[test]
     fn default_config_is_sane() {
         let cfg = ClientConfig::default();
-        assert!(cfg.user_agent.starts_with("Brows12/"));
+        // Compat UA: mainstream identifier so UA-sniffing sites serve their
+        // standard variant (see Default for ClientConfig).
+        assert!(cfg.user_agent.contains("Chrome/"));
         assert_eq!(cfg.max_redirects, 10);
         assert!(!cfg.allow_http_fallback);
     }
