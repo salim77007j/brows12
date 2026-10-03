@@ -169,7 +169,11 @@ pub fn run_perf(config: PerfConfig) -> PerfReport {
     let waker = CondvarWaker::default();
     let servo: Servo = ServoBuilder::default()
         .event_loop_waker(Box::new(waker.clone()))
-        .preferences(crate::prefs::brows12_preferences())
+        .preferences({
+            let mut prefs = crate::prefs::brows12_preferences();
+            crate::prefs::apply_env_overrides(&mut prefs);
+            prefs
+        })
         .build();
     let servo_build_ms = build_started.elapsed().as_millis();
 

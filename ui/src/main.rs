@@ -165,7 +165,11 @@ impl ApplicationHandler<HostWakerEvent> for App {
         let build_started = Instant::now();
         let servo: Servo = ServoBuilder::default()
             .event_loop_waker(Box::new(waker))
-            .preferences(servo_host::brows12_preferences())
+            .preferences({
+                let mut prefs = servo_host::brows12_preferences();
+                servo_host::prefs::apply_env_overrides(&mut prefs);
+                prefs
+            })
             .build();
         let servo_build_ms = build_started.elapsed().as_millis();
 

@@ -66,6 +66,50 @@ pub fn brows12_preferences() -> Preferences {
     }
 }
 
+/// Phase 3.9 debugging hook: `BROWS12_SET_PREF="key=value,key=value"`
+/// overrides individual Servo prefs at runtime without a rebuild. Keys
+/// are `Preferences` struct field names in snake_case (e.g.
+/// `gfx_texture_swizzling_enabled=false`); values parse as bool/i64/f64/
+/// string. Unknown keys are reported via stderr and ignored — this is a
+/// diagnostic tool, not a user-facing setting.
+pub fn apply_env_overrides(prefs: &mut Preferences) {
+    let Ok(spec) = std::env::var("BROWS12_SET_PREF") else { return };
+    for pair in spec.split(',') {
+        let Some((key, value)) = pair.split_once('=') else { continue };
+        let key = key.trim();
+        let value = value.trim();
+        let mut json = match serde_json::to_value(&*prefs) {
+            Ok(json) => json,
+            Err(_) => continue,
+        };
+        let Some(obj) = json.as_object_mut() else { continue };
+        let parsed = match value {
+            "true" | "false" => serde_json::Value::Bool(value == "true"),
+            v if v.parse::<i64>().is_ok() && !v.contains('.') => {
+                serde_json::Value::from(v.parse::<i64>().unwrap())
+            },
+            v if v.parse::<f64>().is_ok() => serde_json::Value::from(v.parse::<f64>().unwrap()),
+            v => serde_json::Value::from(v),
+        };
+        // Replace only same-typed values so a typo cannot corrupt a pref.
+        let type_ok = obj.get(key).map(|old| {
+            std::mem::discriminant(old) == std::mem::discriminant(&parsed)
+        });
+        match type_ok {
+            Some(true) => {
+                obj.insert(key.to_string(), parsed);
+            },
+            _ => {
+                eprintln!("brows12: unknown or mistyped pref in BROWS12_SET_PREF: {key}");
+                continue;
+            },
+        }
+        if let Ok(mutated) = serde_json::from_value::<Preferences>(json) {
+            *prefs = mutated;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
