@@ -1,0 +1,40 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { margin: 0; font: 14px/1.4 sans-serif; background: #fff; padding: 16px; }
+  .row { display: flex; gap: 24px; margin-bottom: 28px; }
+  .card {
+    width: 180px; height: 90px; background: #fff;
+    border: 1px solid #eee; display: flex; align-items: center; justify-content: center;
+    color: #888;
+  }
+  .s1 { box-shadow: 0 4px 12px rgba(0,0,0,0.35); }
+  .s2 { box-shadow: 0 1px 4px rgba(0,0,0,0.2); border-radius: 10px; }
+  .s3 { box-shadow: 8px 8px 0 #cc4444; }
+  .s4 { box-shadow: 0 0 0 6px rgba(80,140,255,0.5), 0 8px 20px rgba(0,0,0,0.3); }
+  .s5 { box-shadow: inset 0 0 12px rgba(0,0,0,0.5); background: #f4f4f4; }
+  .s6 { box-shadow: 0 0 0 3px #46b06c; }
+  h4 { margin: 24px 0 8px; font-size: 13px; color: #333; }
+  .glow { font-size: 26px; font-weight: 700; color: #222; text-shadow: 2px 2px 3px rgba(0,0,0,0.4); }
+  .glow2 { font-size: 26px; font-weight: 700; color: #fff; text-shadow: 0 0 8px #3355ff; }
+</style>
+</head>
+<body>
+  <div class="row">
+    <div class="card s1">0 4px 12px black</div>
+    <div class="card s2">0 1px 4px + radius</div>
+    <div class="card s3">8px 8px 0 red</div>
+  </div>
+  <div class="row">
+    <div class="card s4">2 layers: ring + drop</div>
+    <div class="card s5">inset 0 0 12px</div>
+    <div class="card s6">0 0 0 3px green ring</div>
+  </div>
+  <h4>text-shadow 2px 2px 3px</h4>
+  <div class="glow">Shadowed heading text</div>
+  <h4>text-shadow 0 0 8px blue glow</h4>
+  <div class="glow2">Glowing white text</div>
+</body>
+</html>

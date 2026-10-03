@@ -1,0 +1,22 @@
+{
+  "console": [],
+  "engine": "brows12 v0.2.0",
+  "error": null,
+  "final_url": "brows12://fixture/",
+  "input": "validation/run/fixtures/shadows.html",
+  "loaded": true,
+  "render": {
+    "compositor": null,
+    "png_bytes": 30858,
+    "scroll_y": 0.0
+  },
+  "screenshot": "validation/run/step/shadows_brows.png",
+  "timing": {
+    "full_pipeline_ms": 50
+  },
+  "title": "",
+  "viewport": {
+    "height": 800,
+    "width": 1280
+  }
+}
