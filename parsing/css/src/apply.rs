@@ -86,9 +86,16 @@ pub(crate) fn apply_property(
         Property::Display(d) => s.display = map_display(d),
         Property::FontSize(fs) => {
             let parent_size = parent.map(|p| p.font_size).unwrap_or(ctx.root_font_size);
+            // em/percentage font sizes resolve against the PARENT's computed
+            // font size (CSS 2.1 §6.1) — never against this element's
+            // already-cascaded value, which would compound across every
+            // matched rule (the "giant heading" bug on skins that restate
+            // `h2 { font-size: 1.5em }` after the UA sheet).
+            let mut lctx_fs = lctx;
+            lctx_fs.font_size = parent_size;
             let resolved = match fs {
                 FontSize::Length(lp) => {
-                    crate::computed::length_percentage_to_len(lp, &lctx).map(|len| match len {
+                    crate::computed::length_percentage_to_len(lp, &lctx_fs).map(|len| match len {
                         Len::Px(px) => px,
                         Len::Percent(p) => parent_size * p,
                     })

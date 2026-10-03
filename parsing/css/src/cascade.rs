@@ -168,13 +168,24 @@ fn compute_inner(
                         .then(a.order.cmp(&b.order))
                 });
 
+                // font-size first: sibling declarations in `em`/% must
+                // resolve against the element's final font size, not the
+                // pre-cascade value (CSS 2.1 §6.1 computed values).
+                let font_first =
+                    |p: &lightningcss::properties::Property| !matches!(p, lightningcss::properties::Property::FontSize(_));
                 for rule in &normal {
-                    for prop in &rule.declarations {
+                    for prop in rule.declarations.iter().filter(|p| !font_first(p)) {
+                        apply_property(&mut style, prop, Some(parent_style), ctx);
+                    }
+                    for prop in rule.declarations.iter().filter(|p| font_first(p)) {
                         apply_property(&mut style, prop, Some(parent_style), ctx);
                     }
                 }
                 for rule in &important {
-                    for prop in &rule.important {
+                    for prop in rule.important.iter().filter(|p| !font_first(p)) {
+                        apply_property(&mut style, prop, Some(parent_style), ctx);
+                    }
+                    for prop in rule.important.iter().filter(|p| font_first(p)) {
                         apply_property(&mut style, prop, Some(parent_style), ctx);
                     }
                 }
