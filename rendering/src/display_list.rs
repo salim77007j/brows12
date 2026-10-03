@@ -152,6 +152,7 @@ pub fn build_display_list(
         list: &mut DisplayList,
         images: &HashMap<NodeId, Arc<DecodedImage>>,
         scroll_y: f32,
+        viewport_h: f32,
         fixed_subtrees: &std::collections::HashSet<NodeId>,
         is_fixed: bool,
         z: i32,
@@ -195,8 +196,43 @@ pub fn build_display_list(
         // by the grid-table mapping) still relay paint to their children;
         // only their own background/border/text are skipped below.
         let mut rect = layout.rect(node);
+        // position: sticky (CSS Position L3): the box keeps its flow slot;
+        // scrolling shifts it within the containing block's content box so
+        // it stays `top`/`bottom` px from the scroll port edge. Computed in
+        // document coordinates before the scroll subtraction below.
+        if !is_fixed
+            && scroll_y != 0.0
+            && style.position == brows12_css::values::Position::Sticky
+        {
+            if let (Some(r), Some(parent_id)) = (rect.as_mut(), doc.parent(node)) {
+                if let (Some(mut pr), Some(ps)) = (layout.rect(parent_id), styles.get(parent_id)) {
+                    let pt = ps.padding.top.extract_px() + ps.border_width.top.extract_px();
+                    let pb = ps.padding.bottom.extract_px() + ps.border_width.bottom.extract_px();
+                    pr.y += pt;
+                    pr.height = (pr.height - pt - pb).max(0.0);
+                    let view_top = scroll_y;
+                    let view_bottom = scroll_y + viewport_h;
+                    if let Some(top_px) =
+                        inset_px_guard(&style.insets.top, pr.height)
+                    {
+                        let max_dy = (pr.y + pr.height - r.y - r.height).max(0.0);
+                        let dy = (view_top + top_px - r.y).clamp(0.0, max_dy);
+                        r.y += dy;
+                    } else if let Some(bottom_px) =
+                        inset_px_guard(&style.insets.bottom, pr.height)
+                    {
+                        let target = view_bottom - bottom_px - r.height;
+                        let max_up = (r.y - pr.y).max(0.0);
+                        let dy = -(r.y - target).clamp(0.0, max_up);
+                        r.y += dy;
+                    }
+                }
+            }
+        }
         // Compositor scroll: content moves up; fixed layers stay anchored.
-        if !is_fixed && scroll_y != 0.0 {
+        // in_fixed_subtree (not the root is_fixed flag) decides: a fixed
+        // element nested anywhere in a painted tree must not shift.
+        if !in_fixed_subtree && scroll_y != 0.0 {
             if let Some(r) = rect.as_mut() {
                 r.y -= scroll_y;
             }
@@ -230,6 +266,7 @@ pub fn build_display_list(
                             list,
                             images,
                             scroll_y,
+                            viewport_h,
                             fixed_subtrees,
                             child_fixed,
                             z,
@@ -331,6 +368,7 @@ pub fn build_display_list(
                         list,
                         images,
                         scroll_y,
+                        viewport_h,
                         fixed_subtrees,
                         child_fixed,
                         z,
@@ -381,6 +419,7 @@ pub fn build_display_list(
                         list,
                         images,
                         scroll_y,
+                        viewport_h,
                         fixed_subtrees,
                         is_fixed,
                         z,
@@ -392,7 +431,20 @@ pub fn build_display_list(
         }
     }
 
-    emit(doc, styles, layout, &mut list, images, scroll_y, &fixed_subtrees, false, 0, start, scope);
+    emit(
+        doc,
+        styles,
+        layout,
+        &mut list,
+        images,
+        scroll_y,
+        viewport.1,
+        &fixed_subtrees,
+        false,
+        0,
+        start,
+        scope,
+    );
     // Paint order: negative stacking contexts behind, positive above; tree
     // order preserved within a bucket (stable sort).
     list.tagged.sort_by_key(|(z, _)| *z);
@@ -411,5 +463,14 @@ impl ExtractPx for brows12_css::values::Len {
             brows12_css::values::Len::Percent(_) => 0.0,
             brows12_css::values::Len::Calc(c) => c.px_part(),
         }
+    }
+}
+
+/// Resolve a sticky inset to px (percent resolves against the containing
+/// block's content-box height; auto/none returns None).
+fn inset_px_guard(v: &brows12_css::values::AutoPx, basis: f32) -> Option<f32> {
+    match v {
+        brows12_css::values::AutoPx::Auto => None,
+        brows12_css::values::AutoPx::Len(len) => Some(len.resolve(basis)),
     }
 }

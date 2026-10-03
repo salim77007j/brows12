@@ -363,9 +363,10 @@ fn taffy_position(style: &ComputedStyle) -> taffy::Position {
         CssPosition::Relative => taffy::Position::Relative,
         // taffy positions absolute children against their parent box; the
         // post-pass below re-anchors `fixed` to the viewport.
-        CssPosition::Absolute | CssPosition::Fixed | CssPosition::Sticky => {
-            taffy::Position::Absolute
-        }
+        CssPosition::Absolute | CssPosition::Fixed => taffy::Position::Absolute,
+        // Sticky keeps its normal-flow slot (like relative); the paint pass
+        // applies the scroll constraint within the containing block.
+        CssPosition::Sticky => taffy::Position::Relative,
     }
 }
 
