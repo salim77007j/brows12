@@ -442,6 +442,14 @@ pub(crate) fn apply_property(
         Property::GridRowEnd(gl) => s.grid_row.1 = grid_line(gl),
         Property::Overflow(o) => s.overflow = map_overflow(o.y),
         Property::OverflowY(o) => s.overflow = map_overflow(*o),
+        Property::Visibility(v) => {
+            use lightningcss::properties::display::Visibility as LV;
+            s.visibility = match v {
+                LV::Visible => Visibility::Visible,
+                LV::Hidden => Visibility::Hidden,
+                LV::Collapse => Visibility::Collapse,
+            };
+        }
         Property::Position(p) => {
             s.position = match p {
                 LcPosition::Static => Position::Static,

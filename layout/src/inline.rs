@@ -28,6 +28,9 @@ pub struct InlineItem {
     pub line_through: bool,
     pub background: Option<Rgba>,
     pub white_space: WhiteSpace,
+    /// Own computed `visibility` of the source node — hidden segments keep
+    /// their layout metrics but do not paint (children override per node).
+    pub visible: bool,
 }
 
 impl InlineItem {
@@ -48,6 +51,7 @@ impl InlineItem {
             line_through: false,
             background: None,
             white_space: WhiteSpace::Normal,
+            visible: style.visibility == brows12_css::values::Visibility::Visible,
         }
     }
 }
@@ -72,6 +76,8 @@ pub struct InlineSegment {
     pub underline: bool,
     pub line_through: bool,
     pub background: Option<Rgba>,
+    /// Visibility of the source node (keep metrics, skip paint when false).
+    pub visible: bool,
 }
 
 /// One assembled line box.
@@ -319,6 +325,7 @@ pub fn layout_inline_banded(
     // Flush the current line at a break point: drop trailing spaces,
     // record the line with its insets, advance the y cursor, re-query the
     // float insets for the next line.
+    #[allow(clippy::too_many_arguments)]
     fn break_line<'a>(
         cur: &mut Vec<Token<'a>>,
         items: &[InlineItem],
@@ -426,6 +433,7 @@ pub fn layout_inline_banded(
                 underline: it.underline,
                 line_through: it.line_through,
                 background: it.background,
+                visible: it.visible,
             });
             x += t.width;
         }

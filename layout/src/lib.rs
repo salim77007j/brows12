@@ -491,7 +491,6 @@ fn build_taffy_style(
     if style.display == Display::Grid {
         let tf = |t: &brows12_css::values::GridTrackSize| -> taffy::style::TrackSizingFunction {
             use taffy::style::{MaxTrackSizingFunction as Max, MinTrackSizingFunction as Min};
-            use taffy::prelude::TaffyAuto;
             fn min_side(g: &brows12_css::values::GridTrackSize) -> Min {
                 match g {
                     brows12_css::values::GridTrackSize::Auto => Min::auto(),
@@ -1075,6 +1074,7 @@ pub fn compute_layout(
                         bg
                     },
                     white_space: style.white_space,
+                    visible: style.visibility == brows12_css::values::Visibility::Visible,
                 });
             }
             NodeData::Element { name, .. } => {
@@ -1200,15 +1200,17 @@ pub fn compute_layout(
         .and_then(|s| inset_px(s.max_width, viewport.width))
         .map(|mw| mw.min(viewport.width).max(1.0))
         .unwrap_or(viewport.width);
-    let run_compute = |tree: &mut taffy::TaffyTree<LeafContext>,
-                       root: taffy::NodeId,
-                       measure: &dyn Fn(
+    type MeasureFn<'a> = &'a dyn Fn(
         taffy::LayoutInput,
         taffy::NodeId,
         Option<&mut LeafContext>,
         &taffy::Style,
-    ) -> taffy::LayoutOutput|
-     -> Result<(), taffy::TaffyError> {
+    ) -> taffy::LayoutOutput;
+
+    let run_compute = |tree: &mut taffy::TaffyTree<LeafContext>,
+                       root: taffy::NodeId,
+                       measure: MeasureFn<'_>|
+    -> Result<(), taffy::TaffyError> {
         tree.compute_layout_with_measure(
             root,
             taffy::Size {

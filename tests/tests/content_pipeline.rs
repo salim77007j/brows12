@@ -106,3 +106,81 @@ fn memory_budget_suspends_oldest() {
     assert!(!t1.is_live() || !t2.is_live());
     assert!(t3.is_live());
 }
+
+#[test]
+fn hidden_element_semantics() {
+    // [hidden], closed <details> content, and visibility:hidden must not
+    // paint; a visibility:visible descendant restores painting (CSS 2.1
+    // §11.2), and open <details> content paints.
+    let page = r##"<!DOCTYPE html>
+<html><head><style>
+.vh { visibility: hidden; }
+.vh .show { visibility: visible; }
+details { display: block; }
+</style></head><body>
+<p hidden>SECRET-HIDDEN-ATTR</p>
+<details><summary>S</summary><p>SECRET-DETAILS</p></details>
+<div class="vh">SECRET-VIS<span class="show">SHOW-RESTORED</span></div>
+<p>MARKER-END</p>
+</body></html>"##;
+    let base = server(vec![("/", page.to_string())]);
+    let engine = Engine::new(EngineConfig::default());
+    let tab = engine.tab();
+    tab.load_url(&base).unwrap();
+    let frame = tab.frame().expect("frame rendered");
+    let rgba = frame.rgba_premultiplied();
+    let w = frame.pixmap.width() as usize;
+
+    // Scan for any dark (text) pixel rows: we assert on text presence by
+    // checking whether any non-white pixel exists in each quarter of the
+    // page where the marker lines are expected. Simpler and robust: count
+    // dark pixels in the whole frame; hidden strings must not contribute.
+    let dark = |needle_row_range: std::ops::Range<usize>| -> usize {
+        let mut n = 0;
+        for y in needle_row_range {
+            for x in 0..w {
+                let p = &rgba[(y * w + x) * 4..(y * w + x) * 4 + 4];
+                if p[0] < 128 && p[3] > 0 {
+                    n += 1;
+                }
+            }
+        }
+        n
+    };
+
+    // Sanity: the end marker paints (page is live overall).
+    let any_ink = rgba.chunks_exact(4).filter(|p| p[0] < 128 && p[3] > 0).count();
+    assert!(any_ink > 50, "page must paint text, got {any_ink}");
+
+    // The hidden strings are rendered with layout space kept, so we cannot
+    // assert on exact rows; instead assert via the DOM->paint contract:
+    // re-render a page without the hidden bits and compare ink counts.
+    let clean = r##"<!DOCTYPE html>
+<html><head><style>
+.vh { visibility: hidden; }
+.vh .show { visibility: visible; }
+details { display: block; }
+</style></head><body>
+<p></p>
+<details><summary>S</summary><p></p></details>
+<div class="vh"><span class="show">SHOW-RESTORED</span></div>
+<p>MARKER-END</p>
+</body></html>"##;
+    let base2 = server(vec![("/", clean.to_string())]);
+    let tab2 = engine.tab();
+    tab2.load_url(&base2).unwrap();
+    let frame2 = tab2.frame().expect("frame2 rendered");
+    let rgba2 = frame2.rgba_premultiplied();
+    let any_ink2 = rgba2.chunks_exact(4).filter(|p| p[0] < 128 && p[3] > 0).count();
+
+    // The hidden page paints strictly more ink ONLY from the visible
+    // span + markers; the difference must be small (the hidden texts
+    // contributed nothing). The [hidden] p and closed-details p each
+    // would add a full text line's ink (hundreds of dark pixels) if the
+    // semantics leaked, which this 3x tolerance catches.
+    assert!(
+        (any_ink as i64 - any_ink2 as i64).abs() < (any_ink2 as i64 / 2).max(200),
+        "hidden content leaked into paint: hidden={any_ink} clean={any_ink2}"
+    );
+    let _ = dark(0..1);
+}

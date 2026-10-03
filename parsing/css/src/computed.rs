@@ -36,6 +36,9 @@ pub struct ComputedStyle {
     pub min_height: AutoPx,
     pub max_width: AutoPx,
     pub overflow: OverflowKeyword,
+    /// `visibility`: hidden boxes keep space but skip painting (children
+    /// may override back to visible — checked per node at paint time).
+    pub visibility: Visibility,
     pub position: Position,
     /// `float: left/right` — box is removed from normal flow (layout).
     pub float: FloatSide,
@@ -106,6 +109,7 @@ impl Default for ComputedStyle {
             min_height: AutoPx::Auto,
             max_width: AutoPx::Auto,
             overflow: OverflowKeyword::Visible,
+            visibility: Visibility::Visible,
             position: Position::Static,
             float: FloatSide::None,
             clear: ClearSide::None,
@@ -171,6 +175,7 @@ impl ComputedStyle {
             text_underline: false,
             text_line_through: false,
             opacity: 1.0,
+            visibility: parent.visibility,
             custom: parent.custom.clone(),
             ..ComputedStyle::default()
         }

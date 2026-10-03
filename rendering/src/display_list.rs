@@ -187,6 +187,10 @@ pub fn build_display_list(
         if style.display == brows12_css::values::Display::None {
             return;
         }
+        // visibility: hidden keeps the box's layout space but paints
+        // nothing at this node; children still recurse and each checks its
+        // own (inherited, possibly overridden) visibility (CSS 2.1 §11.2).
+        let own_hidden = style.visibility != brows12_css::values::Visibility::Visible;
         // Structural nodes without a laid-out box (e.g. table rows skipped
         // by the grid-table mapping) still relay paint to their children;
         // only their own background/border/text are skipped below.
@@ -205,7 +209,10 @@ pub fn build_display_list(
         }
         if let Some(flow) = layout.inline_flows.get(&node) {
             if let Some(r) = rect {
-                list.tagged.push((z, DisplayItem::InlineFlow { rect: r, flow: flow.clone() }));
+                // Per-segment visibility: hidden segments keep metrics,
+                // visible children inside a hidden ancestor still paint.
+                list.tagged
+                    .push((z, DisplayItem::InlineFlow { rect: r, flow: flow.clone() }));
             }
             return;
         }
@@ -234,24 +241,26 @@ pub fn build_display_list(
                 };
                 // Background: gradient paint wins over flat color (the
                 // color still renders beneath as fallback where possible).
-                if let Some(g) = &style.background_gradient {
-                    list.tagged.push((
-                        z,
-                        DisplayItem::GradientRect {
-                            rect,
-                            gradient: g.clone(),
-                            radius: style.border_radius,
-                        },
-                    ));
-                } else if style.background_color[3] > 0 {
-                    list.tagged.push((
-                        z,
-                        DisplayItem::Rect {
-                            rect,
-                            color: style.background_color,
-                            radius: style.border_radius,
-                        },
-                    ));
+                if !own_hidden {
+                    if let Some(g) = &style.background_gradient {
+                        list.tagged.push((
+                            z,
+                            DisplayItem::GradientRect {
+                                rect,
+                                gradient: g.clone(),
+                                radius: style.border_radius,
+                            },
+                        ));
+                    } else if style.background_color[3] > 0 {
+                        list.tagged.push((
+                            z,
+                            DisplayItem::Rect {
+                                rect,
+                                color: style.background_color,
+                                radius: style.border_radius,
+                            },
+                        ));
+                    }
                 }
                 // Border
                 let bw = &style.border_width;
@@ -259,7 +268,7 @@ pub fn build_display_list(
                     + bw.right.extract_px()
                     + bw.bottom.extract_px()
                     + bw.left.extract_px();
-                if total > 0.0 {
+                if total > 0.0 && !own_hidden {
                     list.tagged.push((
                         z,
                         DisplayItem::Border {
@@ -277,14 +286,16 @@ pub fn build_display_list(
                 }
                 // Image content
                 if let Some(img) = images.get(&node) {
-                    list.tagged.push((
-                        z,
-                        DisplayItem::Image {
-                            rect,
-                            image: img.clone(),
-                            radius: style.border_radius,
-                        },
-                    ));
+                    if !own_hidden {
+                        list.tagged.push((
+                            z,
+                            DisplayItem::Image {
+                                rect,
+                                image: img.clone(),
+                                radius: style.border_radius,
+                            },
+                        ));
+                    }
                 }
                 // overflow: hidden/scroll/auto clips the subtree to the
                 // padding box (the border still paints outside the clip).
@@ -333,7 +344,10 @@ pub fn build_display_list(
             }
             NodeData::Text(_) => {
                 let Some(rect) = rect else { return };
-                if style.display == brows12_css::values::Display::None || rect.height <= 0.0 {
+                if style.display == brows12_css::values::Display::None
+                    || own_hidden
+                    || rect.height <= 0.0
+                {
                     return;
                 }
                 let text_style = TextStyle {

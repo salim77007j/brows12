@@ -153,7 +153,7 @@ impl Rasterizer {
             // Segment backgrounds first (behind all glyphs of the line).
             for seg in &line.segments {
                 if let Some(bg) = seg.background {
-                    if bg[3] > 0 {
+                    if bg[3] > 0 && seg.visible {
                         fill_pixel_rect(
                             pixmap,
                             (rect.x + seg.x) as i32,
@@ -168,6 +168,9 @@ impl Rasterizer {
             }
             // Glyphs per segment.
             for seg in &line.segments {
+                if !seg.visible {
+                    continue;
+                }
                 let metrics = cosmic_text::Metrics::new(seg.font_size, seg.line_height_px);
                 let mut buffer = cosmic_text::Buffer::new(&mut fs, metrics);
                 buffer.set_size(None, None);

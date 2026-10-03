@@ -8,6 +8,15 @@ body { display: block; margin: 8px; font-size: 16px; color: #000000; }
 head, title, meta, link, style, script, template, noscript,
 base, col, colgroup, area, source, track, datalist, param { display: none; }
 
+/* Hidden-element semantics (HTML rendering spec §15.3.1) */
+[hidden] { display: none; }
+dialog:not([open]) { display: none; }
+input[type=hidden i] { display: none; }
+/* <details> hides every child except its <summary> until opened —
+   the disclosure mechanism GitHub/HN menus rely on. */
+details:not([open]) > :not(summary) { display: none; }
+summary { display: block; }
+
 /* Block-level elements (v1 layout treats inline flow as block; see ROADMAP) */
 div, p, h1, h2, h3, h4, h5, h6, ul, ol, li, blockquote, figure, figcaption,
 section, article, aside, header, footer, nav, main, address, pre, form,

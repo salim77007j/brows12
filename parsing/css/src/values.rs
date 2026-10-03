@@ -180,6 +180,17 @@ pub enum OverflowKeyword {
     Auto,
 }
 
+/// `visibility` (CSS 2.1 §11.2): `hidden` boxes keep their layout space
+/// but do not paint; descendants may restore painting with `visible`.
+/// `collapse` behaves like `hidden` outside table row/column contexts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Visibility {
+    #[default]
+    Visible,
+    Hidden,
+    Collapse,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum FlexDirection {
     #[default]
