@@ -26,7 +26,7 @@ fn field_from_status(field: &str) -> Option<u64> {
     for line in status.lines() {
         if let Some(rest) = line.strip_prefix(field) {
             // "VmRSS:    123456 kB"
-            return rest.trim().split_whitespace().next()?.parse().ok();
+            return rest.split_whitespace().next()?.parse().ok();
         }
     }
     None

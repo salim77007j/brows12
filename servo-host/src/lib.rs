@@ -9,6 +9,7 @@ pub mod delegate;
 pub mod headless;
 pub mod memory;
 pub mod metrics;
+pub mod perf;
 pub mod prefs;
 pub mod privacy;
 pub mod waker;

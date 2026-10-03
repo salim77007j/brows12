@@ -22,4 +22,6 @@ serde_json = "1"
 brows12-privacy = { path = "../privacy" }
 servo-net-traits = "=0.6.0"
 servo-embedder-traits = "=0.6.0"
+servo-base = "=0.6.0"
+ipc-channel = "0.22"
 content-security-policy = "0.8"
