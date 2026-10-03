@@ -1,0 +1,121 @@
+{
+ "tabs": 6,
+ "url": "http://127.0.0.1:8127/index.html",
+ "budget_mb": "384",
+ "suspend_after_secs": 8,
+ "rss_before_kb": 529444,
+ "rss_after_kb": 523408,
+ "rss_freed_kb": 6036,
+ "series": [
+  [
+   0.0,
+   529444
+  ],
+  [
+   2.5,
+   529444
+  ],
+  [
+   5.0,
+   529444
+  ],
+  [
+   7.5,
+   529444
+  ],
+  [
+   10.0,
+   529444
+  ],
+  [
+   12.5,
+   529444
+  ],
+  [
+   15.0,
+   529444
+  ],
+  [
+   17.5,
+   529444
+  ],
+  [
+   20.0,
+   529444
+  ],
+  [
+   22.5,
+   529444
+  ],
+  [
+   25.0,
+   529444
+  ],
+  [
+   27.5,
+   529444
+  ],
+  [
+   30.0,
+   529444
+  ],
+  [
+   32.5,
+   529444
+  ],
+  [
+   35.0,
+   529444
+  ],
+  [
+   37.5,
+   529444
+  ],
+  [
+   40.0,
+   523408
+  ],
+  [
+   42.5,
+   523408
+  ],
+  [
+   45.0,
+   523408
+  ],
+  [
+   47.5,
+   523408
+  ],
+  [
+   50.0,
+   523408
+  ],
+  [
+   52.5,
+   523408
+  ],
+  [
+   55.0,
+   523408
+  ],
+  [
+   57.5,
+   523408
+  ],
+  [
+   60.0,
+   523408
+  ]
+ ],
+ "governor_events": [
+  "hibernate tab=1 index=0 rss_before_kb=1155040 url=http://127.0.0.1:8127/index.html",
+  "hibernate tab=2 index=1 rss_before_kb=1042472 url=http://127.0.0.1:8127/index.html",
+  "governor rss_before_kb=1154776 rss_after_kb=973360 hibernated_total=2",
+  "hibernate tab=3 index=2 rss_before_kb=1137708 url=http://127.0.0.1:8127/index.html",
+  "hibernate tab=4 index=3 rss_before_kb=807980 url=http://127.0.0.1:8127/index.html",
+  "governor rss_before_kb=1137708 rss_after_kb=641828 hibernated_total=4",
+  "hibernate tab=5 index=4 rss_before_kb=678988 url=http://127.0.0.1:8127/index.html",
+  "governor rss_before_kb=678988 rss_after_kb=470600 hibernated_total=5"
+ ]
+}

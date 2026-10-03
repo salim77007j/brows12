@@ -1,0 +1,11 @@
+{
+  "rss_after_load_kb": 615780,
+  "rss_baseline_before_kb": 326608,
+  "rss_marginal_kb": 289172,
+  "scroll": {
+    "frames": 360,
+    "secs": 6.000199999999255,
+    "scrollY": 21600
+  },
+  "scroll_fps": 59.99800006667189
+}

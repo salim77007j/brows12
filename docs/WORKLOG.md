@@ -377,3 +377,55 @@ Stage Summary (AFTER numbers):
 - Scroll: 34.7 FPS software-GL (60FPS gate needs real GPU — caveated).
 - vs Chrome: lighter (289 vs 366MB 1-tab; 1.07 vs 1.22GB 10-tab), lower
   idle CPU, startup methodology differs (reported honestly).
+---
+Task ID: v2-phase3
+Agent: Super Z (main)
+Task: Phase 3 — modern CSS & platform verification (+ user directive:
+      resource optimization for ~100 MB-class pages at high frame rate).
+
+Work Log:
+- Audited repo state first: Phase 1 (commits 202863a..e92d9dc) and Phase 2
+  (2f3f45c..b361fd1) confirmed on origin/main; working copy brows12-v2 in
+  sync. Disk was 97% full — cleaned incremental + crate caches + stale
+  rlib variants (~2.5 GB reclaimed across the phase).
+- Built 19 fixtures (fixtures/phase3/) + side-by-side runner
+  (scripts/phase3_run.py): Chromium ground truth left, brows12 right,
+  DOM self-reports visible in every screenshot. Fixed 7 fixture bugs the
+  two-engine comparison itself exposed (content-box sizing, ::after
+  selector, top-level await, hand-assembled WASM section sizes via
+  gen_wasm_fixture.py, cascade override, NOTE-line counting, scroll depth).
+- Side-by-side verdicts (all in docs/PHASE3_REPORT.md): 13 Yes
+  (incl. Shadow DOM 7/7 twice, WASM 10/10, WOFF2, runtime custom props),
+  4 Mostly (polygon clip-path paint, backdrop-filter, vertical writing
+  modes, canvas shadow paint, multicol-adjacent), 3 No (subgrid layout,
+  multicol, WebGL/WebGPU/WebRTC — compile-time cargo features, can't
+  rebuild in container; documented in BUILDING.md + CI workflow
+  servo-features.yml builds and probes them on GitHub runners).
+- Real-world: GitHub Mostly, wpt.fyi Mostly, rust-lang.org Yes (Fira Sans
+  WOFF2 confirmed), Hacker News Yes (pixel-identical).
+- Phase 3.9 (user directive): heavy-page benchmark (70 MB transfer,
+  ~100 MB decoded, 2000 nodes). brows12 RSS 152 MB vs Chrome 289 MB
+  marginal (1.9x lighter). Scroll FPS: text 35.7 -> 4.87 @20 imgs ->
+  0.16 @100 imgs; thread profiling shows wait-bound pipeline (0.12 s CPU
+  /14 s wall) — scaled-image texture work under software GL; GPU target
+  unaffected. Governor reclaim on image-heavy sessions only 6 MB/529 MB:
+  decoded images persist in webrender's global texture cache after
+  pipeline close (no embedder purge hook in 0.6.0) -> upstream gap for
+  Phase 4.5.
+- Shipped code: HostState.page_requests per-tab weight; heavy-tab
+  governor policy (suspend 20 s vs 180 s, Elevated pressure reclaims
+  heavy heaviest-first, unit tests); BROWS12_SET_PREF runtime pref
+  overrides; heavy-page + Chrome-comparison + thread-profiler scripts.
+- Environment notes: linker SIGBUS once (disk), script rebuild SIGKILL
+  once (OOM at -j default) — recovered with CARGO_INCREMENTAL=0 -j 1.
+
+Stage Summary:
+- PHASE 3 COMPLETE. Verdict matrix + heavy-page numbers in
+  docs/PHASE3_REPORT.md; artifacts committed (screenshots/v2-servo/phase3,
+  validation/run/phase3, docs/perf-artifacts/phase3).
+- Upstream candidates queued for Phase 4.5: subgrid layout, polygon
+  clip-path paint, backdrop-filter, canvas shadows, texture-cache purge
+  on pipeline close, create_memory_report usize overflow (from Phase 2).
+- Next: Phase 4 (privacy hooks UX, tab management innovations, UI
+  extensions, upstream PRs), then Phase 5 (30+ site suite, benchmarks,
+  SERVO_FINAL_REPORT.md, tag v2.0.0).

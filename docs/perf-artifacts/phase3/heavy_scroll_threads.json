@@ -1,0 +1,13 @@
+{
+  "url": "http://127.0.0.1:8126/index.html",
+  "wall_secs": 14.0,
+  "threads": [
+    {
+      "name": "Script#1",
+      "tid": "21235",
+      "cpu_secs": 0.12,
+      "pct": 0.9
+    }
+  ],
+  "total_cpu_secs": 0.12
+}

@@ -1,0 +1,38 @@
+{
+  "engine": "servo 0.6.0 (stylo 0.21, webrender 0.70, spidermonkey 153, brows12 v2)",
+  "config": {
+    "tabs": 1,
+    "width": 1280,
+    "height": 800,
+    "suspend": false,
+    "idle_secs": 0,
+    "scroll_secs": 8,
+    "engine_report": false
+  },
+  "startup": {
+    "servo_build_ms": 40,
+    "first_frame_ms": 67,
+    "first_load_complete_ms": 1371
+  },
+  "tabs": [
+    {
+      "url": "http://127.0.0.1:8126/imgs20_tall.html",
+      "complete": true,
+      "load_complete_ms": 1371,
+      "rss_after_kb": 198316
+    }
+  ],
+  "memory_report": null,
+  "suspension": null,
+  "idle": null,
+  "scroll": {
+    "url": "http://127.0.0.1:8126/imgs20_tall.html",
+    "window_secs": 8.015201551,
+    "frames": 39,
+    "fps": 4.865754123816667,
+    "software_gl": true
+  },
+  "rss_start_kb": 16528,
+  "rss_final_kb": 321716,
+  "peak_rss_kb": 321716
+}

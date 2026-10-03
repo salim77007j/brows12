@@ -1,0 +1,38 @@
+{
+  "engine": "servo 0.6.0 (stylo 0.21, webrender 0.70, spidermonkey 153, brows12 v2)",
+  "config": {
+    "tabs": 1,
+    "width": 1280,
+    "height": 800,
+    "suspend": false,
+    "idle_secs": 0,
+    "scroll_secs": 6,
+    "engine_report": false
+  },
+  "startup": {
+    "servo_build_ms": 78,
+    "first_frame_ms": 123,
+    "first_load_complete_ms": 137
+  },
+  "tabs": [
+    {
+      "url": "http://127.0.0.1:8125/index.html",
+      "complete": true,
+      "load_complete_ms": 137,
+      "rss_after_kb": 151896
+    }
+  ],
+  "memory_report": null,
+  "suspension": null,
+  "idle": null,
+  "scroll": {
+    "url": "http://127.0.0.1:8125/index.html",
+    "window_secs": 6.014181716,
+    "frames": 1,
+    "fps": 0.1662736590315556,
+    "software_gl": true
+  },
+  "rss_start_kb": 16484,
+  "rss_final_kb": 207572,
+  "peak_rss_kb": 207572
+}
