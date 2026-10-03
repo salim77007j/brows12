@@ -13,12 +13,12 @@
   "loaded": true,
   "render": {
     "compositor": null,
-    "png_bytes": 109224,
+    "png_bytes": 42864,
     "scroll_y": 0.0
   },
   "screenshot": "validation/run/final/wikipedia_rust.png",
   "timing": {
-    "full_pipeline_ms": 28580
+    "full_pipeline_ms": 30504
   },
   "title": "Rust (programming language) - Wikipedia",
   "viewport": {
