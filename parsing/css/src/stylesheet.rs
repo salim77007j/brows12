@@ -584,7 +584,8 @@ mod rewrite_tests {
 
     #[test]
     fn custom_prop_survives_parse() {
-        let sheet = Stylesheet::parse(".infobox { --brows-float: right; }", Origin::Author).unwrap();
+        let sheet =
+            Stylesheet::parse(".infobox { --brows-float: right; }", Origin::Author).unwrap();
         let mut found = false;
         for r in &sheet.rules {
             for p in &r.declarations {

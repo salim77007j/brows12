@@ -20,9 +20,9 @@
 //! is the cornerstone of the engine's low idle-RAM story.
 
 pub mod config;
-pub mod fonts;
 pub mod engine;
 pub mod events;
+pub mod fonts;
 pub mod tab;
 
 pub use config::{EngineConfig, PrivacySettings};

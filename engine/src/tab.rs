@@ -490,8 +490,8 @@ impl Tab {
                         brows12_css::Origin::Author,
                         brows12_css::vartext::ScopeEnv {
                             dark_preferred: false,
-                            viewport_width: self.engine.config.viewport.width as f32,
-                            viewport_height: self.engine.config.viewport.height as f32,
+                            viewport_width: self.engine.config.viewport.width,
+                            viewport_height: self.engine.config.viewport.height,
                         },
                     ) {
                         sheets.push(sheet);
@@ -500,6 +500,13 @@ impl Tab {
             });
         }
         let engine_sheet = brows12_css::StyleEngine::with_author_sheets(&sheets);
+        if std::env::var("BROWS_DEBUG").is_ok() {
+            eprintln!(
+                "RENDER_PAGE external+inline sheets={} total_rules={}",
+                sheets.len(),
+                sheets.iter().map(|s| s.rules.len()).sum::<usize>()
+            );
+        }
         let base_url = page.url.clone();
         self.load_web_fonts(&engine_sheet, &base_url);
         let ctx = brows12_css::computed::CascadeCtx {
@@ -688,13 +695,16 @@ impl Tab {
             ) {
                 if resp.is_success() {
                     let css = String::from_utf8_lossy(&resp.body).to_string();
+                    if std::env::var("BROWS_DEBUG").is_ok() {
+                        eprintln!("SHEET {i}/{} {} -> {} bytes", links.len(), resolved, css.len());
+                    }
                     if let Ok(sheet) = Stylesheet::parse_with_env(
                         &css,
                         brows12_css::Origin::Author,
                         brows12_css::vartext::ScopeEnv {
                             dark_preferred: false,
-                            viewport_width: self.engine.config.viewport.width as f32,
-                            viewport_height: self.engine.config.viewport.height as f32,
+                            viewport_width: self.engine.config.viewport.width,
+                            viewport_height: self.engine.config.viewport.height,
                         },
                     ) {
                         sheets.push(sheet);
@@ -1118,9 +1128,8 @@ fn woff1_decompress(data: &[u8]) -> Result<Vec<u8>, ()> {
     if data.len() < 44 || &data[0..4] != b"wOFF" {
         return Err(());
     }
-    let be32 = |o: usize| -> u32 {
-        u32::from_be_bytes([data[o], data[o + 1], data[o + 2], data[o + 3]])
-    };
+    let be32 =
+        |o: usize| -> u32 { u32::from_be_bytes([data[o], data[o + 1], data[o + 2], data[o + 3]]) };
     let flavor = be32(4);
     let num_tables = be32(12) as usize;
     if num_tables == 0 || num_tables > 512 {
@@ -1181,7 +1190,7 @@ fn woff1_decompress(data: &[u8]) -> Result<Vec<u8>, ()> {
     out.extend_from_slice(&((num_tables as u16) * 16 - search_range).to_be_bytes());
 
     // sfnt directory entries must be sorted by tag.
-    entries.sort_by(|a, b| a.tag.cmp(&b.tag));
+    entries.sort_by_key(|e| e.tag);
     let mut offset_cursor = dir_size as u32;
     for e in &entries {
         out.extend_from_slice(&e.tag);

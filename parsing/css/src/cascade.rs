@@ -176,8 +176,9 @@ fn compute_inner(
                 // font-size first: sibling declarations in `em`/% must
                 // resolve against the element's final font size, not the
                 // pre-cascade value (CSS 2.1 §6.1 computed values).
-                let font_first =
-                    |p: &lightningcss::properties::Property| !matches!(p, lightningcss::properties::Property::FontSize(_));
+                let font_first = |p: &lightningcss::properties::Property| {
+                    !matches!(p, lightningcss::properties::Property::FontSize(_))
+                };
                 for rule in &normal {
                     for prop in rule.declarations.iter().filter(|p| !font_first(p)) {
                         apply_property(&mut style, prop, Some(parent_style), ctx);
@@ -372,10 +373,7 @@ fn parse_attr_color(text: &str) -> Option<crate::values::Rgba> {
         if let lightningcss::rules::CssRule::Style(st) = rule {
             for prop in &st.declarations.declarations {
                 if let lightningcss::properties::Property::Color(c) = prop {
-                    return crate::stylesheet::resolve_color(
-                        c,
-                        [0, 0, 0, 255],
-                    );
+                    return crate::stylesheet::resolve_color(c, [0, 0, 0, 255]);
                 }
             }
         }

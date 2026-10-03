@@ -21,7 +21,10 @@ fn length_px(lv: &LengthValue, ctx: &LengthContext) -> f32 {
 }
 
 /// Convert a lightningcss calc node into a symbolic expression.
-fn calc_to_expr(c: &lightningcss::values::calc::Calc<LengthPercentage>, ctx: &LengthContext) -> CalcExpr {
+fn calc_to_expr(
+    c: &lightningcss::values::calc::Calc<LengthPercentage>,
+    ctx: &LengthContext,
+) -> CalcExpr {
     use lightningcss::values::calc::{Calc, MathFunction};
     match c {
         Calc::Value(v) => lp_to_expr(v, ctx),
@@ -92,10 +95,7 @@ fn calc_to_expr(c: &lightningcss::values::calc::Calc<LengthPercentage>, ctx: &Le
 /// Evaluate a `<length-percentage>` that may carry calc() into a [`Len`].
 /// Pure numbers/percent keep the existing fast paths; math expressions
 /// become `Len::Calc` and resolve at used-value time.
-pub(crate) fn length_percentage_calc(
-    lp: &LengthPercentage,
-    ctx: &LengthContext,
-) -> Option<Len> {
+pub(crate) fn length_percentage_calc(lp: &LengthPercentage, ctx: &LengthContext) -> Option<Len> {
     match lp {
         DP::Dimension(lv) => crate::computed::length_to_px(lv, ctx).map(Len::Px),
         DP::Percentage(p) => Some(Len::Percent(p.0)),

@@ -434,9 +434,9 @@ impl crate::values::AutoPx {
             crate::values::AutoPx::Len(Len::Percent(p)) => Size::LengthPercentage(DP::Percentage(
                 lightningcss::values::percentage::Percentage(p),
             )),
-            crate::values::AutoPx::Len(Len::Calc(c)) => Size::LengthPercentage(DP::Dimension(
-                LengthValue::Px(c.px_part()),
-            )),
+            crate::values::AutoPx::Len(Len::Calc(c)) => {
+                Size::LengthPercentage(DP::Dimension(LengthValue::Px(c.px_part())))
+            }
             crate::values::AutoPx::Auto => Size::Auto,
         }
     }

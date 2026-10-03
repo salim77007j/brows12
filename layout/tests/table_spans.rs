@@ -23,11 +23,21 @@ fn layout() -> (brows12_html::Document, brows12_layout::LayoutResult) {
     let ctx = CascadeCtx { viewport_width: 800.0, viewport_height: 600.0, ..Default::default() };
     let styles = compute_styles(&doc, &engine, &ctx);
     let measurer = TextMeasurer::new(Arc::new(Mutex::new(cosmic_text::FontSystem::new())));
-    let result = compute_layout(&doc, &styles, Viewport { width: 800.0, height: 600.0 }, &measurer, &HashMap::new());
+    let result = compute_layout(
+        &doc,
+        &styles,
+        Viewport { width: 800.0, height: 600.0 },
+        &measurer,
+        &HashMap::new(),
+    );
     (doc, result)
 }
 
-fn id(doc: &brows12_html::Document, result: &brows12_layout::LayoutResult, name: &str) -> brows12_layout::Rect {
+fn id(
+    doc: &brows12_html::Document,
+    result: &brows12_layout::LayoutResult,
+    name: &str,
+) -> brows12_layout::Rect {
     let n = doc
         .get_elements_by_tag_name("td")
         .into_iter()

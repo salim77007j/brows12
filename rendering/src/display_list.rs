@@ -200,10 +200,7 @@ pub fn build_display_list(
         // scrolling shifts it within the containing block's content box so
         // it stays `top`/`bottom` px from the scroll port edge. Computed in
         // document coordinates before the scroll subtraction below.
-        if !is_fixed
-            && scroll_y != 0.0
-            && style.position == brows12_css::values::Position::Sticky
-        {
+        if !is_fixed && scroll_y != 0.0 && style.position == brows12_css::values::Position::Sticky {
             if let (Some(r), Some(parent_id)) = (rect.as_mut(), doc.parent(node)) {
                 if let (Some(mut pr), Some(ps)) = (layout.rect(parent_id), styles.get(parent_id)) {
                     let pt = ps.padding.top.extract_px() + ps.border_width.top.extract_px();
@@ -212,14 +209,11 @@ pub fn build_display_list(
                     pr.height = (pr.height - pt - pb).max(0.0);
                     let view_top = scroll_y;
                     let view_bottom = scroll_y + viewport_h;
-                    if let Some(top_px) =
-                        inset_px_guard(&style.insets.top, pr.height)
-                    {
+                    if let Some(top_px) = inset_px_guard(&style.insets.top, pr.height) {
                         let max_dy = (pr.y + pr.height - r.y - r.height).max(0.0);
                         let dy = (view_top + top_px - r.y).clamp(0.0, max_dy);
                         r.y += dy;
-                    } else if let Some(bottom_px) =
-                        inset_px_guard(&style.insets.bottom, pr.height)
+                    } else if let Some(bottom_px) = inset_px_guard(&style.insets.bottom, pr.height)
                     {
                         let target = view_bottom - bottom_px - r.height;
                         let max_up = (r.y - pr.y).max(0.0);
@@ -247,8 +241,7 @@ pub fn build_display_list(
             if let Some(r) = rect {
                 // Per-segment visibility: hidden segments keep metrics,
                 // visible children inside a hidden ancestor still paint.
-                list.tagged
-                    .push((z, DisplayItem::InlineFlow { rect: r, flow: flow.clone() }));
+                list.tagged.push((z, DisplayItem::InlineFlow { rect: r, flow: flow.clone() }));
             }
             return;
         }
@@ -336,28 +329,19 @@ pub fn build_display_list(
                 }
                 // overflow: hidden/scroll/auto clips the subtree to the
                 // padding box (the border still paints outside the clip).
-                let clipped =
-                    style.overflow != brows12_css::values::OverflowKeyword::Visible;
+                let clipped = style.overflow != brows12_css::values::OverflowKeyword::Visible;
                 if clipped {
                     let bw = &style.border_width;
                     let pad_rect = Rect {
                         x: rect.x + bw.left.extract_px(),
                         y: rect.y + bw.top.extract_px(),
-                        width: (rect.width
-                            - bw.left.extract_px()
-                            - bw.right.extract_px())
-                        .max(0.0),
-                        height: (rect.height
-                            - bw.top.extract_px()
-                            - bw.bottom.extract_px())
-                        .max(0.0),
+                        width: (rect.width - bw.left.extract_px() - bw.right.extract_px()).max(0.0),
+                        height: (rect.height - bw.top.extract_px() - bw.bottom.extract_px())
+                            .max(0.0),
                     };
                     list.tagged.push((
                         z,
-                        DisplayItem::PushClip {
-                            rect: pad_rect,
-                            radius: style.border_radius,
-                        },
+                        DisplayItem::PushClip { rect: pad_rect, radius: style.border_radius },
                     ));
                 }
                 for &c in &doc.node(node).children {

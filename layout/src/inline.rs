@@ -340,7 +340,11 @@ pub fn layout_inline_banded(
             cur.pop();
         }
         let h = line_h_of(cur, items);
-        lines_out.push(BrokenLine { toks: std::mem::take(cur), left: *line_left, right: *line_right });
+        lines_out.push(BrokenLine {
+            toks: std::mem::take(cur),
+            left: *line_left,
+            right: *line_right,
+        });
         *completed_y += h;
         *cur_w = 0.0;
         let ins = insets_at(bands, *completed_y);
@@ -350,7 +354,16 @@ pub fn layout_inline_banded(
     for tok in tokens {
         if tok.is_break {
             // Hard break (<br>): flush the current line even if empty.
-            break_line(&mut cur, items, bands, &mut lines_out, &mut cur_w, &mut completed_y, &mut line_left, &mut line_right);
+            break_line(
+                &mut cur,
+                items,
+                bands,
+                &mut lines_out,
+                &mut cur_w,
+                &mut completed_y,
+                &mut line_left,
+                &mut line_right,
+            );
             continue;
         }
         if tok.is_space && cur.is_empty() {
@@ -366,7 +379,16 @@ pub fn layout_inline_banded(
             cur_w += tok.width;
         } else {
             // Break: drop trailing spaces of the finished line.
-            break_line(&mut cur, items, bands, &mut lines_out, &mut cur_w, &mut completed_y, &mut line_left, &mut line_right);
+            break_line(
+                &mut cur,
+                items,
+                bands,
+                &mut lines_out,
+                &mut cur_w,
+                &mut completed_y,
+                &mut line_left,
+                &mut line_right,
+            );
             if tok.is_space {
                 continue; // drop the space at the break
             }

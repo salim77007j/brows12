@@ -312,6 +312,12 @@ impl TextMeasurer {
 
 /// Map CSS values onto taffy styles. `base` is the estimated percentage
 /// base (containing-block content width) used to resolve calc() here.
+/// Percentages stay SYMBOLIC: taffy resolves them against the real parent
+/// box in its layout, which is the containing block the spec means. The
+/// eager `base` estimate threads the flow-parent width down the recursion
+/// and is wildly wrong inside flex/grid/positioned subtrees (Vector-2022's
+/// `width:100%` dropdown checkbox blew up to the page width because the
+/// estimate baked the page width into an absolute box).
 fn taffy_dimension(v: AutoPx, base: f32) -> taffy::Dimension {
     match v {
         AutoPx::Auto => taffy::Dimension::auto(),

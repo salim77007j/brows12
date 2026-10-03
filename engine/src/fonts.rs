@@ -59,14 +59,14 @@ fn build_name_table(family: &str) -> Vec<u8> {
     };
     let ps = family.replace(' ', "");
     let records: [(u8, u8, u16, u16, Vec<u8>); 8] = [
-        (1, 0, 0, 1, ascii(family)),          // Mac Roman family
-        (1, 0, 0, 2, b"Regular".to_vec()),    // Mac subfamily
-        (1, 0, 0, 4, ascii(family)),          // Mac full name
-        (1, 0, 0, 6, ascii(&ps)),             // Mac postscript
-        (3, 1, 0x409, 1, utf16(family)),      // Windows UTF-16 family
-        (3, 1, 0x409, 2, utf16("Regular")),   // Windows subfamily
-        (3, 1, 0x409, 4, utf16(family)),      // Windows full name
-        (3, 1, 0x409, 6, ascii(&ps)),         // Windows postscript (ASCII)
+        (1, 0, 0, 1, ascii(family)),        // Mac Roman family
+        (1, 0, 0, 2, b"Regular".to_vec()),  // Mac subfamily
+        (1, 0, 0, 4, ascii(family)),        // Mac full name
+        (1, 0, 0, 6, ascii(&ps)),           // Mac postscript
+        (3, 1, 0x409, 1, utf16(family)),    // Windows UTF-16 family
+        (3, 1, 0x409, 2, utf16("Regular")), // Windows subfamily
+        (3, 1, 0x409, 4, utf16(family)),    // Windows full name
+        (3, 1, 0x409, 6, ascii(&ps)),       // Windows postscript (ASCII)
     ];
     let count = records.len() as u16;
     // Header: format(2) count(2) stringOffset(2) = 6; records 12 bytes each.
@@ -122,7 +122,6 @@ fn assemble_sfnt(flavor: u32, entries: &[Entry]) -> Vec<u8> {
     }
     out
 }
-
 
 /// sfnt table checksum (sum of big-endian u32s, padded with zeros).
 fn table_checksum(data: &[u8]) -> u32 {

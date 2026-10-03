@@ -10,6 +10,7 @@ fn sheet_with_light_dark_parses() {
 
 #[test]
 fn unknown_at_rule_does_not_kill_sheet() {
-    let sheet = Stylesheet::parse("@unknown-rule x{}; p { color: red }", brows12_css::Origin::Author);
+    let sheet =
+        Stylesheet::parse("@unknown-rule x{}; p { color: red }", brows12_css::Origin::Author);
     assert!(sheet.is_ok());
 }

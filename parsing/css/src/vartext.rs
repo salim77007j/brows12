@@ -229,10 +229,8 @@ fn eval_media_gate(prelude: &str, env: &ScopeEnv) -> Option<bool> {
                 Some(rest) => (true, rest.trim()),
                 None => (false, feature),
             };
-            let inner = feature
-                .strip_prefix('(')
-                .and_then(|f| f.strip_suffix(')'))
-                .unwrap_or(feature);
+            let inner =
+                feature.strip_prefix('(').and_then(|f| f.strip_suffix(')')).unwrap_or(feature);
             let decided = if let Some(rest) = inner.strip_prefix("prefers-color-scheme:") {
                 let want_dark = rest.trim() == "dark";
                 Some(want_dark == env.dark_preferred)
@@ -275,11 +273,7 @@ fn eval_media_gate(prelude: &str, env: &ScopeEnv) -> Option<bool> {
 /// This is the fix for the design-token leak: a dark-theme rule like
 /// `html.skin-theme-clientpref-os { --background-color-base: #101418 }`
 /// must not repaint pages whose root never matches it.
-pub fn collect_root_scoped_defs(
-    css: &str,
-    out: &mut HashMap<String, String>,
-    env: &ScopeEnv,
-) {
+pub fn collect_root_scoped_defs(css: &str, out: &mut HashMap<String, String>, env: &ScopeEnv) {
     let mut fallback = HashMap::new();
     collect_scoped_defs_inner(css, out, &mut fallback, env);
     // Component-scoped tokens fill in names the root scope never defines,
