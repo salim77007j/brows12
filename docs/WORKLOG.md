@@ -264,3 +264,32 @@ Stage Summary:
 - Build graph now contains only the Servo-backed stack + privacy + storage.
   Custom engine remains fully recoverable from history; v1.0.0-rc1 tag
   preserves the complete v1 snapshot.
+
+---
+Task ID: v2-phase1.5
+Agent: Super Z (main)
+Task: Phase 1.5 — privacy layer integrated at Servo embedder hooks.
+
+Work Log:
+- servo-host/src/privacy.rs: PrivacyHost wraps the v1 PrivacyBlocker
+  (unchanged lists + engine thread) behind two Servo hooks:
+  * WebViewDelegate::load_web_resource -> blocker.check(url, source,
+    destination-mapped RequestKind); blocked requests answered with an
+    empty 200 via WebResourceLoad::intercept + finish (page JS sees a
+    settled resource, not a net error); unblocked loads pass through.
+  * WebViewDelegate::request_navigation -> cosmetic_filters(url) installed
+    as a UserStyleSheet via UserContentManager before the document loads.
+- Types note: servo 0.6.0 facade forgets to re-export UserStyleSheet;
+  imported from servo-embedder-traits (same version = same type). The
+  facade also resolves EGL fns via dlsym-only (documented in plan risks).
+- Destination (content-security-policy crate) mapped to privacy RequestKind.
+- JSON report now carries privacy: {enabled, ads_blocked, trackers_blocked,
+  blocked_requests[]}.
+- Verified:
+  * fixture with doubleclick/google-analytics/facebook.net -> 2 ads + 1
+    tracker blocked; example.com image allowed; page JS ran (title change).
+  * live bing search: renders, complete in 905 ms.
+
+Stage Summary:
+- The v1 privacy investment survives the pivot: adblock lists, counters and
+  CHIPS policy compile unchanged against Servo's interception hooks.

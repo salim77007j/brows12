@@ -8,6 +8,7 @@ pub mod capture;
 pub mod delegate;
 pub mod headless;
 pub mod prefs;
+pub mod privacy;
 pub mod waker;
 
 pub use headless::{run_headless, HeadlessConfig, HeadlessReport};

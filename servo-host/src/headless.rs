@@ -63,11 +63,20 @@ pub struct HeadlessReport {
     pub crashed: bool,
     pub crash_reason: Option<String>,
     pub console_messages: Vec<String>,
-    pub blocked_requests: Vec<String>,
+    pub privacy: PrivacySummary,
     pub load_complete_ms: Option<u128>,
     pub total_ms: u128,
     pub png: Option<String>,
     pub error: Option<String>,
+}
+
+/// Privacy shield results for this run (Phase 1.5).
+#[derive(Serialize, Debug, Clone)]
+pub struct PrivacySummary {
+    pub enabled: bool,
+    pub ads_blocked: u64,
+    pub trackers_blocked: u64,
+    pub blocked_requests: Vec<String>,
 }
 
 /// Entry point for `brows render --engine servo`.
@@ -95,6 +104,7 @@ pub fn run_headless(config: HeadlessConfig) -> HeadlessReport {
         proxy,
         started,
         state: None,
+        privacy: None,
         servo: None,
         webview: None,
         context: None,
@@ -115,7 +125,12 @@ pub fn run_headless(config: HeadlessConfig) -> HeadlessReport {
             crashed: false,
             crash_reason: None,
             console_messages: vec![],
-            blocked_requests: vec![],
+            privacy: PrivacySummary {
+                enabled: false,
+                ads_blocked: 0,
+                trackers_blocked: 0,
+                blocked_requests: vec![],
+            },
             load_complete_ms: None,
             total_ms: started.elapsed().as_millis(),
             png: None,
@@ -133,15 +148,19 @@ fn run_without_window(
     started: Instant,
 ) -> HeadlessReport {
     let state = Arc::new(HostState::new());
+    let privacy = crate::privacy::PrivacyHost::new();
     let waker = crate::waker::CondvarWaker::default();
     let servo: Servo = ServoBuilder::default()
         .event_loop_waker(Box::new(waker.clone()))
         .preferences(crate::prefs::compat_preferences())
         .build();
-    let delegate = HostDelegate::new(state.clone());
+    let ucm = Rc::new(servo::UserContentManager::new(&servo));
+    privacy.set_user_content_manager(ucm.clone());
+    let delegate = HostDelegate::new(state.clone(), privacy.clone());
     let webview = WebViewBuilder::new(&servo, context.clone())
         .url(config.url.clone())
         .delegate(delegate)
+        .user_content_manager(ucm)
         .build();
     webview.focus();
     webview.load(config.url.clone());
@@ -165,6 +184,7 @@ fn run_without_window(
         &webview,
         &context,
         &state,
+        &privacy,
         started,
     )
 }
@@ -183,6 +203,7 @@ fn finish(
     webview: &WebView,
     context: &Rc<dyn RenderingContext>,
     state: &Arc<HostState>,
+    privacy: &Arc<crate::privacy::PrivacyHost>,
     started: Instant,
 ) -> HeadlessReport {
     let img = capture_webview(webview, context);
@@ -192,6 +213,7 @@ fn finish(
         },
         _ => None,
     };
+    let (ads_blocked, trackers_blocked, blocked_requests) = privacy.blocked_summary();
     let report = HeadlessReport {
         engine: engine_id(),
         url: config.url.to_string(),
@@ -204,7 +226,12 @@ fn finish(
         crashed: state.crash().is_some(),
         crash_reason: state.crash(),
         console_messages: state.console(),
-        blocked_requests: state.blocked(),
+        privacy: PrivacySummary {
+            enabled: privacy.enabled.load(std::sync::atomic::Ordering::Relaxed),
+            ads_blocked,
+            trackers_blocked,
+            blocked_requests,
+        },
         load_complete_ms: state
             .complete_at
             .lock()
@@ -230,6 +257,7 @@ struct HeadlessApp {
     proxy: EventLoopProxy<HostWakerEvent>,
     started: Instant,
     state: Option<Arc<HostState>>,
+    privacy: Option<Arc<crate::privacy::PrivacyHost>>,
     servo: Option<Servo>,
     webview: Option<WebView>,
     context: Option<Rc<dyn RenderingContext>>,
@@ -256,15 +284,19 @@ impl ApplicationHandler<HostWakerEvent> for HeadlessApp {
         let ctx: Rc<dyn RenderingContext> = Rc::new(wctx);
 
         let state = Arc::new(HostState::new());
+        let privacy = crate::privacy::PrivacyHost::new();
         let waker = ProxyWaker::new(self.proxy.clone());
         let servo: Servo = ServoBuilder::default()
             .event_loop_waker(Box::new(waker))
             .preferences(crate::prefs::compat_preferences())
             .build();
-        let delegate = HostDelegate::new(state.clone());
+        let ucm = Rc::new(servo::UserContentManager::new(&servo));
+        privacy.set_user_content_manager(ucm.clone());
+        let delegate = HostDelegate::new(state.clone(), privacy.clone());
         let webview = WebViewBuilder::new(&servo, ctx.clone())
             .url(self.config.url.clone())
             .delegate(delegate)
+            .user_content_manager(ucm)
             .build();
         webview.focus();
         webview.load(self.config.url.clone());
@@ -279,6 +311,7 @@ impl ApplicationHandler<HostWakerEvent> for HeadlessApp {
         });
 
         self.state = Some(state);
+        self.privacy = Some(privacy);
         self.servo = Some(servo);
         self.webview = Some(webview);
         self.context = Some(ctx);
@@ -301,12 +334,14 @@ impl ApplicationHandler<HostWakerEvent> for HeadlessApp {
             if done && !self.capture_done {
                 self.capture_done = true;
                 let ctx = self.context.as_ref().unwrap();
+                let privacy = self.privacy.as_ref().unwrap();
                 let report = finish(
                     &self.config,
                     servo,
                     webview,
                     ctx,
                     state,
+                    privacy,
                     self.started,
                 );
                 self.result = Some(report);

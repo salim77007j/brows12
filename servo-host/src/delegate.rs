@@ -1,20 +1,25 @@
 //! The brows12 WebView delegate: observes load progress, frames, console
-//! output and (from Phase 1.5) intercepts web resources for the privacy
-//! layer.
+//! output, intercepts web resources for the privacy layer (Phase 1.5),
+//! and prepares cosmetic filters at navigation time.
 
+use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use servo::{ConsoleLogLevel, LoadStatus, WebView, WebViewDelegate, WebResourceLoad};
+use servo::{
+    ConsoleLogLevel, LoadStatus, NavigationRequest, WebView, WebViewDelegate, WebResourceLoad,
+    WebResourceResponse,
+};
 use url::Url;
+
+use crate::privacy::{destination_to_kind, PrivacyHost};
 
 #[derive(Default)]
 pub struct DelegateState {
     url: Option<String>,
     title: Option<String>,
     console: Vec<String>,
-    blocked: Vec<String>,
     crash: Option<String>,
 }
 
@@ -26,7 +31,6 @@ pub struct HostState {
     pub frames: AtomicU64,
     pub animating: AtomicBool,
     pub complete_at: Mutex<Option<Instant>>,
-    pub started_at: Mutex<Option<Instant>>,
     pub state: Mutex<DelegateState>,
 }
 
@@ -40,10 +44,7 @@ impl HostState {
     }
 
     pub fn is_complete(&self) -> bool {
-        matches!(
-            *self.load_status.lock().unwrap(),
-            Some(LoadStatus::Complete)
-        )
+        matches!(*self.load_status.lock().unwrap(), Some(LoadStatus::Complete))
     }
 
     pub fn url(&self) -> Option<String> {
@@ -52,10 +53,6 @@ impl HostState {
 
     pub fn title(&self) -> Option<String> {
         self.state.lock().unwrap().title.clone()
-    }
-
-    pub fn blocked(&self) -> Vec<String> {
-        self.state.lock().unwrap().blocked.clone()
     }
 
     pub fn console(&self) -> Vec<String> {
@@ -67,19 +64,23 @@ impl HostState {
     }
 }
 
-/// The brows12 delegate. All hooks are observational in Phase 1;
-/// resource interception for the privacy layer lands in 1.5.
+/// The brows12 delegate.
 pub struct HostDelegate {
-    pub state: std::sync::Arc<HostState>,
+    pub state: Arc<HostState>,
+    pub privacy: Arc<PrivacyHost>,
+    /// Set when a crash or fatal embedder error must stop the run.
+    pub fatal: Arc<AtomicBool>,
 }
 
 impl HostDelegate {
-    pub fn new(state: std::sync::Arc<HostState>) -> Rc<Self> {
-        Rc::new(Self { state })
+    pub fn new(state: Arc<HostState>, privacy: Arc<PrivacyHost>) -> Rc<Self> {
+        Rc::new(Self {
+            state,
+            privacy,
+            fatal: Arc::new(AtomicBool::new(false)),
+        })
     }
 }
-
-use std::rc::Rc;
 
 impl WebViewDelegate for HostDelegate {
     fn notify_url_changed(&self, _webview: WebView, url: Url) {
@@ -107,6 +108,7 @@ impl WebViewDelegate for HostDelegate {
 
     fn notify_crashed(&self, _webview: WebView, reason: String, _backtrace: Option<String>) {
         self.state.state.lock().unwrap().crash = Some(reason);
+        self.fatal.store(true, Ordering::Relaxed);
     }
 
     fn show_console_message(&self, _webview: WebView, _level: ConsoleLogLevel, message: String) {
@@ -116,9 +118,33 @@ impl WebViewDelegate for HostDelegate {
         }
     }
 
+    fn request_navigation(&self, _webview: WebView, navigation: NavigationRequest) {
+        // Install cosmetic filters for the destination document before it
+        // loads (UCM stylesheet changes apply to the next document).
+        self.privacy.set_cosmetic_filters(navigation.url.as_str());
+        // Default policy: allow. Popup/ads policy decisions can hook here.
+        navigation.allow();
+    }
+
     fn load_web_resource(&self, _webview: WebView, load: WebResourceLoad) {
-        // Phase 1.5 will consult the privacy matcher here. For now the
-        // load is dropped un-intercepted, which lets Servo fetch it.
+        let request = &load.request;
+        let url_str = request.url.as_str().to_string();
+        let source = request
+            .referrer_url
+            .as_ref()
+            .map(|u| u.host_str().unwrap_or_default().to_string())
+            .unwrap_or_default();
+        let kind = destination_to_kind(&request.destination);
+
+        if let Some(reason) = self.privacy.should_block(&url_str, &source, kind) {
+            self.privacy.record_block(reason, &url_str);
+            // Answer with an empty 200 so the page sees a settled
+            // resource instead of a network error.
+            let response = WebResourceResponse::new(request.url.clone());
+            load.intercept(response).finish();
+            return;
+        }
+        // Not blocked: let Servo load normally.
         drop(load);
     }
 }
