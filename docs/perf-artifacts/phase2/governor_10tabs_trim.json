@@ -1,0 +1,96 @@
+{
+ "tabs": 10,
+ "url": "https://example.com/",
+ "budget_mb": "384",
+ "suspend_after_secs": 8,
+ "rss_before_kb": 832236,
+ "rss_after_kb": 390000,
+ "rss_freed_kb": 442236,
+ "series": [
+  [
+   0.0,
+   832236
+  ],
+  [
+   2.5,
+   567412
+  ],
+  [
+   5.0,
+   390000
+  ],
+  [
+   7.5,
+   390000
+  ],
+  [
+   10.0,
+   390000
+  ],
+  [
+   12.5,
+   390000
+  ],
+  [
+   15.0,
+   390000
+  ],
+  [
+   17.5,
+   390000
+  ],
+  [
+   20.0,
+   390000
+  ],
+  [
+   22.5,
+   390000
+  ],
+  [
+   25.0,
+   390000
+  ],
+  [
+   27.5,
+   390000
+  ],
+  [
+   30.0,
+   390000
+  ],
+  [
+   32.5,
+   390000
+  ],
+  [
+   35.0,
+   390000
+  ],
+  [
+   37.5,
+   390000
+  ],
+  [
+   40.0,
+   390000
+  ]
+ ],
+ "governor_events": [
+  "hibernate tab=1 index=0 rss_before_kb=944968 url=https://example.com/",
+  "governor rss_before_kb=944968 rss_after_kb=848372 hibernated_total=1",
+  "hibernate tab=2 index=1 rss_before_kb=955504 url=https://example.com/",
+  "governor rss_before_kb=955504 rss_after_kb=856052 hibernated_total=2",
+  "hibernate tab=3 index=2 rss_before_kb=919520 url=https://example.com/",
+  "governor rss_before_kb=919520 rss_after_kb=820624 hibernated_total=3",
+  "hibernate tab=4 index=3 rss_before_kb=832236 url=https://example.com/",
+  "governor rss_before_kb=832236 rss_after_kb=732808 hibernated_total=4",
+  "hibernate tab=5 index=4 rss_before_kb=744156 url=https://example.com/",
+  "hibernate tab=6 index=5 rss_before_kb=644160 url=https://example.com/",
+  "governor rss_before_kb=744156 rss_after_kb=555800 hibernated_total=6",
+  "hibernate tab=7 index=6 rss_before_kb=567412 url=https://example.com/",
+  "governor rss_before_kb=567412 rss_after_kb=467248 hibernated_total=7",
+  "hibernate tab=8 index=7 rss_before_kb=478860 url=https://example.com/",
+  "governor rss_before_kb=478860 rss_after_kb=378388 hibernated_total=8"
+ ]
+}

@@ -1,0 +1,10 @@
+{
+ "engine": "chromium (playwright headless_shell)",
+ "url": "https://example.com/",
+ "cold_start_loaded_ms": 114.4,
+ "rss_1tab_kb": 374588,
+ "rss_10tab_kb": 1252184,
+ "rss_10tab_per_tab_kb": 125218.4,
+ "idle_cpu_percent_10tabs": 0.05,
+ "idle_window_secs": 20.0
+}

@@ -1,0 +1,21 @@
+{
+ "events": [
+  "start pid=7666 viewport=1280x728",
+  "omni text=https://example.com/",
+  "return input=https://example.com/",
+  "loaded tab=1 url=https://example.com/ title=",
+  "loaded tab=2 url=brows12://start title=",
+  "omni text=https://example.com/",
+  "return input=https://example.com/",
+  "hibernate tab=1 index=0 rss_before_kb=240084 url=https://example.com/",
+  "loaded tab=2 url=https://example.com/ title=",
+  "restore tab=1 index=0 url=https://example.com/",
+  "switch index=0 url=https://example.com/",
+  "loaded tab=1 url=https://example.com/ title=Example_Domain",
+  "hibernate tab=2 index=1 rss_before_kb=324208 url=https://example.com/",
+  "governor rss_before_kb=324208 rss_after_kb=320796 hibernated_total=1",
+  "quit"
+ ],
+ "ok": true,
+ "governor_hibernated_under_budget": 1
+}

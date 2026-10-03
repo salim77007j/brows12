@@ -1,0 +1,11 @@
+{
+  "binary": "target/debug/brows12-ui",
+  "tabs": 10,
+  "url": "https://example.com/",
+  "loaded_events": 20,
+  "idle_cpu_percent": 0.267,
+  "window_secs": 30.0,
+  "rss_after_load_kb": 1099380,
+  "rss_end_kb": 1099380,
+  "rss_per_tab_kb": 109938.0
+}

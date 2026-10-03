@@ -1,0 +1,38 @@
+{
+  "engine": "servo 0.6.0 (stylo 0.21, webrender 0.70, spidermonkey 153, brows12 v2)",
+  "config": {
+    "tabs": 1,
+    "width": 1280,
+    "height": 800,
+    "suspend": false,
+    "idle_secs": 0,
+    "scroll_secs": 6,
+    "engine_report": false
+  },
+  "startup": {
+    "servo_build_ms": 40,
+    "first_frame_ms": 316,
+    "first_load_complete_ms": 676
+  },
+  "tabs": [
+    {
+      "url": "https://en.wikipedia.org/wiki/Rust_(programming_language)",
+      "complete": true,
+      "load_complete_ms": 676,
+      "rss_after_kb": 285608
+    }
+  ],
+  "memory_report": null,
+  "suspension": null,
+  "idle": null,
+  "scroll": {
+    "url": "https://en.wikipedia.org/wiki/Rust_(programming_language)",
+    "window_secs": 6.001797645,
+    "frames": 208,
+    "fps": 34.65628338424262,
+    "software_gl": true
+  },
+  "rss_start_kb": 16524,
+  "rss_final_kb": 411104,
+  "peak_rss_kb": 411104
+}

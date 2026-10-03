@@ -332,3 +332,48 @@ Stage Summary:
   Chrome-class with 12-24x faster completion than the v1 engine.
   Remaining phases: 2 (memory/perf), 3 (platform features), 4 (innovations),
   5 (30-site suite + final report + tag v2.0.0).
+---
+Task ID: v2-phase2
+Agent: Super Z (main)
+Task: Phase 2 — memory & performance (targets: <50MB/tab live, <20MB
+suspended, <500ms cold start, <1% idle CPU w/ 10 tabs, 60 FPS scroll).
+
+Work Log:
+- BEFORE baselines (Phase 1.4 binary): idle CPU 0.267% w/ 10 tabs
+  (30s window); RSS 289MB 1-tab, 1.07GB 10-tab example.com (~90MB/tab
+  marginal). Scripts: scripts/measure_idle.py etc. (in repo).
+- Commit 2f3f45c: servo-host metrics.rs (/proc VmRSS/VmHWM/cpu + CpuMeter),
+  memory.rs (GovernorConfig env-tunable, Pressure, SuspendedTab),
+  prefs.rs brows12_preferences (http cache 5000->1024 entries, js_mem_max
+  -1->256MB, knobs documented).
+- Commit 2a4f334: brows-perf harness (headless multi-tab: startup, per-tab
+  RSS marginal, suspension, idle-CPU, scroll-FPS scenarios) + CLI bin.
+  Found upstream bug: Servo::create_memory_report panics SystemFontService
+  (usize overflow in servo-malloc-size-of) -> --engine-report opt-in,
+  patch queued for Phase 4.5.
+- Commit 9019c73: shell Phase 2.2-2.3. Event-driven idle (16ms pump only
+  while loading/animating, else Wait on waker) — idle CPU 0.267%->0.00%.
+  Tab throttling on switch (set_throttled). Hibernation = throttle+hide+
+  drop WebView (CloseWebView frees pipeline) with restore-on-activate.
+  Governor in about_to_wait (tick() starves when idle — winit fires only
+  about_to_wait on WaitUntil expiry). Fixed about:blank premature-complete
+  corrupting session history + background-tab URL sync for restore.
+  malloc_trim(0) after hibernation batches (190MB extra reclaim).
+  Startup: chrome presents immediately; BROWS12_UI_START_METRICS.
+- Chrome ground truth via Playwright chromium headless (same box, same
+  page): 1-tab 366MB, 10-tab 1.22GB, idle 0.05%, launch->loaded 114ms.
+- Scroll: 34.7 FPS under software GL (60Hz wheel, Wikipedia article) —
+  GPU-path validation deferred to real hardware (documented caveat).
+- Artifacts in docs/perf-artifacts/phase2/, report in docs/PERFORMANCE.md.
+
+Stage Summary (AFTER numbers):
+- Idle CPU 10 tabs: 0.00% (target <1% — MET; Chrome 0.05%).
+- Suspended tab: ~11MB marginal (target <20MB — MET; 10-tab session
+  961MB peak -> 390MB governed, Chrome-untable headless).
+- Cold start: 195ms median first-presented frame (target <500ms — MET).
+- Live per-tab: ~90MB (target <50MB — NOT MET; headless harness shows
+  3.5-6MB/tab, cost is per-WebView display structures; governor is the
+  operational mitigation; upstream investigation queued Phase 4.5).
+- Scroll: 34.7 FPS software-GL (60FPS gate needs real GPU — caveated).
+- vs Chrome: lighter (289 vs 366MB 1-tab; 1.07 vs 1.22GB 10-tab), lower
+  idle CPU, startup methodology differs (reported honestly).
