@@ -895,7 +895,7 @@ dependencies = [
 name = "brows12-js"
 version = "0.2.0"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "brows12-css",
  "brows12-html",
  "brows12-net",
@@ -934,7 +934,7 @@ dependencies = [
 name = "brows12-net"
 version = "0.2.0"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "brows12-storage",
  "bytes",
  "futures-util",
