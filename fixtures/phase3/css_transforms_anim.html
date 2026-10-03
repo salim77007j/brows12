@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<!-- Phase 3.3 fixture: transforms, transitions, @keyframes animations.
+     Screenshot catches animation mid-flight; report verifies computed values. -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { font: 14px/1.4 sans-serif; margin: 14px; background: #eef1f5; }
+  h1 { font-size: 18px; margin: 0 0 6px; }
+  #report { background: #fff; border: 1px solid #ccd; padding: 6px 10px;
+            font: 12px monospace; white-space: pre; }
+  .stage { display: flex; gap: 18px; align-items: center; height: 130px; }
+  .box { width: 84px; height: 84px; border-radius: 10px; color: #fff;
+         display: flex; align-items: center; justify-content: center;
+         font-weight: bold; font-size: 12px; }
+  #t1 { background: #c0392b; transform: rotate(12deg) scale(1.15) skewX(-6deg); }
+  #t2 { background: #2980b9; transform: translate(24px, -12px) rotate(-8deg); }
+  #t3 { background: #27ae60;
+        transition: transform .4s ease, background-color .4s; }
+  #t3.go { transform: translateX(60px) rotate(20deg) scale(.8);
+           background-color: #8e44ad; }
+  #t4 { background: #f39c12; animation: pulse 1.2s ease-in-out infinite; }
+  #t5 { background: #16a085; animation: slide 1.6s linear infinite alternate; }
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); }
+    50%      { transform: scale(1.35); }
+  }
+  @keyframes slide {
+    from { transform: translateX(0); }
+    to   { transform: translateX(140px) rotate(180deg); }
+  }
+  #matrix { background: #2c3e50; transform: matrix(1, .3, -.2, 1, 10, 0); }
+</style>
+</head>
+<body>
+<h1>transforms / transitions / keyframe animations</h1>
+<pre id="report">running…</pre>
+
+<div class="stage">
+  <div class="box" id="t1">rotate<br>scale<br>skew</div>
+  <div class="box" id="t2">translate</div>
+  <div class="box" id="t3">transition<br>(auto .go)</div>
+  <div class="box" id="t4">pulse</div>
+  <div class="box" id="t5">slide</div>
+  <div class="box" id="matrix">matrix()</div>
+</div>
+
+<script>
+const R = [];
+function check(n, c) { R.push((c ? "PASS" : "FAIL") + "  " + n); }
+try {
+  const t1 = getComputedStyle(document.getElementById("t1")).transform;
+  check("transform matrix parsed (rotate/scale/skew)",
+        t1.startsWith("matrix") && t1 !== "none" && !/^matrix\(1, 0, 0, 1, 0, 0\)$/.test(t1));
+
+  const t2 = getComputedStyle(document.getElementById("t2")).transform;
+  check("translate transform", /matrix\(\s*1,?\s*0,?\s*[-0-9.]+/.test(t2.replace(/,\s*/g, ",")) || t2.includes("matrix"));
+
+  const t3 = document.getElementById("t3");
+  const csT3 = getComputedStyle(t3);
+  check("transition-property set",
+        csT3.transitionProperty.includes("transform"));
+  t3.classList.add("go");
+  // sample after the transition duration to prove it landed
+  setTimeout(() => {
+    const end = getComputedStyle(t3).transform;
+    check("transition end-state transform applied", end !== "none");
+    const anim = getComputedStyle(document.getElementById("t4"));
+    check("animation-name pulse", anim.animationName === "pulse");
+    check("animation running state", anim.animationPlayState === "running");
+
+    const t5c = getComputedStyle(document.getElementById("t5"));
+    check("alternate infinite animation", t5c.animationIterationCount.includes("infinite"));
+
+    const m = getComputedStyle(document.getElementById("matrix")).transform;
+    check("matrix() applied", m.startsWith("matrix"));
+
+    const allPass = R.every(l => !l.startsWith("FAIL"));
+    const el = document.getElementById("report");
+    el.textContent = (allPass ? "RESULT: ALL PASS (" : "RESULT: FAILURES (") +
+      R.filter(l => l.startsWith("PASS")).length + "/" + R.length + ")\n" + R.join("\n");
+    el.style.background = allPass ? "#d8ffd8" : "#ffd8d8";
+    document.title = allPass ? "PASS" : "FAIL";
+  }, 600);
+} catch (err) {
+  R.push("FAIL  exception: " + err.message);
+  document.getElementById("report").textContent = R.join("\n");
+}
+</script>
+</body>
+</html>

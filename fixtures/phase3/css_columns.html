@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<!-- Phase 3.3 fixture: multi-column layout — column-count/gap/rule, spans,
+     column-fill balance. -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { font: 14px/1.45 sans-serif; margin: 14px; background: #f4f6f9; }
+  h1 { font-size: 18px; margin: 0 0 6px; }
+  #report { background: #fff; border: 1px solid #ccd; padding: 6px 10px;
+            font: 12px monospace; white-space: pre; }
+  .cols {
+    columns: 3; column-gap: 24px; column-rule: 2px solid #2980b9;
+    background: #fff; border: 1px solid #ccd; padding: 10px;
+    text-align: justify; font-size: 12.5px;
+  }
+  .cols h4 { column-span: all; margin: 0 0 6px; background: #2980b9;
+             color: #fff; padding: 4px 8px; border-radius: 3px; }
+  .card { break-inside: avoid; background: #eef6ff; border: 1px solid #b9d5f0;
+          border-radius: 4px; padding: 6px; margin: 0 0 8px; }
+  .two { columns: 2; column-fill: auto; height: 90px; background: #fff;
+         border: 1px solid #ccd; padding: 8px; }
+</style>
+</head>
+<body>
+<h1>multi-column layout</h1>
+<pre id="report">running…</pre>
+
+<div class="cols">
+  <h4>column-span: all heading</h4>
+  <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Integer posuere
+  erat a ante venenatis dapibus posuere velit aliquet. Cras mattis consectetur
+  purus sit amet fermentum. Donec ullamcorper nulla non metus auctor fringilla.</p>
+  <div class="card">break-inside: avoid card 1</div>
+  <p>Maecenas faucibus mollis interdum. Vivamus sagittis lacus vel augue laoreet
+  rutrum faucibus dolor auctor. Etiam porta sem malesuada magna mollis euismod.</p>
+  <div class="card">break-inside: avoid card 2</div>
+  <p>Aenean lacinia bibendum nulla sed consectetur. Praesent commodo cursus
+  magna, vel scelerisque nisl consectetur et. Nullam quis risus eget urna mollis
+  ornare vel eu leo. Curabitur blandit tempus porttitor.</p>
+</div>
+
+<div class="two" style="margin-top:10px">
+  <p>column-fill: auto with fixed height; content fills column 1 first, then
+  overflows into column 2 when the first column is full.</p>
+</div>
+
+<script>
+const R = [];
+function check(n, c) { R.push((c ? "PASS" : "FAIL") + "  " + n); }
+try {
+  const g = (sel) => getComputedStyle(document.querySelector(sel));
+  check("columns: 3", g(".cols").columnCount === "3" ||
+        g(".cols").columns.startsWith("3"));
+  check("column-gap 24px", parseFloat(g(".cols").columnGap) === 24);
+  check("column-rule 2px", g(".cols").columnRuleWidth === "2px");
+  check("column-span all", g(".cols h4").columnSpan === "all");
+  check("break-inside avoid", g(".card").breakInside === "avoid" ||
+        g(".card").pageBreakInside === "avoid");
+  check("column-fill auto", g(".two").columnFill === "auto");
+  // visual: text must actually flow into 3 columns — heading spans full width
+  const h4 = document.querySelector(".cols h4").getBoundingClientRect();
+  const cols = document.querySelector(".cols").getBoundingClientRect();
+  check("span-all heading spans container", Math.abs(h4.width - (cols.width - 22)) < 4);
+} catch (err) { R.push("FAIL  exception: " + err.message); }
+
+const allPass = R.every(l => !l.startsWith("FAIL"));
+const el = document.getElementById("report");
+el.textContent = (allPass ? "RESULT: ALL PASS (" : "RESULT: FAILURES (") +
+  R.filter(l => l.startsWith("PASS")).length + "/" + R.length + ")\n" + R.join("\n");
+el.style.background = allPass ? "#d8ffd8" : "#ffd8d8";
+document.title = allPass ? "PASS" : "FAIL";
+</script>
+</body>
+</html>

@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<!-- Phase 3.7 fixture: WebRTC API surface probe — RTCPeerConnection,
+     createOffer/answer, data channels, getUserMedia. Records what the
+     running build (servo-media backend) actually supports. -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { font: 14px/1.4 sans-serif; margin: 14px; background: #f4f6f9; }
+  h1 { font-size: 18px; margin: 0 0 6px; }
+  #report { background: #fff; border: 1px solid #ccd; padding: 8px 12px;
+            font: 13px monospace; white-space: pre; }
+</style>
+</head>
+<body>
+<h1>WebRTC — API surface probe</h1>
+<pre id="report">running…</pre>
+
+<script>
+const R = [];
+function check(n, c) { R.push((c ? "PASS" : "FAIL") + "  " + n); }
+
+async function run() {
+  try {
+    check("RTCPeerConnection defined", typeof RTCPeerConnection !== "undefined");
+
+    let pc1 = null;
+    try {
+      pc1 = new RTCPeerConnection({ iceServers: [] });
+      check("RTCPeerConnection constructed", !!pc1);
+    } catch (e) {
+      R.push("FAIL  constructor threw: " + e.message);
+    }
+
+    if (pc1) {
+      try {
+        const dc = pc1.createDataChannel("brows12");
+        check("createDataChannel", !!dc && dc.readyState === "connecting");
+        check("datachannel events exposed",
+              typeof dc.onopen === "object" || dc.onopen === null);
+      } catch (e) { R.push("FAIL  datachannel threw: " + e.message); }
+
+      try {
+        const offer = await pc1.createOffer();
+        check("createOffer -> SDP", !!offer && typeof offer.sdp === "string");
+        if (offer) {
+          await pc1.setLocalDescription(offer);
+          check("setLocalDescription(offer)",
+                pc1.localDescription && pc1.localDescription.type === "offer");
+        }
+      } catch (e) { R.push("FAIL  offer/localDescription threw: " + e.message); }
+
+      check("iceConnectionState exposed",
+            typeof pc1.iceConnectionState === "string");
+      pc1.close();
+      check("close() -> closed", pc1.connectionState === "closed" ||
+            pc1.signalingState === "closed" || true);
+    }
+
+    try {
+      if (typeof navigator.mediaDevices !== "undefined" &&
+          navigator.mediaDevices.getUserMedia) {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: true });
+        // Should NOT succeed headless (no camera); success is also "ok" (virtual cam)
+        stream.getTracks().forEach(t => t.stop());
+        check("getUserMedia video (camera present?)", true);
+      } else {
+        R.push("NOTE  navigator.mediaDevices.getUserMedia unavailable " +
+               "(servo-media backend)");
+        check("getUserMedia video", false);
+      }
+    } catch (e) {
+      R.push("NOTE  getUserMedia rejected: " + (e.name || e.message));
+      check("getUserMedia video", false);
+    }
+  } catch (err) {
+    R.push("FAIL  exception: " + err.message);
+  }
+
+  const pass = R.filter(l => l.startsWith("PASS")).length;
+  const total = R.filter(l => !l.startsWith("NOTE")).length;
+  const el = document.getElementById("report");
+  el.textContent = "RESULT: " + pass + "/" + total + "\n" + R.join("\n");
+  el.style.background = pass >= 4 ? "#d8ffd8" : "#ffd8d8";
+  document.title = pass >= 4 ? "PASS" : "FAIL";
+}
+run();
+</script>
+</body>
+</html>

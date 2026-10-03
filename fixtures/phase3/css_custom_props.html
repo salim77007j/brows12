@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<!-- Phase 3.3 fixture: custom properties — definition, var() fallback, calc
+     with vars, INHERITANCE, and RUNTIME UPDATE via JS (visual: right bar
+     must change color+width after 400ms; report reflects post-update state). -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { font: 14px/1.4 sans-serif; margin: 14px; background: #f4f6f9; }
+  h1 { font-size: 18px; margin: 0 0 6px; }
+  #report { background: #fff; border: 1px solid #ccd; padding: 6px 10px;
+            font: 12px monospace; white-space: pre; }
+  :root { --brand: #2980b9; --gap: 8px; --w: 320px; }
+  .panel { border: 2px solid var(--brand); padding: var(--gap); margin: 8px 0;
+           border-radius: 6px; }
+  .panel h3 { margin: 0 0 4px; color: var(--brand, #333); }
+  .bar { height: 26px; border-radius: 4px; background: var(--brand);
+         width: var(--w); color: #fff; font-size: 12px; display: flex;
+         align-items: center; padding: 0 8px; box-sizing: border-box; }
+  .inherited { --brand: #c0392b; }
+  .calc { margin-top: calc(var(--gap) * 2); color: var(--brand); font-weight: bold; }
+</style>
+</head>
+<body>
+<h1>custom properties (incl. runtime update)</h1>
+<pre id="report">running…</pre>
+
+<div class="panel">
+  <h3>var(--brand) border+heading</h3>
+  <div class="bar" id="runtime">--w: 320px (runtime updates to 500px)</div>
+</div>
+
+<div class="panel inherited">
+  <h3>inherited override (--brand: red)</h3>
+  <div class="calc">calc(var(--gap) * 2) margin</div>
+</div>
+
+<script>
+const R = [];
+function check(n, c) { R.push((c ? "PASS" : "FAIL") + "  " + n); }
+try {
+  const rootStyle = getComputedStyle(document.documentElement);
+  check(":root --brand defined", rootStyle.getPropertyValue("--brand").trim() !== "");
+  const bar = document.getElementById("runtime");
+  check("width from --w = 320px", bar.getBoundingClientRect().width === 320);
+  check("fallback var(--brand, #333) unused but valid",
+        getComputedStyle(document.querySelector(".panel h3")).color.includes("41"));
+  const inh = getComputedStyle(document.querySelector(".inherited"));
+  check("inherited --brand override = red",
+        inh.getPropertyValue("--brand").trim().includes("c0392b") ||
+        getComputedStyle(document.querySelector(".inherited .calc")).color.includes("192"));
+
+  // RUNTIME UPDATE
+  document.documentElement.style.setProperty("--w", "500px");
+  document.documentElement.style.setProperty("--brand", "#8e44ad");
+  setTimeout(() => {
+    check("runtime --w update -> 500px", bar.getBoundingClientRect().width === 500);
+    const newColor = getComputedStyle(bar).backgroundColor;
+    check("runtime --brand update -> purple", newColor.includes("142"));
+    const allPass = R.every(l => !l.startsWith("FAIL"));
+    const el = document.getElementById("report");
+    el.textContent = (allPass ? "RESULT: ALL PASS (" : "RESULT: FAILURES (") +
+      R.filter(l => l.startsWith("PASS")).length + "/" + R.length + ")\n" + R.join("\n");
+    el.style.background = allPass ? "#d8ffd8" : "#ffd8d8";
+    document.title = allPass ? "PASS" : "FAIL";
+  }, 400);
+} catch (err) {
+  R.push("FAIL  exception: " + err.message);
+  document.getElementById("report").textContent = R.join("\n");
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<!-- Phase 3.6 fixture: GPU API surface probe — WebGL1/WebGL2/WebGPU.
+     These are compile-time cargo features in servo 0.6.0; this fixture
+     documents what the running build exposes. -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { font: 14px/1.4 sans-serif; margin: 14px; background: #10141a; color: #dfe; }
+  h1 { font-size: 18px; margin: 0 0 6px; }
+  #report { background: #1a2230; border: 1px solid #345; padding: 8px 12px;
+            font: 13px monospace; white-space: pre; }
+  canvas { border: 1px solid #345; background: #000; margin: 4px 0; }
+</style>
+</head>
+<body>
+<h1>GPU APIs — WebGL1 / WebGL2 / WebGPU probe</h1>
+<pre id="report">running…</pre>
+<canvas id="gl1" width="300" height="120"></canvas><br>
+<canvas id="gl2" width="300" height="120"></canvas>
+
+<script>
+const R = [];
+function note(n, v) { R.push((v ? "PASS" : "FAIL") + "  " + n); }
+let gl1info = "n/a", gl2info = "n/a", gpuinfo = "n/a";
+
+async function run() {
+// --- WebGL1 ---
+try {
+  const c1 = document.getElementById("gl1");
+  const gl = c1.getContext("webgl") || c1.getContext("experimental-webgl");
+  if (gl) {
+    const dbg = gl.getExtension("WEBGL_debug_renderer_info");
+    gl1info = dbg ? (gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) || "?")
+                  : (gl.getParameter(gl.RENDERER) || "?");
+    gl.clearColor(0.1, 0.4, 0.8, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+    note("WebGL1 context", true);
+    R.push("NOTE  WebGL1 renderer: " + gl1info);
+  } else {
+    note("WebGL1 context", false);
+    R.push("NOTE  WebGL1: getContext returned null");
+  }
+} catch (e) { note("WebGL1 context", false); R.push("NOTE  WebGL1 threw: " + e.message); }
+
+// --- WebGL2 ---
+try {
+  const c2 = document.getElementById("gl2");
+  const gl2 = c2.getContext("webgl2");
+  if (gl2) {
+    gl2info = gl2.getParameter(gl2.VERSION) || "?";
+    note("WebGL2 context", true);
+    note("WebGL2 VAO ext built-in", !!gl2.createVertexArray);
+    R.push("NOTE  WebGL2 version: " + gl2info);
+  } else {
+    note("WebGL2 context", false);
+    R.push("NOTE  WebGL2: getContext returned null (feature-gated build)");
+  }
+} catch (e) { note("WebGL2 context", false); R.push("NOTE  WebGL2 threw: " + e.message); }
+
+// --- WebGPU ---
+try {
+  if (navigator.gpu) {
+    const adapter = await navigator.gpu.requestAdapter();
+    if (adapter) {
+      gpuinfo = (adapter.info && adapter.info.description) || "adapter ok";
+      note("WebGPU adapter", true);
+    } else { note("WebGPU adapter", false); }
+  } else {
+    note("WebGPU adapter", false);
+    R.push("NOTE  navigator.gpu undefined (feature-gated build)");
+  }
+} catch (e) { note("WebGPU adapter", false); R.push("NOTE  WebGPU threw: " + e.message); }
+
+const pass = R.filter(l => l.startsWith("PASS")).length;
+const el = document.getElementById("report");
+el.textContent = "RESULT: " + pass + "/" +
+  R.filter(l => l.startsWith("PASS") || l.startsWith("FAIL")).length + " probes\n" +
+  R.join("\n");
+el.style.background = pass >= 2 ? "#d8ffd8" : "#ffd8d8";
+document.title = pass >= 2 ? "PASS" : "FAIL";
+}
+run();
+</script>
+</body>
+</html>

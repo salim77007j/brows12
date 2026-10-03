@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<!-- Phase 3.2 fixture: CSS Grid advanced — grid-template-areas, named lines,
+     dense packing, auto-placement spans. -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { font: 14px/1.4 sans-serif; margin: 14px; background: #f4f6f9; }
+  h1 { font-size: 18px; margin: 0 0 6px; }
+  h2 { font-size: 14px; margin: 12px 0 4px; }
+  #report { background: #fff; border: 1px solid #ccd; padding: 6px 10px;
+            font: 12px monospace; white-space: pre; }
+  .grid { display: grid; width: 100%; gap: 6px; color: #fff; font-weight: bold; }
+  .grid > div { display: flex; align-items: center; justify-content: center;
+                border-radius: 4px; min-height: 34px; }
+  .a { background: #c0392b; } .b { background: #2980b9; }
+  .c { background: #27ae60; } .d { background: #8e44ad; }
+  .e { background: #f39c12; } .f { background: #16a085; }
+
+  #areas {
+    grid-template-columns: 120px 1fr 1fr;
+    grid-template-rows: 36px 44px 30px;
+    grid-template-areas:
+      "head head head"
+      "side main main"
+      "side foot foot";
+  }
+  #named {
+    grid-template-columns: [start] 100px [mid] 1fr [end];
+    grid-template-rows: 40px 40px;
+  }
+  #dense {
+    display: grid; grid-auto-flow: dense;
+    grid-template-columns: repeat(4, 1fr); gap: 6px; color: #fff;
+  }
+  #dense > div { display:flex; align-items:center; justify-content:center;
+                 min-height: 30px; border-radius: 4px; }
+  .w2 { grid-column: span 2; }
+</style>
+</head>
+<body>
+<h1>CSS Grid — template-areas, named lines, dense flow</h1>
+<pre id="report">running…</pre>
+
+<h2>grid-template-areas (holy-grail layout)</h2>
+<div class="grid" id="areas">
+  <div style="grid-area: head" class="a">HEADER</div>
+  <div style="grid-area: side" class="b">SIDE</div>
+  <div style="grid-area: main" class="c">MAIN</div>
+  <div style="grid-area: foot" class="d">FOOT</div>
+</div>
+
+<h2>named lines (grid-column: start / mid)</h2>
+<div class="grid" id="named">
+  <div style="grid-column: start / mid; grid-row: 1" class="e">A</div>
+  <div style="grid-column: mid / end; grid-row: 1" class="f">B</div>
+  <div style="grid-column: start / end; grid-row: 2" class="c">C spans</div>
+</div>
+
+<h2>grid-auto-flow: dense with spans</h2>
+<div id="dense">
+  <div class="a w2">span2</div><div class="b">1</div><div class="c">2</div>
+  <div class="d">3</div><div class="e">4</div><div class="f w2">span2</div>
+</div>
+
+<script>
+const R = [];
+function check(n, c) { R.push((c ? "PASS" : "FAIL") + "  " + n); }
+try {
+  const areas = document.getElementById("areas");
+  const cs = getComputedStyle(areas);
+  check("display: grid", cs.display === "grid");
+  check("grid-template-areas parsed",
+        cs.gridTemplateAreas.split('"').join("").trim().length > 10);
+  const head = areas.firstElementChild;
+  const hr = head.getBoundingClientRect();
+  const side = areas.children[1].getBoundingClientRect();
+  const main = areas.children[2].getBoundingClientRect();
+  check("HEADER spans full width", hr.width > 900);
+  check("SIDE left of MAIN", side.right <= main.left + 1);
+  check("SIDE spans rows 2-3", side.height > main.height);
+  const foot = areas.children[3].getBoundingClientRect();
+  check("FOOT right edge == MAIN right edge",
+        Math.abs(foot.right - main.right) < 2);
+  check("MAIN top == SIDE top", Math.abs(main.top - side.top) < 2);
+
+  const named = document.getElementById("named");
+  const a = named.children[0].getBoundingClientRect();
+  const b = named.children[1].getBoundingClientRect();
+  check("named lines: A left of B", a.right <= b.left + 1);
+  check("named lines: B ends at grid edge",
+        Math.abs(b.right - named.getBoundingClientRect().right) < 2);
+
+  const dense = document.getElementById("dense");
+  const dkids = [...dense.children].map(k => k.getBoundingClientRect());
+  const row1xs = [...new Set(dkids.filter(r => r.top === dkids[0].top)
+                              .map(r => Math.round(r.left)))];
+  const rowTops = [...new Set(dkids.map(r => Math.round(r.top)))];
+  check("dense flow: row 1 packs span2+2 singles (3 boxes)",
+        row1xs.length === 3 && rowTops.length === 2);
+  check("computed grid-auto-flow dense",
+        getComputedStyle(dense).gridAutoFlow.indexOf("dense") >= 0);
+} catch (err) { R.push("FAIL  exception: " + err.message); }
+
+const allPass = R.every(l => !l.startsWith("FAIL"));
+const el = document.getElementById("report");
+el.textContent = (allPass ? "RESULT: ALL PASS (" : "RESULT: FAILURES (") +
+  R.filter(l => l.startsWith("PASS")).length + "/" + R.length + ")\n" + R.join("\n");
+el.style.background = allPass ? "#d8ffd8" : "#ffd8d8";
+document.title = allPass ? "PASS" : "FAIL";
+</script>
+</body>
+</html>

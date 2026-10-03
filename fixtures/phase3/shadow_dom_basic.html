@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<!-- Phase 3.1 fixture: Shadow DOM basics — attachShadow, nested roots,
+     :host styling, composed events, ElementInternals-free checks.
+     JS self-reports into #report so the verdict is visible in screenshots. -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { font: 14px/1.45 sans-serif; margin: 16px; background: #f5f6f8; }
+  h1 { font-size: 18px; margin: 0 0 8px; }
+  #report { background: #fff; border: 1px solid #ccd; padding: 8px 12px;
+            font: 13px monospace; white-space: pre; }
+  .card { margin: 10px 0; }
+  x-card { display: block; margin: 10px 0; }
+</style>
+</head>
+<body>
+<h1>Shadow DOM — basic attachShadow / :host / slotted / nested</h1>
+<pre id="report">running…</pre>
+
+<div id="host1" class="card"></div>
+<x-card id="host2">FALLBACK TEXT (should be replaced by slot content)</x-card>
+<div id="host3" class="card"></div>
+
+<script>
+const R = [];
+function check(name, cond) { R.push((cond ? "PASS" : "FAIL") + "  " + name); }
+
+try {
+  // 1. open shadow root, :host styling
+  const h1 = document.getElementById("host1");
+  const s1 = h1.attachShadow({ mode: "open" });
+  s1.innerHTML = `
+    <style>
+      :host { display: block; border: 3px solid #2a6; border-radius: 8px;
+              padding: 8px; background: #eafff2; }
+      .inner { color: #135; font-weight: bold; }
+      ::slotted(span) { color: #c33; }
+    </style>
+    <div class="inner">inside shadow root 1</div>
+    <slot></slot>`;
+  h1.appendChild(Object.assign(document.createElement("span"),
+                               { textContent: "light-DOM child slotted in" }));
+  check("attachShadow(open) + :host + ::slotted", !!s1.querySelector(".inner"));
+
+  // 2. named slot default content
+  const h2 = document.getElementById("host2");
+  const s2 = h2.shadowRoot || h2.attachShadow({ mode: "open" });
+  s2.innerHTML = `
+    <style>.box { background:#ffe; border:2px dashed #a80; padding:6px; }</style>
+    <div class="box">named: <slot name="tag">DEFAULT SLOT CONTENT SHOWN</slot></div>`;
+  check("named slot default content", !!s2.querySelector(".box"));
+
+  // 3. nested shadow roots
+  const h3 = document.getElementById("host3");
+  const s3 = h3.attachShadow({ mode: "open" });
+  s3.innerHTML = `<div id="nested-host"></div>`;
+  const inner = s3.getElementById("nested-host");
+  const s3b = inner.attachShadow({ mode: "open" });
+  s3b.innerHTML = `<style>b { color: #06c; }</style><b>nested shadow level 2</b>`;
+  check("nested shadow root", s3b.firstChild.tagName === "STYLE");
+
+  // 4. elementFromPoint / composed events
+  let composed = false;
+  h1.addEventListener("click", (e) => { composed = e.composed; }, { once: true });
+  h1.click();
+  check("composed event flag", composed === true);
+
+  // 5. shadowRoot APIs
+  check("shadowRoot.mode === 'open'", s1.mode === "open");
+  check("host back-reference", s1.host === h1);
+
+  // 6. assignedSlot
+  const slotted = h1.querySelector("span");
+  check("slotted child assignedSlot", slotted.assignedSlot !== null);
+} catch (err) {
+  R.push("FAIL  exception: " + err.message);
+}
+
+const allPass = R.every(l => !l.startsWith("FAIL"));
+const el = document.getElementById("report");
+el.textContent = (allPass ? "RESULT: ALL PASS (" : "RESULT: FAILURES (") +
+  R.filter(l => l.startsWith("PASS")).length + "/" + R.length + ")\n" + R.join("\n");
+el.style.background = allPass ? "#d8ffd8" : "#ffd8d8";
+document.title = allPass ? "PASS" : "FAIL";
+</script>
+</body>
+</html>

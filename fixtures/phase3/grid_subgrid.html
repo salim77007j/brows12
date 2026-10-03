@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<!-- Phase 3.2 fixture: subgrid (grid-template-rows/columns: subgrid). -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { font: 14px/1.4 sans-serif; margin: 14px; background: #f4f6f9; }
+  h1 { font-size: 18px; margin: 0 0 6px; }
+  #report { background: #fff; border: 1px solid #ccd; padding: 6px 10px;
+            font: 12px monospace; white-space: pre; }
+  #outer {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-rows: 40px 40px 60px;
+    gap: 6px;
+  }
+  .sub {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-row: 2 / 4;                  /* span parent's rows 2-3 */
+    grid-template-columns: subgrid;   /* align to parent's 3 columns */
+    grid-template-rows: subgrid;      /* span parent's 2 rows */
+    gap: 6px;
+  }
+  #outer > .sub { background: #e67e22; }  /* keep ID-level cascade but grid display */
+  #outer > div:not(.sub) { background: #34495e; color: #fff; border-radius: 4px;
+                 display: flex; align-items: center; justify-content: center; }
+  .sub > div { background: #e67e22; border-radius: 4px; color: #fff;
+               display: flex; align-items: center; justify-content: center; }
+  .sub > div:nth-child(1) { grid-area: 1 / 1; }
+  .sub > div:nth-child(2) { grid-area: 1 / 2; }
+  .sub > div:nth-child(3) { grid-area: 2 / 1; }
+</style>
+</head>
+<body>
+<h1>CSS Grid — subgrid</h1>
+<pre id="report">running…</pre>
+
+<div id="outer">
+  <div>A1</div><div>B1</div><div>C1</div>
+  <div class="sub">
+    <div>S1</div><div>S2</div><div>S3</div>
+  </div>
+</div>
+
+<script>
+const R = [];
+function check(n, c) { R.push((c ? "PASS" : "FAIL") + "  " + n); }
+try {
+  const outer = document.getElementById("outer");
+  const sub = outer.querySelector(".sub");
+  const o1 = outer.children[0].getBoundingClientRect();
+  const s1 = sub.children[0].getBoundingClientRect();
+  const s2 = sub.children[1].getBoundingClientRect();
+  check("subgrid child aligns to parent column 1",
+        Math.abs(s1.left - o1.left) < 2);
+  check("subgrid columns == parent columns (S1 width == A1 width)",
+        Math.abs(s1.width - o1.width) < 2);
+  check("sub item S2 starts at parent column 2",
+        Math.abs(s2.left - outer.children[1].getBoundingClientRect().left) < 2);
+  // row: sub spans rows 1-2, its children share parent's row tracks
+  const s3 = sub.children[2].getBoundingClientRect();
+  check("subgrid rows == parent rows (S1 height == A1 height)",
+        Math.abs(s1.height - o1.height) < 2);
+  check("S3 lands in parent row 2 (taller track)",
+        s3.top > s1.bottom - 2 && s3.height > s1.height + 5);
+  const cs = getComputedStyle(sub);
+  check("computed grid-template-columns: subgrid",
+        (cs.gridTemplateColumns || "").includes("subgrid"));
+} catch (err) { R.push("FAIL  exception: " + err.message); }
+
+const allPass = R.every(l => !l.startsWith("FAIL"));
+const el = document.getElementById("report");
+el.textContent = (allPass ? "RESULT: ALL PASS (" : "RESULT: FAILURES (") +
+  R.filter(l => l.startsWith("PASS")).length + "/" + R.length + ")\n" + R.join("\n");
+el.style.background = allPass ? "#d8ffd8" : "#ffd8d8";
+document.title = allPass ? "PASS" : "FAIL";
+</script>
+</body>
+</html>

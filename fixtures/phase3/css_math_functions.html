@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<!-- Phase 3.3 fixture: calc() / min() / max() / clamp() in widths, fonts,
+     nested expressions, mixed units. -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { font: 14px/1.4 sans-serif; margin: 14px; background: #f4f6f9; }
+  h1 { font-size: 18px; margin: 0 0 6px; }
+  #report { background: #fff; border: 1px solid #ccd; padding: 6px 10px;
+            font: 12px monospace; white-space: pre; }
+  .bar { height: 30px; margin: 8px 0; border-radius: 4px; color: #fff;
+         display: flex; align-items: center; padding: 0 8px; font-size: 12px;
+         box-sizing: border-box; }
+  #c1 { width: calc(50% - 40px); background: #2980b9; }
+  #c2 { width: calc((100% - 80px) / 3 + 20px); background: #27ae60; }
+  #c3 { width: min(400px, 60%); background: #8e44ad; }
+  #c4 { width: max(200px, 30%); background: #f39c12; }
+  #c5 { width: clamp(180px, 40%, 500px); background: #c0392b; }
+  #c6 { width: calc(min(50%, 300px) + max(20px, 2%)); background: #16a085; }
+  .txt { font-size: clamp(14px, 2vw, 22px); }
+</style>
+</head>
+<body>
+<h1>calc() / min() / max() / clamp()</h1>
+<pre id="report">running…</pre>
+
+<div class="bar" id="c1">calc(50% - 40px)</div>
+<div class="bar" id="c2">calc((100% - 80px)/3 + 20px)</div>
+<div class="bar" id="c3">min(400px, 60%)</div>
+<div class="bar" id="c4">max(200px, 30%)</div>
+<div class="bar" id="c5">clamp(180px, 40%, 500px)</div>
+<div class="bar" id="c6">calc(min(50%,300px) + max(20px,2%))</div>
+<div class="txt">clamp() font-size line</div>
+
+<script>
+const R = [];
+function check(n, c) { R.push((c ? "PASS" : "FAIL") + "  " + n); }
+const W = 1250; // innerWidth approximation
+function w(id) { return document.getElementById(id).getBoundingClientRect().width; }
+try {
+  const bodyW = document.body.clientWidth;
+  check("calc(50% - 40px)", Math.abs(w("c1") - (bodyW * .5 - 40)) < 2);
+  check("calc((100%-80px)/3 + 20px)", Math.abs(w("c2") - ((bodyW - 80) / 3 + 20)) < 2);
+  check("min(400px, 60%)", Math.abs(w("c3") - Math.min(400, bodyW * .6)) < 2);
+  check("max(200px, 30%)", Math.abs(w("c4") - Math.max(200, bodyW * .3)) < 2);
+  check("clamp(180,40%,500)", Math.abs(w("c5") - Math.min(500, Math.max(180, bodyW * .4))) < 2);
+  check("nested min/max in calc",
+        Math.abs(w("c6") - (Math.min(bodyW * .5, 300) + Math.max(20, bodyW * .02))) < 3);
+  const fs = parseFloat(getComputedStyle(document.querySelector(".txt")).fontSize);
+  check("clamp font-size within [14,22]", fs >= 13.9 && fs <= 22.1);
+} catch (err) { R.push("FAIL  exception: " + err.message); }
+
+const allPass = R.every(l => !l.startsWith("FAIL"));
+const el = document.getElementById("report");
+el.textContent = (allPass ? "RESULT: ALL PASS (" : "RESULT: FAILURES (") +
+  R.filter(l => l.startsWith("PASS")).length + "/" + R.length + ")\n" + R.join("\n");
+el.style.background = allPass ? "#d8ffd8" : "#ffd8d8";
+document.title = allPass ? "PASS" : "FAIL";
+</script>
+</body>
+</html>

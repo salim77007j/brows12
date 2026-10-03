@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<!-- Phase 3.3 fixture: filter, backdrop-filter, clip-path. -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { font: 14px/1.4 sans-serif; margin: 14px; background:
+         repeating-linear-gradient(45deg, #dfe6ee 0 12px, #eef2f7 12px 24px); }
+  h1 { font-size: 18px; margin: 0 0 6px; }
+  #report { background: #fff; border: 1px solid #ccd; padding: 6px 10px;
+            font: 12px monospace; white-space: pre; }
+  .row { display: flex; gap: 14px; margin: 12px 0; flex-wrap: wrap; }
+  .tile { width: 130px; height: 80px; background: #2c3e50; color: #fff;
+          display: flex; align-items: center; justify-content: center;
+          font-size: 12px; }
+  .f1 { filter: blur(3px); }
+  .f2 { filter: grayscale(1) brightness(1.3); }
+  .f3 { filter: drop-shadow(4px 4px 6px #c0392b) saturate(2); }
+  .glass { position: relative; }
+  .glass::after { content: "backdrop"; position: absolute; inset: 18px 24px;
+                  background: rgba(255,255,255,.35); backdrop-filter: blur(4px);
+                  display: flex; align-items: center; justify-content: center;
+                  color: #111; }
+  .cp1 { clip-path: circle(36px at 50% 50%); }
+  .cp2 { clip-path: polygon(50% 0, 100% 100%, 0 100%); }
+  .cp3 { clip-path: inset(8px 16px round 12px); }
+</style>
+</head>
+<body>
+<h1>filter / backdrop-filter / clip-path</h1>
+<pre id="report">running…</pre>
+
+<div class="row">
+  <div class="tile f1">blur(3px)</div>
+  <div class="tile f2">grayscale+bright</div>
+  <div class="tile f3">drop-shadow+sat</div>
+  <div class="tile glass">striped bg</div>
+</div>
+<div class="row">
+  <div class="tile cp1">circle</div>
+  <div class="tile cp2">polygon tri</div>
+  <div class="tile cp3">inset round</div>
+</div>
+
+<script>
+const R = [];
+function check(n, c) { R.push((c ? "PASS" : "FAIL") + "  " + n); }
+try {
+  const g = (sel) => getComputedStyle(document.querySelector(sel));
+  check("filter blur", g(".f1").filter.includes("blur"));
+  check("filter list (grayscale brightness)", g(".f2").filter.includes("grayscale") &&
+        g(".f2").filter.includes("brightness"));
+  check("filter drop-shadow", g(".f3").filter.includes("drop-shadow"));
+  check("backdrop-filter blur", (() => {
+          const a = getComputedStyle(document.querySelector(".glass"), "::after");
+          return (a.backdropFilter || a.webkitBackdropFilter || "none").includes("blur");
+        })());
+  check("clip-path circle", g(".cp1").clipPath.includes("circle"));
+  check("clip-path polygon", g(".cp2").clipPath.includes("polygon"));
+  check("clip-path inset round", g(".cp3").clipPath.includes("inset") &&
+        g(".cp3").clipPath.includes("round"));
+} catch (err) { R.push("FAIL  exception: " + err.message); }
+
+const allPass = R.every(l => !l.startsWith("FAIL"));
+const el = document.getElementById("report");
+el.textContent = (allPass ? "RESULT: ALL PASS (" : "RESULT: FAILURES (") +
+  R.filter(l => l.startsWith("PASS")).length + "/" + R.length + ")\n" + R.join("\n");
+el.style.background = allPass ? "#d8ffd8" : "#ffd8d8";
+document.title = allPass ? "PASS" : "FAIL";
+</script>
+</body>
+</html>

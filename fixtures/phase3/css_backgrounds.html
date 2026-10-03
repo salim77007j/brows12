@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<!-- Phase 3.3 fixture: background-image — url raster, linear/radial/conic
+     gradients, multi-layer backgrounds, size cover/contain, repeat, position. -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { font: 14px/1.4 sans-serif; margin: 14px; background: #f7f8fa; }
+  h1 { font-size: 18px; margin: 0 0 6px; }
+  #report { background: #fff; border: 1px solid #ccd; padding: 6px 10px;
+            font: 12px monospace; white-space: pre; }
+  .row { display: flex; gap: 14px; margin: 12px 0; flex-wrap: wrap; }
+  .tile { width: 150px; height: 84px; border: 1px solid #ccd; border-radius: 6px; }
+  .b1 { background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='40' height='40'><rect width='40' height='40' fill='%232980b9'/><circle cx='20' cy='20' r='12' fill='%23f39c12'/></svg>"); }
+  .b2 { background-image: linear-gradient(135deg, #2c3e50, #3498db); }
+  .b3 { background-image: radial-gradient(circle at 30% 30%, #27ae60 0%, #145a32 70%); }
+  .b4 { background-image: conic-gradient(from 90deg, #c0392b, #f39c12, #27ae60, #c0392b); }
+  .b5 { background-image:
+          linear-gradient(rgba(231,76,60,.75), rgba(231,76,60,.75)),
+          url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='40' height='40'><rect width='40' height='40' fill='%23ecf0f1'/><rect x='8' y='8' width='24' height='24' fill='%237f8c8d'/></svg>");
+        background-size: cover, 24px 24px; }
+  .b6 { background-image: linear-gradient(#8e44ad, #8e44ad);
+        background-size: 100% 50%; background-repeat: no-repeat;
+        background-position: center; }
+  .b7 { background-image:
+          url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='30' height='30'><rect width='30' height='30' fill='%2316a085'/></svg>");
+        background-size: 40px 40px; background-repeat: round; }
+</style>
+</head>
+<body>
+<h1>background-image — url, gradients, layers, size</h1>
+<pre id="report">running…</pre>
+
+<div class="row">
+  <div class="tile b1">url svg</div>
+  <div class="tile b2">linear-gradient</div>
+  <div class="tile b3">radial-gradient</div>
+  <div class="tile b4">conic-gradient</div>
+</div>
+<div class="row">
+  <div class="tile b5">2-layer (gradient over url)</div>
+  <div class="tile b6">size 100% 50% no-repeat</div>
+  <div class="tile b7">repeat round</div>
+</div>
+
+<script>
+const R = [];
+function check(n, c) { R.push((c ? "PASS" : "FAIL") + "  " + n); }
+try {
+  const g = (sel) => getComputedStyle(document.querySelector(sel));
+  check("url() image", g(".b1").backgroundImage.includes("url"));
+  check("linear-gradient", g(".b2").backgroundImage.includes("linear-gradient"));
+  check("radial-gradient", g(".b3").backgroundImage.includes("radial-gradient"));
+  check("conic-gradient", g(".b4").backgroundImage.includes("conic-gradient"));
+  check("two background layers", (g(".b5").backgroundImage.match(/url|gradient/g) || []).length >= 2);
+  check("background-size list", g(".b5").backgroundSize.split(",").length >= 2);
+  check("background-position center",
+        g(".b6").backgroundPosition.includes("center") ||
+        g(".b6").backgroundPosition.includes("50%"));
+  check("repeat round", g(".b7").backgroundRepeat.includes("round"));
+} catch (err) { R.push("FAIL  exception: " + err.message); }
+
+const allPass = R.every(l => !l.startsWith("FAIL"));
+const el = document.getElementById("report");
+el.textContent = (allPass ? "RESULT: ALL PASS (" : "RESULT: FAILURES (") +
+  R.filter(l => l.startsWith("PASS")).length + "/" + R.length + ")\n" + R.join("\n");
+el.style.background = allPass ? "#d8ffd8" : "#ffd8d8";
+document.title = allPass ? "PASS" : "FAIL";
+</script>
+</body>
+</html>

@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<!-- Phase 3.2 fixture: auto-fill / auto-fit + minmax() responsive columns. -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { font: 14px/1.4 sans-serif; margin: 14px; background: #f4f6f9; }
+  h1 { font-size: 18px; margin: 0 0 6px; }
+  h2 { font-size: 14px; margin: 12px 0 4px; }
+  #report { background: #fff; border: 1px solid #ccd; padding: 6px 10px;
+            font: 12px monospace; white-space: pre; }
+  .g { display: grid; gap: 6px; color: #fff; font-weight: bold; margin-bottom: 4px; }
+  .g > div { display:flex; align-items:center; justify-content:center;
+             min-height: 32px; border-radius: 4px; }
+  .p { background: #2c3e50; } .q { background: #c0392b; } .r { background: #27ae60; }
+  .s { background: #2980b9; } .t { background: #8e44ad; } .u { background: #f39c12; }
+  /* container ~1240px wide: auto-fill minmax(200px,1fr) -> 5-6 tracks */
+  #fill { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+  #fit  { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+  #fit3 { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+</style>
+</head>
+<body>
+<h1>CSS Grid — repeat(auto-fill / auto-fit, minmax)</h1>
+<pre id="report">running…</pre>
+
+<h2>auto-fill minmax(200px,1fr) — 6 items, ~6 tracks</h2>
+<div class="g" id="fill">
+  <div class="p">1</div><div class="q">2</div><div class="r">3</div>
+  <div class="s">4</div><div class="t">5</div><div class="u">6</div>
+</div>
+
+<h2>auto-fit minmax(200px,1fr) — 3 items collapse empty tracks</h2>
+<div class="g" id="fit">
+  <div class="p">A</div><div class="q">B</div><div class="r">C</div>
+</div>
+
+<h2>auto-fit minmax(300px,1fr) — 3 items, 4 tracks</h2>
+<div class="g" id="fit3">
+  <div class="p">X</div><div class="q">Y</div><div class="r">Z</div>
+</div>
+
+<script>
+const R = [];
+function check(n, c) { R.push((c ? "PASS" : "FAIL") + "  " + n); }
+function colsOf(id) {
+  const g = document.getElementById(id);
+  const w = g.getBoundingClientRect().width;
+  const kids = [...g.children].map(k => k.getBoundingClientRect());
+  // count distinct column x-positions in first row
+  const xs = [...new Set(kids.filter(r => r.top === kids[0].top)
+                             .map(r => Math.round(r.left)))];
+  return { xs: xs.length, w, kids,
+           trackW: kids[0].width };
+}
+try {
+  const f = colsOf("fill");
+  check("auto-fill: 6 items in one row", f.xs === 6);
+  check("auto-fill: track >= 200px", f.trackW >= 199);
+
+  const fit = colsOf("fit");
+  check("auto-fit: 3 items stretch to full width",
+        fit.xs === 3 && fit.trackW > (fit.w - 12) / 3 - 2);
+
+  const f3 = colsOf("fit3");
+  check("auto-fit minmax(300): 3 tracks for 3 items", f3.xs === 3);
+
+  check("minmax lower bound honored (fill)",
+        [...document.getElementById("fill").children]
+          .every(k => k.getBoundingClientRect().width >= 199));
+} catch (err) { R.push("FAIL  exception: " + err.message); }
+
+const allPass = R.every(l => !l.startsWith("FAIL"));
+const el = document.getElementById("report");
+el.textContent = (allPass ? "RESULT: ALL PASS (" : "RESULT: FAILURES (") +
+  R.filter(l => l.startsWith("PASS")).length + "/" + R.length + ")\n" + R.join("\n");
+el.style.background = allPass ? "#d8ffd8" : "#ffd8d8";
+document.title = allPass ? "PASS" : "FAIL";
+</script>
+</body>
+</html>

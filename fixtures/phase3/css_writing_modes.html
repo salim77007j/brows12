@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<!-- Phase 3.3 fixture: writing modes (vertical-rl/lr, sideways), direction rtl,
+     logical properties (margin-inline-start etc.). -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { font: 14px/1.4 sans-serif; margin: 14px; background: #f4f6f9; }
+  h1 { font-size: 18px; margin: 0 0 6px; }
+  #report { background: #fff; border: 1px solid #ccd; padding: 6px 10px;
+            font: 12px monospace; white-space: pre; }
+  .row { display: flex; gap: 12px; margin: 10px 0; }
+  .box { background: #2c3e50; color: #fff; padding: 8px; border-radius: 4px;
+         height: 120px; font-size: 13px; }
+  .v1 { writing-mode: vertical-rl; }
+  .v2 { writing-mode: vertical-lr; }
+  .v3 { writing-mode: vertical-rl; text-orientation: upright; }
+  .rtl { direction: rtl; background: #fff; color: #111; border: 1px solid #ccd;
+         padding: 6px 10px; width: 320px; }
+  .logical { margin-inline-start: 40px; padding-inline: 12px;
+             border-inline-start: 4px solid #c0392b; background: #fff;
+             width: 240px; }
+</style>
+</head>
+<body>
+<h1>writing modes / direction / logical properties</h1>
+<pre id="report">running…</pre>
+
+<div class="row">
+  <div class="box v1">vertical-rl text flows top-to-bottom, right-to-left</div>
+  <div class="box v2">vertical-lr text</div>
+  <div class="box v3">upright glyphs</div>
+</div>
+
+<div class="rtl">هذا نص من اليمين إلى اليسار (RTL paragraph)</div>
+
+<div class="logical" style="margin-top:10px">
+  logical props: margin-inline-start 40px + border-inline-start red
+</div>
+
+<script>
+const R = [];
+function check(n, c) { R.push((c ? "PASS" : "FAIL") + "  " + n); }
+try {
+  const g = (sel) => getComputedStyle(document.querySelector(sel));
+  check("vertical-rl", g(".v1").writingMode === "vertical-rl");
+  check("vertical-lr", g(".v2").writingMode === "vertical-lr");
+  check("text-orientation upright", g(".v3").textOrientation === "upright");
+  const v1 = document.querySelector(".v1").getBoundingClientRect();
+  check("vertical box is tall+narrow", v1.height > v1.width);
+  check("direction rtl", g(".rtl").direction === "rtl");
+  const lg = document.querySelector(".logical");
+  check("margin-inline-start == 40px",
+        g(".logical").marginLeft === "40px" || g(".logical").marginInlineStart === "40px");
+  check("border-inline-start color red",
+        g(".logical").borderLeftColor.includes("192") ||
+        g(".logical").borderInlineStartColor.includes("192"));
+} catch (err) { R.push("FAIL  exception: " + err.message); }
+
+const allPass = R.every(l => !l.startsWith("FAIL"));
+const el = document.getElementById("report");
+el.textContent = (allPass ? "RESULT: ALL PASS (" : "RESULT: FAILURES (") +
+  R.filter(l => l.startsWith("PASS")).length + "/" + R.length + ")\n" + R.join("\n");
+el.style.background = allPass ? "#d8ffd8" : "#ffd8d8";
+document.title = allPass ? "PASS" : "FAIL";
+</script>
+</body>
+</html>

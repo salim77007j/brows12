@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<!-- Phase 3.3 fixture: position sticky / fixed / absolute within scroll container. -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { font: 14px/1.4 sans-serif; margin: 0; background: #eef1f5; }
+  h1 { font-size: 18px; margin: 10px 14px; }
+  #report { background: #fff; border: 1px solid #ccd; padding: 6px 10px;
+            font: 12px monospace; white-space: pre; margin: 0 14px; }
+  .spacer { height: 300px; display: flex; align-items: flex-end; color: #888; }
+  .fixed-banner {
+    position: fixed; top: 0; right: 0; left: 0; height: 34px;
+    background: #2c3e50; color: #fff; display: flex; align-items: center;
+    padding: 0 12px; z-index: 10;
+  }
+  .scroller { height: 220px; overflow: auto; margin: 8px 14px;
+              background: #fff; border: 1px solid #ccd; }
+  .sticky-head {
+    position: sticky; top: 0; background: #2980b9; color: #fff;
+    padding: 8px 12px; font-weight: bold;
+  }
+  .sticky-cell { position: sticky; left: 0; background: #27ae60; color: #fff;
+                 display: inline-block; width: 90px; padding: 6px 10px; }
+  .row { white-space: nowrap; padding: 2px 0 2px 130px; }
+  .anchor { position: relative; }
+  .tooltip { position: absolute; left: 40px; top: -8px; background: #8e44ad;
+             color: #fff; padding: 4px 10px; border-radius: 4px; }
+</style>
+</head>
+<body>
+<h1>position: sticky / fixed / absolute</h1>
+<pre id="report">running…</pre>
+
+<div class="fixed-banner">FIXED banner — stays pinned to viewport top</div>
+
+<div class="scroller" id="sc1">
+  <div class="sticky-head">STICKY header — pins while scrolling</div>
+  <div style="height:40px">row 1</div><div style="height:40px">row 2</div>
+  <div style="height:40px">row 3</div><div style="height:40px">row 4</div>
+  <div style="height:40px">row 5</div><div style="height:40px">row 6</div>
+  <div style="height:40px">row 7</div><div style="height:40px">row 8</div>
+  <div style="height:40px">row 9</div><div style="height:40px">row 10</div>
+  <div style="height:40px">row 11</div><div style="height:40px">row 12</div>
+</div>
+
+<div class="scroller" id="sc2">
+  <div class="anchor">scroll me
+    <span class="tooltip">absolute tooltip</span>
+  </div>
+  <div style="height:180px"></div>
+</div>
+
+<div class="spacer">scroll container above must keep the blue header pinned</div>
+
+<script>
+const R = [];
+function check(n, c) { R.push((c ? "PASS" : "FAIL") + "  " + n); }
+try {
+  const head = document.querySelector(".sticky-head");
+  const cs = getComputedStyle(head);
+  check("sticky computed", cs.position === "sticky");
+  // scroll sc1; sticky head should remain at top of scroller box
+  const sc1 = document.getElementById("sc1");
+  sc1.scrollTop = 150;
+  const scBox = sc1.getBoundingClientRect();
+  const hb = head.getBoundingClientRect();
+  check("sticky pins at top after scroll", Math.abs(hb.top - scBox.top) < 2);
+
+  const tip = document.querySelector(".tooltip");
+  const tb = tip.getBoundingClientRect();
+  const anchorBox = document.querySelector(".anchor").getBoundingClientRect();
+  check("absolute anchored to .anchor",
+        tb.top >= anchorBox.top - 10 && tb.left > anchorBox.left + 20);
+
+  const banner = document.querySelector(".fixed-banner");
+  const bb = banner.getBoundingClientRect();
+  check("fixed at viewport top", Math.abs(bb.top) < 1 && bb.width >= innerWidth - 1);
+  check("computed fixed", getComputedStyle(banner).position === "fixed");
+
+  // restore
+  sc1.scrollTop = 0;
+  R.push("NOTE  sticky-while-scrolled is the visual check (blue bar)");
+} catch (err) { R.push("FAIL  exception: " + err.message); }
+
+const allPass = R.every(l => !l.startsWith("FAIL"));
+const el = document.getElementById("report");
+el.textContent = (allPass ? "RESULT: ALL PASS (" : "RESULT: FAILURES (") +
+  R.filter(l => l.startsWith("PASS")).length + "/" + R.length + ")\n" + R.join("\n");
+el.style.background = allPass ? "#d8ffd8" : "#ffd8d8";
+document.title = allPass ? "PASS" : "FAIL";
+</script>
+</body>
+</html>
