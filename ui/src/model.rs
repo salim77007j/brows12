@@ -40,6 +40,10 @@ pub struct UiTab {
     pub hindex: usize,
     /// Omnibox text being typed (None = show current URL).
     pub omni_edit: Option<String>,
+    /// Hibernated: the WebView was dropped; restoring reloads the URL.
+    pub suspended: bool,
+    /// When this tab last held the active slot (governor eligibility).
+    pub last_active: std::time::Instant,
 }
 
 impl UiTab {
@@ -51,6 +55,8 @@ impl UiTab {
             history: Vec::new(),
             hindex: 0,
             omni_edit: None,
+            suspended: false,
+            last_active: std::time::Instant::now(),
         }
     }
 
@@ -82,6 +88,10 @@ pub enum InjectCmd {
     /// Activate tab by index.
     Switch(usize),
     Scroll(f32),
+    /// Hibernate a background tab by index (drop its WebView).
+    Hibernate(usize),
+    /// Restore a hibernated tab by index (rebuild + reload).
+    Restore(usize),
     /// Pace the automation script (handled on the reader thread, in order).
     Sleep(u64),
     /// Exit the event loop cleanly (acknowledged with an `quit` event).

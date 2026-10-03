@@ -33,6 +33,8 @@ const TAB_ACTIVE: [u8; 4] = [0xff, 0xff, 0xff, 0xff];
 const TAB_INACTIVE: [u8; 4] = [0xdc, 0xdf, 0xe4, 0xff];
 const INK: [u8; 4] = [0x1b, 0x27, 0x33, 0xff];
 const INK_DIM: [u8; 4] = [0x5a, 0x6b, 0x7c, 0xff];
+/// Title color for hibernated (suspended) tabs — dimmest tier.
+const INK_SUSPENDED: [u8; 4] = [0x9a, 0xa5, 0xb1, 0xff];
 const OMNI_BG: [u8; 4] = [0xff, 0xff, 0xff, 0xff];
 const OMNI_BORDER: [u8; 4] = [0xb9, 0xc0, 0xc9, 0xff];
 const VIEWPORT_BG: [u8; 4] = [0x22, 0x22, 0x26, 0xff];
@@ -206,6 +208,13 @@ pub fn draw_chrome(
         fill(px, tx, ty, tw, th, if is_active { TAB_ACTIVE } else { TAB_INACTIVE }, 6.0);
         let title = if t.title.is_empty() { t.url() } else { t.title.clone() };
         let title: String = title.chars().take(24).collect();
+        let ink = if is_active {
+            INK
+        } else if t.suspended {
+            INK_SUSPENDED
+        } else {
+            INK_DIM
+        };
         text(
             px,
             raster,
@@ -213,7 +222,7 @@ pub fn draw_chrome(
             tx + 8.0,
             ty + 7.0,
             12.0,
-            if is_active { INK } else { INK_DIM },
+            ink,
             tw - 34.0,
         );
         // Close button.

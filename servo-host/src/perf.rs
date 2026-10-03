@@ -46,6 +46,12 @@ pub struct PerfConfig {
     pub idle_secs: u64,
     /// Scroll benchmark duration on the last tab (0 = skip).
     pub scroll_secs: u64,
+    /// Ask the engine for its malloc-size-of report. OFF by default:
+    /// in servo 0.6.0 the SystemFontService panics (usize add overflow in
+    /// servo-malloc-size-of) while collecting its report — an upstream
+    /// bug discovered during Phase 2; patch + PR planned (Phase 4.5).
+    /// RSS (/proc) remains the primary metric for every gate.
+    pub engine_report: bool,
 }
 
 impl Default for PerfConfig {
@@ -59,6 +65,7 @@ impl Default for PerfConfig {
             suspend: false,
             idle_secs: 0,
             scroll_secs: 0,
+            engine_report: false,
         }
     }
 }
@@ -145,6 +152,7 @@ pub struct PerfConfigSer {
     pub suspend: bool,
     pub idle_secs: u64,
     pub scroll_secs: u64,
+    pub engine_report: bool,
 }
 
 /// Entry point for `brows-perf`.
@@ -235,7 +243,11 @@ pub fn run_perf(config: PerfConfig) -> PerfReport {
     }
 
     // ---- Engine memory report (create_memory_report hook) ----------------
-    let memory_report = request_engine_memory_report(&servo, &waker);
+    let memory_report = if config.engine_report {
+        request_engine_memory_report(&servo, &waker)
+    } else {
+        None
+    };
 
     // ---- Suspension (hibernate background tabs) --------------------------
     let suspension = if config.suspend && slots.len() > 1 {
@@ -345,6 +357,7 @@ pub fn run_perf(config: PerfConfig) -> PerfReport {
             suspend: config.suspend,
             idle_secs: config.idle_secs,
             scroll_secs: config.scroll_secs,
+            engine_report: config.engine_report,
         },
         startup: Some(StartupReport {
             servo_build_ms,

@@ -13,19 +13,28 @@ use servo_host::perf::{run_perf, PerfConfig};
 fn main() {
     let mut cfg = PerfConfig::default();
     let mut json: Option<PathBuf> = None;
+    let mut seen_url = false;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--url" => {
                 let u = args.next().expect("--url needs a value");
-                cfg.urls
-                    .push(url::Url::parse(&u).unwrap_or_else(|e| panic!("bad url {u}: {e}")));
+                let parsed =
+                    url::Url::parse(&u).unwrap_or_else(|e| panic!("bad url {u}: {e}"));
+                if seen_url {
+                    cfg.urls.push(parsed);
+                } else {
+                    // First --url replaces the built-in default.
+                    cfg.urls = vec![parsed];
+                    seen_url = true;
+                }
             },
             "--width" => cfg.width = args.next().expect("value").parse().expect("u32"),
             "--height" => cfg.height = args.next().expect("value").parse().expect("u32"),
             "--settle-ms" => cfg.settle_ms = args.next().expect("value").parse().expect("u64"),
             "--timeout-ms" => cfg.timeout_ms = args.next().expect("value").parse().expect("u64"),
             "--suspend" => cfg.suspend = true,
+            "--engine-report" => cfg.engine_report = true,
             "--idle-secs" => cfg.idle_secs = args.next().expect("value").parse().expect("u64"),
             "--scroll-secs" => {
                 cfg.scroll_secs = args.next().expect("value").parse().expect("u64")
@@ -38,11 +47,7 @@ fn main() {
             other => panic!("unknown arg {other}"),
         }
     }
-    // Default: a single example.com tab (replace the built-in default).
-    if std::env::args().len() == 1 {
-        cfg.urls = vec![url::Url::parse("https://example.com/").unwrap()];
-    }
-
+    // No --url at all: keep the built-in single-tab default.
     let report = run_perf(cfg);
     let text = serde_json::to_string_pretty(&report).expect("serialize perf report");
     println!("{text}");

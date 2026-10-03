@@ -27,6 +27,7 @@ use servo::{
     WebView, WebViewBuilder, WheelDelta, WheelEvent, WheelMode, WindowRenderingContext,
 };
 use servo_host::delegate::{HostDelegate, HostState};
+use servo_host::memory::{self, GovernorConfig, Pressure};
 use servo_host::privacy::PrivacyHost;
 use servo_host::waker::HostWakerEvent;
 use tiny_skia::{Pixmap, PremultipliedColorU8};
@@ -45,6 +46,7 @@ use model::{InjectCmd, Status, UiTab, START_HTML, VIEWPORT_H, VIEWPORT_W};
 use text::UiText;
 
 fn main() {
+    let started = Instant::now();
     let event_loop = EventLoop::with_user_event()
         .build()
         .expect("event loop");
@@ -52,15 +54,17 @@ fn main() {
     let mut app = App {
         proxy: Some(event_loop.create_proxy()),
         inner: None,
+        started,
     };
     init_pending_channel();
     event_loop.run_app(&mut app).expect("run loop");
 }
 
-#[derive(Default)]
 struct App {
     inner: Option<Gui>,
     proxy: Option<EventLoopProxy<HostWakerEvent>>,
+    /// Process start, for the startup metrics report.
+    started: Instant,
 }
 
 /// Per-tab Servo runtime: the webview plus its offscreen context and state.
@@ -96,6 +100,16 @@ struct Gui {
     /// Bumped on every Loading→Loaded transition of the active tab; the
     /// validation snapshot hook saves one composited frame per generation.
     snapshot_gen: u64,
+    // ---- Phase 2: memory governor + startup instrumentation --------------
+    governor: GovernorConfig,
+    next_governor_at: Instant,
+    /// Total tabs hibernated by the governor this session.
+    governor_hibernated: u64,
+    /// Wall time of ServoBuilder::build(), for BROWS12_UI_START_METRICS.
+    servo_build_ms: u128,
+    /// Wall time of the first presented frame (set once).
+    first_present_ms: Option<u128>,
+    started: Instant,
 }
 
 /// Marker prefix so the start page shows as `brows12://start` in the omnibox.
@@ -148,10 +162,12 @@ impl ApplicationHandler<HostWakerEvent> for App {
             .expect("event loop proxy")
             .clone();
         let waker = servo_host::waker::ProxyWaker::new(proxy.clone());
+        let build_started = Instant::now();
         let servo: Servo = ServoBuilder::default()
             .event_loop_waker(Box::new(waker))
-            .preferences(servo_host::compat_preferences())
+            .preferences(servo_host::brows12_preferences())
             .build();
+        let servo_build_ms = build_started.elapsed().as_millis();
 
         let privacy = PrivacyHost::new();
         let ucm = Rc::new(UserContentManager::new(&servo));
@@ -178,11 +194,20 @@ impl ApplicationHandler<HostWakerEvent> for App {
             quit: false,
             blink_phase: 0,
             snapshot_gen: 0,
+            governor: GovernorConfig::from_env(),
+            next_governor_at: Instant::now() + GovernorConfig::default().interval,
+            governor_hibernated: 0,
+            servo_build_ms,
+            first_present_ms: None,
+            started: self.started,
         };
         gui.new_tab();
         let start_proxy = gui.proxy.clone();
         let start_wake = gui.window.clone();
         self.inner = Some(gui);
+        // Phase 2.2: present the chrome immediately — do not wait for the
+        // first engine frame to drive the first present.
+        start_wake.request_redraw();
 
         // Automation channels (validation under Xvfb) — same protocol as v1.
         if let Ok(fifo) = std::env::var("BROWS12_UI_CMD_FIFO") {
@@ -206,6 +231,10 @@ impl ApplicationHandler<HostWakerEvent> for App {
                             Some(InjectCmd::Text(rest.to_string()))
                         } else if let Some(rest) = line.strip_prefix("<SWITCH> ") {
                             rest.parse::<usize>().ok().map(InjectCmd::Switch)
+                        } else if let Some(rest) = line.strip_prefix("<HIBERNATE> ") {
+                            rest.parse::<usize>().ok().map(InjectCmd::Hibernate)
+                        } else if let Some(rest) = line.strip_prefix("<RESTORE> ") {
+                            rest.parse::<usize>().ok().map(InjectCmd::Restore)
                         } else if let Some(rest) = line.strip_prefix("<SCROLL> ") {
                             rest.parse::<f32>().ok().map(InjectCmd::Scroll)
                         } else if let Some(rest) = line.strip_prefix("<SLEEP> ") {
@@ -314,10 +343,32 @@ impl ApplicationHandler<HostWakerEvent> for App {
             event_loop.exit();
             return;
         }
-        // Servo animates pages (rAF, transitions); keep a 16 ms heartbeat.
-        event_loop.set_control_flow(ControlFlow::WaitUntil(
-            Instant::now() + Duration::from_millis(16),
-        ));
+        // Phase 2.3 — event-driven idle: pump the loop at 16 ms ONLY while
+        // a tab is loading or the active page is animating (rAF,
+        // transitions). Otherwise wait for engine events (ProxyWaker) or
+        // the next governor tick. This is what makes idle CPU ~0.
+        let busy = gui.any_busy();
+        let mut next_wake = if busy {
+            Some(Instant::now() + Duration::from_millis(16))
+        } else {
+            None
+        };
+        // Phase 2.1: the governor runs here — this is the ONLY callback
+        // winit fires when a WaitUntil deadline expires on an idle system.
+        if gui.governor.enabled && Instant::now() >= gui.next_governor_at {
+            gui.governor_tick();
+            gui.next_governor_at = Instant::now() + gui.governor.interval;
+        }
+        if gui.governor.enabled {
+            next_wake = Some(match next_wake {
+                Some(t) => t.min(gui.next_governor_at),
+                None => gui.next_governor_at,
+            });
+        }
+        event_loop.set_control_flow(match next_wake {
+            Some(t) => ControlFlow::WaitUntil(t),
+            None => ControlFlow::Wait,
+        });
     }
 }
 
@@ -352,6 +403,18 @@ fn base64_encode(data: &[u8]) -> String {
 
 impl Gui {
     // ---- Servo plumbing ---------------------------------------------------
+
+    /// True while any tab is loading or the active page is animating —
+    /// the condition for the 16 ms pump in `about_to_wait`.
+    fn any_busy(&self) -> bool {
+        let loading = self.tabs.iter().any(|t| t.status == Status::Loading);
+        let animating = self
+            .active_id()
+            .and_then(|id| self.runtimes.get(&id))
+            .map(|rt| rt.state.animating.load(std::sync::atomic::Ordering::Relaxed))
+            .unwrap_or(false);
+        loading || animating
+    }
 
     fn tick(&mut self) {
         // Deliver queued automation commands through the normal handlers.
@@ -392,12 +455,17 @@ impl Gui {
         let title = rt.state.title();
         let t = &mut self.tabs[self.active];
         let mut changed = false;
+        // The pre-navigation about:blank document also reports Complete;
+        // never let it into session history (it would corrupt hibernation
+        // restore URLs and back/forward).
+        let recordable = url.as_deref().map(|u| u != "about:blank").unwrap_or(false);
         if complete && t.status == Status::Loading {
             t.status = Status::Loaded;
-            if let Some(title) = title {
+            if let Some(title) = title.clone() {
                 t.title = title;
             }
-            if let Some(u) = &url {
+            if recordable {
+                let u = url.clone().unwrap();
                 if t.history.last().map(String::as_str) != Some(u.as_str()) {
                     t.history.truncate(t.hindex + 1);
                     t.history.push(u.clone());
@@ -414,12 +482,13 @@ impl Gui {
             changed = true;
         } else if complete {
             // Redirects after load: keep the omnibox honest.
-            if let Some(u) = &url {
-                if t.url() != *u {
+            if recordable {
+                let u = url.clone().unwrap();
+                if t.url() != u {
                     t.history.truncate(t.hindex + 1);
                     t.history.push(u.clone());
                     t.hindex = t.history.len() - 1;
-                    model::emit(format!("nav tab={} url={}", id, model::ev_escape(u)));
+                    model::emit(format!("nav tab={} url={}", id, model::ev_escape(&u)));
                     changed = true;
                 }
             }
@@ -427,6 +496,44 @@ impl Gui {
         if changed {
             self.dirty = true;
             self.sync_title();
+        }
+        self.sync_background_tabs();
+    }
+
+    /// Phase 2.1: keep shell metadata (URL + title) for BACKGROUND tabs in
+    /// sync with their engines, so hibernation restores the right URL even
+    /// when the navigation finished while the tab was in the background.
+    fn sync_background_tabs(&mut self) {
+        let active_id = self.active_id();
+        for i in 0..self.tabs.len() {
+            let Some(id) = self.tabs[i].id else { continue };
+            if Some(id) == active_id {
+                continue;
+            }
+            let (complete, url, title) = match self.runtimes.get(&id) {
+                Some(rt) => (
+                    rt.state.is_complete(),
+                    rt.state.url().map(|u| display_url(&u)),
+                    rt.state.title(),
+                ),
+                None => continue,
+            };
+            if !complete {
+                continue;
+            }
+            let t = &mut self.tabs[i];
+            if let Some(u) = url {
+                if u != "about:blank" && t.url() != u {
+                    t.history.truncate(t.hindex + 1);
+                    t.history.push(u.clone());
+                    t.hindex = t.history.len() - 1;
+                }
+            }
+            if let Some(title) = title {
+                if !title.is_empty() {
+                    t.title = title;
+                }
+            }
         }
     }
 
@@ -436,6 +543,8 @@ impl Gui {
         let (Some(servo), Some(parent)) = (self.servo.as_ref(), self.parent_ctx.as_ref()) else {
             return;
         };
+        // Phase 2.3: the previously active tab becomes background — throttle it.
+        let previous_active = self.active_id();
         let id = self.next_tab_id;
         self.next_tab_id += 1;
         let ctx = Rc::new(parent.offscreen_context(PhysicalSize::new(VIEWPORT_W, VIEWPORT_H)));
@@ -460,8 +569,170 @@ impl Gui {
         tab.history.push("brows12://start".to_string());
         self.tabs.push(tab);
         self.active = self.tabs.len() - 1;
+        if let Some(prev) = previous_active {
+            if let Some(rt) = self.runtimes.get(&prev) {
+                rt.webview.set_throttled(true);
+            }
+        }
         self.dirty = true;
         self.sync_title();
+    }
+
+    /// Central tab activation: restores the tab if hibernated, throttles
+    /// the tab being left, unthrottles + focuses the one becoming active.
+    fn switch_to(&mut self, index: usize) {
+        if index >= self.tabs.len() {
+            return;
+        }
+        if index == self.active {
+            return;
+        }
+        if self.tabs[index].suspended {
+            self.restore(index);
+        }
+        let previous_active = self.active_id();
+        self.active = index;
+        self.tabs[index].last_active = Instant::now();
+        let new_active = self.active_id();
+        if let Some(prev) = previous_active {
+            if Some(prev) != new_active {
+                if let Some(rt) = self.runtimes.get(&prev) {
+                    rt.webview.set_throttled(true);
+                }
+            }
+        }
+        if let Some(id) = new_active {
+            if let Some(rt) = self.runtimes.get_mut(&id) {
+                rt.webview.set_throttled(false);
+                rt.webview.focus();
+                rt.last_painted_frame = 0; // force a repaint of this tab
+            }
+        }
+        model::emit(format!(
+            "switch index={index} url={}",
+            model::ev_escape(&self.tabs[index].url())
+        ));
+        self.dirty = true;
+        self.sync_title();
+    }
+
+    /// Phase 2.1 — hibernate a background tab: throttle + hide + drop the
+    /// WebView (Drop sends CloseWebView; the constellation tears down the
+    /// document pipeline and frees its memory). Shell metadata survives so
+    /// the tab strip keeps title/URL and activation reloads the page.
+    fn hibernate(&mut self, index: usize) {
+        if index >= self.tabs.len() || index == self.active {
+            return;
+        }
+        let Some(id) = self.tabs[index].id else { return };
+        if self.tabs[index].suspended {
+            return;
+        }
+        let rss_before = servo_host::metrics::rss_kb().unwrap_or(0);
+        if let Some(rt) = self.runtimes.remove(&id) {
+            rt.webview.set_throttled(true);
+            rt.webview.hide();
+            // rt (WebView + offscreen ctx) dropped here.
+        }
+        self.tabs[index].suspended = true;
+        self.tabs[index].status = Status::Idle;
+        model::emit(format!(
+            "hibernate tab={} index={index} rss_before_kb={rss_before} url={}",
+            id,
+            model::ev_escape(&self.tabs[index].url()),
+        ));
+        self.dirty = true;
+    }
+
+    /// Rebuild the WebView of a hibernated tab and reload its URL.
+    fn restore(&mut self, index: usize) {
+        if index >= self.tabs.len() {
+            return;
+        }
+        if !self.tabs[index].suspended {
+            return;
+        }
+        let (Some(servo), Some(parent)) = (self.servo.as_ref(), self.parent_ctx.as_ref()) else {
+            return;
+        };
+        let Some(id) = self.tabs[index].id else { return };
+        let url = self.tabs[index].url();
+        let load_url = if url == "brows12://start" || url.is_empty() {
+            start_page_url()
+        } else {
+            Url::parse(&url).unwrap_or_else(|_| start_page_url())
+        };
+        let ctx = Rc::new(parent.offscreen_context(PhysicalSize::new(VIEWPORT_W, VIEWPORT_H)));
+        let ctx_dyn: Rc<dyn RenderingContext> = ctx.clone();
+        let state = Arc::new(HostState::new());
+        let delegate = HostDelegate::new(state.clone(), self.privacy.clone());
+        let webview = WebViewBuilder::new(servo, ctx_dyn)
+            .delegate(delegate)
+            .user_content_manager(self.ucm.clone())
+            .build();
+        webview.resize(PhysicalSize::new(VIEWPORT_W, VIEWPORT_H));
+        webview.load(load_url);
+        self.runtimes.insert(
+            id,
+            TabRuntime { webview, state, ctx, last_painted_frame: 0 },
+        );
+        self.tabs[index].suspended = false;
+        self.tabs[index].status = Status::Loading;
+        model::emit(format!(
+            "restore tab={} index={index} url={}",
+            id,
+            model::ev_escape(&url),
+        ));
+        self.dirty = true;
+    }
+
+    /// Phase 2.1 — the governor: while RSS is over budget, hibernate the
+    /// least-recently-active background tabs until under budget or out of
+    /// candidates.
+    fn governor_tick(&mut self) {
+        let Some(rss) = servo_host::metrics::rss_kb() else { return };
+        if memory::pressure(&self.governor, rss) != Pressure::Critical {
+            return;
+        }
+        let now = Instant::now();
+        let active_id = self.active_id();
+        let mut candidates: Vec<usize> = self
+            .tabs
+            .iter()
+            .enumerate()
+            .filter(|(_, t)| {
+                t.id.is_some()
+                    && Some(t.id.unwrap()) != active_id
+                    && !t.suspended
+                    && now.duration_since(t.last_active) >= self.governor.suspend_after
+            })
+            .map(|(i, _)| i)
+            .collect();
+        candidates.sort_by_key(|&i| self.tabs[i].last_active);
+        let mut rss_now = rss;
+        for i in candidates {
+            if memory::pressure(&self.governor, rss_now) != Pressure::Critical {
+                break;
+            }
+            self.hibernate(i);
+            self.governor_hibernated += 1;
+            // RSS lags the free (allocator retention); sample after a
+            // short spin so the loop does not hibernate the whole strip
+            // on one stale reading.
+            for _ in 0..20 {
+                if let Some(s) = self.servo.as_ref() {
+                    s.spin_event_loop();
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            rss_now = servo_host::metrics::rss_kb().unwrap_or(rss_now);
+        }
+        if rss_now != rss {
+            model::emit(format!(
+                "governor rss_before_kb={rss} rss_after_kb={rss_now} hibernated_total={}",
+                self.governor_hibernated
+            ));
+        }
     }
 
     fn close_tab(&mut self, index: usize) {
@@ -478,6 +749,14 @@ impl Gui {
             }
             if self.active >= self.tabs.len() {
                 self.active = self.tabs.len() - 1;
+            }
+            // The tab taking the active slot must run unthrottled.
+            if let Some(active) = self.active_id() {
+                if let Some(rt) = self.runtimes.get_mut(&active) {
+                    rt.webview.set_throttled(false);
+                    rt.webview.focus();
+                    rt.last_painted_frame = 0;
+                }
             }
             self.dirty = true;
             self.sync_title();
@@ -595,11 +874,7 @@ impl Gui {
     fn click(&mut self) {
         let hit = chrome::hit_test(self.cursor.0, self.cursor.1, self.tabs.len());
         match hit {
-            Hit::Tab(i) => {
-                self.active = i as usize;
-                self.dirty = true;
-                self.sync_title();
-            }
+            Hit::Tab(i) => self.switch_to(i as usize),
             Hit::TabClose(i) => self.close_tab(i as usize),
             Hit::NewTab => self.new_tab(),
             Hit::Back => self.go_back(),
@@ -693,17 +968,9 @@ impl Gui {
             InjectCmd::Forward => self.go_forward(),
             InjectCmd::Reload => self.reload(),
             InjectCmd::NewTab => self.new_tab(),
-            InjectCmd::Switch(i) => {
-                if i < self.tabs.len() {
-                    self.active = i;
-                    model::emit(format!(
-                        "switch index={i} url={}",
-                        model::ev_escape(&self.tabs[self.active].url())
-                    ));
-                    self.dirty = true;
-                    self.sync_title();
-                }
-            }
+            InjectCmd::Switch(i) => self.switch_to(i),
+            InjectCmd::Hibernate(i) => self.hibernate(i),
+            InjectCmd::Restore(i) => self.restore(i),
             InjectCmd::Scroll(dy) => self.scroll(dy),
             InjectCmd::Sleep(_) => {}
             InjectCmd::Quit => {
@@ -728,6 +995,8 @@ impl Gui {
 
     fn draw(&mut self) {
         self.dirty = false;
+        let first_present = self.first_present_ms.is_none();
+        let start = self.started;
 
         let size = self.window.inner_size();
         let (w, h) = (size.width.max(1), size.height.max(1));
@@ -786,6 +1055,21 @@ impl Gui {
             buffer[i] = u32::from_be_bytes([0, c.red(), c.green(), c.blue()]);
         }
         buffer.present().expect("present");
+
+        // Phase 2.2: record + report the first presented frame.
+        if first_present {
+            self.first_present_ms = Some(start.elapsed().as_millis());
+            if let Ok(path) = std::env::var("BROWS12_UI_START_METRICS") {
+                let report = serde_json::json!({
+                    "servo_build_ms": self.servo_build_ms,
+                    "first_present_ms": self.first_present_ms,
+                });
+                if let Some(parent) = std::path::Path::new(&path).parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                let _ = std::fs::write(&path, report.to_string());
+            }
+        }
 
         // Validation hook: dump the composited frame after each page load.
         if let Ok(snapshot_path) = std::env::var("BROWS12_UI_SNAPSHOT") {
