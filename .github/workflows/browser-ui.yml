@@ -97,7 +97,7 @@ jobs:
           cp "target/release/${{ matrix.bin }}" upload/
           cp README.md upload/
           cp docs/CAPABILITY_REPORT.md upload/ 2>/dev/null || true
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}
           path: upload/

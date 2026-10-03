@@ -87,7 +87,7 @@ jobs:
           grep -q 'fixture-ok' target/harness/fixture.json
       - name: Publish capability artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: capability-report
           path: |
@@ -156,7 +156,7 @@ jobs:
       - name: cargo doc
         run: cargo doc --no-deps
       - name: Upload docs
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: docs
           path: target/doc
