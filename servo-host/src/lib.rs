@@ -7,9 +7,13 @@
 pub mod capture;
 pub mod delegate;
 pub mod headless;
+pub mod memory;
+pub mod metrics;
 pub mod prefs;
 pub mod privacy;
 pub mod waker;
 
 pub use headless::{run_headless, HeadlessConfig, HeadlessReport};
-pub use prefs::compat_preferences;
+pub use memory::{pressure, GovernorConfig, Pressure, SuspendedTab};
+pub use metrics::{snapshot, CpuMeter, MetricsSnapshot};
+pub use prefs::{brows12_preferences, compat_preferences};
