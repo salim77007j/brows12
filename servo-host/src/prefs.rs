@@ -30,6 +30,11 @@ pub fn compat_preferences() -> Preferences {
         dom_adoptedstylesheet_enabled: true,
         dom_fontface_enabled: true,
         dom_resize_observer_enabled: true,
+        // backdrop-filter (Phase 4 Area 1.2): the engine-side pref gate is
+        // opened by the brows12 stylo patch; glass-morphism sites (Apple,
+        // Linear, Vercel) rely on it. Parsed value is emitted as a WebRender
+        // BackdropFilter display item by the patched layout crate.
+        layout_css_backdrop_filter_enabled: true,
         ..Preferences::default()
     }
 }
