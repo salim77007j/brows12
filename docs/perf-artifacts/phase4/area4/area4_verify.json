@@ -1,0 +1,23 @@
+{
+  "area4_1": {
+    "predictions": [
+      [
+        3,
+        2,
+        0
+      ]
+    ],
+    "hibernated_order": [
+      3,
+      2,
+      0
+    ],
+    "checks": {
+      "predict_order events emitted": true,
+      "first prediction = tab3 (zero activations)": true,
+      "first hibernated tab == first predicted candidate": true,
+      "tab3 hibernated before tab2 (frequency ordering)": true,
+      "governor reclaimed under pressure": true
+    }
+  }
+}

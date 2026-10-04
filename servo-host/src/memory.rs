@@ -37,6 +37,11 @@ pub struct GovernorConfig {
     /// Hibernation delay for HEAVY background tabs.
     /// Env: `BROWS12_HEAVY_SUSPEND_SECS` (default 20).
     pub heavy_suspend_after: Duration,
+    /// Phase 4.4.1: delay before the FIRST governor tick (warmup), so
+    /// session setup (tab opening, activation history) is complete
+    /// before the predictive reclaim starts ranking. 0 in production.
+    /// Env: `BROWS12_GOVERNOR_WARMUP_MS` (default 0).
+    pub warmup: Duration,
 }
 
 impl Default for GovernorConfig {
@@ -48,6 +53,7 @@ impl Default for GovernorConfig {
             suspend_after: Duration::from_secs(180),
             heavy_page_requests: 60,
             heavy_suspend_after: Duration::from_secs(20),
+            warmup: Duration::ZERO,
         }
     }
 }
@@ -81,6 +87,11 @@ impl GovernorConfig {
         if let Ok(v) = std::env::var("BROWS12_HEAVY_SUSPEND_SECS") {
             if let Ok(s) = v.parse::<u64>() {
                 cfg.heavy_suspend_after = Duration::from_secs(s);
+            }
+        }
+        if let Ok(v) = std::env::var("BROWS12_GOVERNOR_WARMUP_MS") {
+            if let Ok(ms) = v.parse::<u64>() {
+                cfg.warmup = Duration::from_millis(ms);
             }
         }
         cfg

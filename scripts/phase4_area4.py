@@ -1,0 +1,245 @@
+#!/usr/bin/env python3
+"""Phase 4 Area 4 E2E verification — tab innovation (shell-level).
+
+4.1 Predictive hibernation: 4 tabs with a deterministic activation
+pattern (tab2 x3, tab1 x1 recent, tab3 never re-activated) under a
+tight governor budget. The event stream must show:
+  * `predict_order` events (the predictive ranking runs),
+  * the FIRST hibernated tab == the FIRST predicted candidate,
+  * tab3 (zero activations, stale) hibernates before tab0/tab2
+    (frequently activated).
+
+Chrome parity note: tab-management is shell behavior; headless Chromium
+exposes no tab-strip/governor observable, so verification is by
+event-stream invariants + unit tests (documented in the Area 4 report).
+
+Usage: python3 scripts/phase4_area4.py --only 4.1 --out docs/perf-artifacts/phase4/area4/area4_41.json
+"""
+import argparse
+import json
+import os
+import pathlib
+import subprocess
+import sys
+import threading
+import time
+import urllib.request
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+XVFB_ENV = {
+    **os.environ,
+    "DISPLAY": ":99",
+    "LD_LIBRARY_PATH": os.path.expanduser(
+        "~/.local/gl/usr/lib/x86_64-linux-gnu"),
+    "__EGL_VENDOR_LIBRARY_FILENAMES": os.path.expanduser(
+        "~/.local/gl/usr/share/glvnd/egl_vendor.d/50_mesa.json"),
+    "LIBGL_ALWAYS_SOFTWARE": "1",
+    "XDG_RUNTIME_DIR": "/tmp/xdg",
+    "RUST_LOG": "error",
+}
+
+
+class UiRun:
+    """One brows12-ui automation session under Xvfb (Area 3 harness)."""
+
+    def __init__(self, env_extra, name):
+        self.name = name
+        self.dir = pathlib.Path(f"/tmp/a4-{name}")
+        self.dir.mkdir(parents=True, exist_ok=True)
+        for f in self.dir.iterdir():
+            f.unlink()
+        self.cmd_fifo = str(self.dir / "cmd")
+        self.evt_fifo = str(self.dir / "evt")
+        os.mkfifo(self.cmd_fifo)
+        os.mkfifo(self.evt_fifo)
+        self.events = []
+        self.proc = subprocess.Popen(
+            [str(ROOT / "target/debug/brows12-ui")],
+            env={**XVFB_ENV, "BROWS12_UI_CMD_FIFO": self.cmd_fifo,
+                 "BROWS12_UI_EVENT_FIFO": self.evt_fifo, **env_extra},
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.reader = threading.Thread(target=self._read, daemon=True)
+        self.reader.start()
+        self.w = open(self.cmd_fifo, "w")
+
+    def _read(self):
+        with open(self.evt_fifo) as f:
+            for line in f:
+                self.events.append(line.strip())
+                if line.startswith("quit"):
+                    return
+
+    def cmd(self, line):
+        self.w.write(line + "\n")
+        self.w.flush()
+
+    def wait_for(self, pred, timeout=90, what="event"):
+        end = time.time() + timeout
+        while time.time() < end:
+            for e in self.events:
+                if pred(e):
+                    return e
+            time.sleep(0.1)
+        raise TimeoutError(f"{what} ({self.name}): tail={self.events[-5:]}")
+
+    def close(self):
+        try:
+            self.cmd("<QUIT>")
+            self.proc.wait(timeout=15)
+        except Exception:
+            self.proc.kill()
+
+
+def wait_http(url, timeout=30):
+    end = time.time() + timeout
+    while time.time() < end:
+        try:
+            with urllib.request.urlopen(url, timeout=2) as r:
+                if r.status == 200:
+                    return True
+        except Exception:
+            time.sleep(0.3)
+    return False
+
+
+def open_tab(run, url, marker, settle=1.0):
+    """One new tab navigating to url; waits for its `loaded` event."""
+    run.cmd("<NEWTAB>")
+    time.sleep(0.4)
+    run.cmd(f"<OMNI> {url}")
+    time.sleep(0.2)
+    run.cmd("<RETURN>")
+    end = time.time() + 120
+    while time.time() < end:
+        n = sum(1 for e in run.events
+                if e.startswith("loaded tab=") and marker in e)
+        if n >= 1:
+            break
+        time.sleep(0.25)
+    else:
+        raise TimeoutError(f"load {url} ({run.name}): {run.events[-5:]}")
+    time.sleep(settle)
+
+
+def parse_predict_order(e):
+    """`predict_order why=rss level=Critical candidates=[3, 0, 2]`"""
+    if "candidates=[" not in e:
+        return None
+    body = e.split("candidates=")[1].strip()
+    body = body.strip("[]").replace(" ", "")
+    return [int(x) for x in body.split(",") if x] if body else []
+
+
+def hibernated_indices(events):
+    """Indices from `hibernate tab=<id> index=<i> ...` events."""
+    out = []
+    for e in events:
+        if e.startswith("hibernate tab="):
+            for tok in e.split():
+                if tok.startswith("index="):
+                    out.append(int(tok.split("=")[1]))
+    return out
+
+
+# ---------------------------------------------------------------- 4.1 --
+def verify_41(out):
+    site = pathlib.Path("/tmp/a4_site")
+    site.mkdir(parents=True, exist_ok=True)
+    for name, title in (("a.html", "A4 page a"),
+                        ("b.html", "A4 page b"),
+                        ("c.html", "A4 page c")):
+        (site / name).write_text(
+            f"<!doctype html><html><head><title>{title}</title></head>"
+            f"<body><h1>{title}</h1><p>predictive hibernation fixture.</p>"
+            "</body></html>")
+    srv = subprocess.Popen(
+        [sys.executable, "-m", "http.server", "8137", "--directory", str(site)],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    assert wait_http("http://127.0.0.1:8137/a.html"), "http server"
+    try:
+        env = {
+            # Tiny budget: debug-build RSS crosses Critical immediately,
+            # so the governor's predictive reclaim runs every tick.
+            "BROWS12_MEM_BUDGET_MB": "64",
+            "BROWS12_GOVERNOR_INTERVAL_MS": "1500",
+            "BROWS12_GOVERNOR_WARMUP_MS": "26000",
+            "BROWS12_TAB_SUSPEND_SECS": "3",
+            "BROWS12_HEAVY_SUSPEND_SECS": "2",
+        }
+        run = UiRun(env, "41")
+        try:
+            run.wait_for(lambda e: e.startswith("start "), 60, "start")
+            # Tabs: 0 = start page, 1 = a.html, 2 = b.html, 3 = c.html
+            open_tab(run, "http://127.0.0.1:8137/a.html", "a.html")
+            open_tab(run, "http://127.0.0.1:8137/b.html", "b.html")
+            open_tab(run, "http://127.0.0.1:8137/c.html", "c.html")
+            # Activation pattern: tab2 x3 (alternating through tab0),
+            # tab1 once (it ends ACTIVE), tab3 never re-activated.
+            for _ in range(3):
+                run.cmd("<SWITCH> 2")
+                time.sleep(0.35)
+                run.cmd("<SWITCH> 0")
+                time.sleep(0.35)
+            run.cmd("<SWITCH> 1")
+            # Governor ticks: predictive reclaim fires; every background
+            # tab is >3 s idle well within 20 s.
+            time.sleep(25)
+            events = list(run.events)
+            orders = [parse_predict_order(e) for e in events
+                      if e.startswith("predict_order")]
+            orders = [o for o in orders if o]
+            hibernated = hibernated_indices(events)
+            first_hib = hibernated[0] if hibernated else None
+            checks = {
+                "predict_order events emitted": len(orders) > 0,
+                "first prediction = tab3 (zero activations)":
+                    bool(orders) and orders[0] and orders[0][0] == 3,
+                "first hibernated tab == first predicted candidate":
+                    first_hib is not None and bool(orders)
+                    and first_hib == orders[0][0],
+                "tab3 hibernated before tab2 (frequency ordering)":
+                    hibernated and 3 in hibernated and 2 in hibernated
+                    and hibernated.index(3) < hibernated.index(2),
+                "governor reclaimed under pressure": len(hibernated) >= 2,
+            }
+            out["area4_1"] = {
+                "predictions": orders[:6],
+                "hibernated_order": hibernated,
+                "checks": checks,
+            }
+            failed = [k for k, ok in checks.items() if not ok]
+            for k, ok in checks.items():
+                print(("PASS " if ok else "FAIL ") + k)
+            print("predictions:", orders[:6])
+            print("hibernated:", hibernated)
+            return not failed
+        finally:
+            run.close()
+    finally:
+        srv.terminate()
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--only", default="all",
+                    help="4.1 | all (more sub-items land per commit)")
+    ap.add_argument("--out",
+                    default="docs/perf-artifacts/phase4/area4/area4_verify.json")
+    args = ap.parse_args()
+    pathlib.Path(args.out).parent.mkdir(parents=True, exist_ok=True)
+    out = {}
+    if pathlib.Path(args.out).exists():
+        try:
+            out = json.loads(pathlib.Path(args.out).read_text())
+        except Exception:
+            out = {}
+    ok = True
+    if args.only in ("all", "4.1"):
+        ok &= verify_41(out)
+    pathlib.Path(args.out).write_text(json.dumps(out, indent=2))
+    print(f"artifact: {args.out}")
+    sys.exit(0 if ok else 1)
+
+
+if __name__ == "__main__":
+    main()

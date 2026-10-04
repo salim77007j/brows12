@@ -44,6 +44,9 @@ pub struct UiTab {
     pub suspended: bool,
     /// When this tab last held the active slot (governor eligibility).
     pub last_active: std::time::Instant,
+    /// Phase 4.4.1: how many times this tab became the active tab —
+    /// predictive-hibernation signal (often-used tabs come back).
+    pub activations: u32,
 }
 
 impl UiTab {
@@ -57,6 +60,7 @@ impl UiTab {
             omni_edit: None,
             suspended: false,
             last_active: std::time::Instant::now(),
+            activations: 0,
         }
     }
 

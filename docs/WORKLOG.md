@@ -962,3 +962,42 @@ Stage Summary:
   detection, hibernate trim fix, texture-residual quantified, honest
   comparison table. 19 unit tests green; artifacts in
   docs/perf-artifacts/phase4/area3/; upstream gap docs in docs/upstream/.
+
+---
+Task ID: phase4-area4-4.1
+Agent: Super Z (main)
+Task: Phase 4 Focus Area 4, sub-item 4.1 — predictive hibernation
+(lightweight heuristics, no in-process ML).
+
+Work Log:
+- State audit: Areas 1-3 confirmed complete at HEAD 22cf523 (clean
+  tree); Focus Area 4 started. Env rebuilt: cargo present,
+  ~/.local/build-env.sh intact; disk twice filled by incremental/
+  stale-duplicate rlibs — 3.8 GB reclaimed (rm incremental, dedupe
+  deps by newest-hash, registry src re-extract), builds -j1.
+- servo-host/src/tabstats.rs (new): TabUsage signals (activations,
+  last_active_ms, page_requests), return_score = 0.65*recency
+  (exp decay, 30-min half-life) + 0.35*frequency (a/(1+a)). Weight is
+  deliberately NOT a predictor — it is a cost (tie-break: heavier
+  first among near-equal scores) plus the existing heavy-eligibility
+  schedule. hibernation_order() ranks candidates least-likely-to-
+  return first. 7 unit tests.
+- Wiring: UiTab.activations recorded in switch_to();
+  aligned_tab_usages() + now_ms() session clock in the shell;
+  reclaim_background_tabs() order replaced with the predictive
+  ranking + `predict_order` event. GovernorConfig.warmup
+  (BROWS12_GOVERNOR_WARMUP_MS, default 0) so harnesses can finish
+  session setup before the first tick.
+- E2E (scripts/phase4_area4.py --only 4.1, Xvfb + FIFO, budget 64 MB,
+  warmup 26 s): 4 tabs, activation pattern tab2 x3 / tab1 once (ends
+  active) / tab3 never. Result: prediction [3, 2, 0], hibernation
+  executed [3, 2, 0] — all 5 checks PASS. Artifact:
+  docs/perf-artifacts/phase4/area4/area4_verify.json.
+- Chrome parity note: tab management is shell behavior; headless
+  Chromium exposes no tab-strip/governor observable, so verification
+  is event-stream invariants + unit tests (documented in report).
+
+Stage Summary:
+- 4.1 complete: predictive hibernation live in the governor — the tab
+  the user is least likely to return to is suspended first, verified
+  end-to-end. Tests: 7 unit + e2e green; clippy/fmt pending final pass.

@@ -218,7 +218,10 @@ impl ApplicationHandler<HostWakerEvent> for App {
             blink_phase: 0,
             snapshot_gen: 0,
             governor: governor_cfg.clone(),
-            next_governor_at: Instant::now() + governor_cfg.interval,
+            // Phase 4.4.1: the first tick waits out the warmup so session
+            // setup (tab creation, activation history) completes before
+            // the predictive reclaim starts ranking.
+            next_governor_at: Instant::now() + governor_cfg.interval + governor_cfg.warmup,
             governor_hibernated: 0,
             budget: BudgetConfig { total_budget_kb: governor_cfg.budget_kb, ..BudgetConfig::default() },
             psi: PsiConfig::from_env(),
@@ -629,6 +632,8 @@ impl Gui {
         let previous_active = self.active_id();
         self.active = index;
         self.tabs[index].last_active = Instant::now();
+        // Phase 4.4.1: activation recording for predictive hibernation.
+        self.tabs[index].activations = self.tabs[index].activations.saturating_add(1);
         let new_active = self.active_id();
         if let Some(prev) = previous_active {
             if Some(prev) != new_active {
@@ -862,9 +867,41 @@ impl Gui {
             .collect()
     }
 
+    /// Phase 4.4.1: per-tab usage signals aligned with the tab strip,
+    /// feeding the predictive hibernation order.
+    fn aligned_tab_usages(&self) -> Vec<servo_host::tabstats::TabUsage> {
+        let now_ms = self.now_ms();
+        self.tabs
+            .iter()
+            .map(|t| {
+                let page_requests = t
+                    .id
+                    .and_then(|id| self.runtimes.get(&id))
+                    .map(|rt| rt.state.page_requests())
+                    .unwrap_or(0);
+                servo_host::tabstats::TabUsage {
+                    activations: t.activations,
+                    last_active_ms: now_ms.saturating_sub(t.last_active.elapsed().as_millis() as u64),
+                    page_requests,
+                }
+            })
+            .collect()
+    }
+
+    /// Session-relative monotonic ms clock (deterministic within the
+    /// process; only deltas are meaningful).
+    fn now_ms(&self) -> u64 {
+        self.started.elapsed().as_millis() as u64
+    }
+
     /// The Phase 2.1/3.9 reclaim: hibernate background tabs eligible
     /// under `level` until pressure clears (or candidates run out).
     /// Returns how many tabs were hibernated. `why` tags the event.
+    ///
+    /// Phase 4.4.1: the ORDER is now predictive — eligible tabs are
+    /// suspended least-likely-to-be-returned-to first
+    /// (`tabstats::hibernation_order`), with heavier pages first among
+    /// near-equal predictions.
     fn reclaim_background_tabs(&mut self, level: Pressure, _rss: u64, why: &str) -> usize {
         let now = Instant::now();
         let active_id = self.active_id();
@@ -898,15 +935,15 @@ impl Gui {
             })
             .map(|(i, _)| i)
             .collect();
-        // Reclaim heaviest first, then least-recently-active.
-        candidates.sort_by_key(|&i| {
-            let weight = self.tabs[i]
-                .id
-                .and_then(|id| self.runtimes.get(&id))
-                .map(|rt| rt.state.page_requests())
-                .unwrap_or(0);
-            (std::cmp::Reverse(weight), self.tabs[i].last_active)
-        });
+        // Phase 4.4.1: predictive ordering (replaces the old
+        // heaviest-first / least-recently-active sort).
+        let usages = self.aligned_tab_usages();
+        let order = servo_host::tabstats::hibernation_order(&usages, &candidates, self.now_ms());
+        candidates.clear();
+        candidates.extend(order);
+        model::emit(format!(
+            "predict_order why={why} level={level:?} candidates={candidates:?}"
+        ));
         let mut reclaimed = 0;
         for i in candidates {
             if why != "psi"
