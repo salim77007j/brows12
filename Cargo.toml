@@ -61,6 +61,7 @@ debug = true
 # gap; see docs/PHASE4_AREA1_REPORT.md and the git history of patched/.
 [patch.crates-io]
 stylo = { path = "patched/stylo" }
+stylo_static_prefs = { path = "patched/stylo-static-prefs" }
 servo-config = { path = "patched/servo-config" }
 servo-layout = { path = "patched/servo-layout" }
 servo-canvas = { path = "patched/servo-canvas" }
