@@ -1,4 +1,17 @@
 {
+  "css_writing_modes": {
+    "chrome_report": [
+      "RESULT: ALL PASS (7/7)",
+      "PASS  vertical-rl",
+      "PASS  vertical-lr",
+      "PASS  text-orientation upright",
+      "PASS  vertical box is tall+narrow",
+      "PASS  direction rtl",
+      "PASS  margin-inline-start == 40px",
+      "PASS  border-inline-start color red"
+    ],
+    "brows12_rendered": true
+  },
   "css_filters_clip": {
     "chrome_report": [
       "RESULT: ALL PASS (7/7)",
@@ -9,25 +22,6 @@
       "PASS  clip-path circle",
       "PASS  clip-path polygon",
       "PASS  clip-path inset round"
-    ],
-    "brows12_rendered": true
-  },
-  "canvas2d": {
-    "chrome_report": [
-      "RESULT: ALL PASS (13/13)",
-      "PASS  getContext('2d')",
-      "PASS  path fill+stroke",
-      "PASS  arc",
-      "PASS  linear gradient",
-      "PASS  radial gradient",
-      "PASS  save/translate/rotate/scale/restore",
-      "PASS  measureText",
-      "PASS  shadow state",
-      "PASS  globalCompositeOperation/alpha",
-      "PASS  bezier/quadratic curves",
-      "PASS  getImageData reads painted pixel",
-      "PASS  putImageData round-trip",
-      "PASS  toDataURL png"
     ],
     "brows12_rendered": true
   }
