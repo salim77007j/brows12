@@ -467,3 +467,84 @@ Stage Summary:
   headless report round-trip timeout is a brows12-harness artifact).
 - Report: docs/PHASE4_AREA1_REPORT.md. Verdicts: 1.1 Yes, 1.2 Yes, 1.3
   Mostly→Yes, 1.4 Yes, 1.5 No(documented), 1.6 Mostly, 1.7 done.
+
+---
+Task ID: phase4-area2-2.1
+Agent: Super Z (main)
+Task: Phase 4 Focus Area 2, sub-item 2.1 — network-level ad/tracker
+  blocking at 2026 strength (full lists, $redirect/$removeparam/$csp/
+  $important modifiers, cosmetic filtering, uBO scriptlet injection),
+  verified side-by-side against Chrome.
+
+Work Log:
+- Env restoration after container reset: user-local Mesa GL stack found at
+  ~/.local/gl (still present; env vars re-exported), rustfmt/clippy
+  components installed, build OOM workaround (-j 1, CARGO_INCREMENTAL=0;
+  the box has 2 cores/3.9 GB and parallel rustc on servo-script SIGKILLs).
+- Lists: downloaded 2026-10-04 EasyList (2.09 MB), EasyPrivacy (1.51 MB),
+  uBO filters (474 KB), uBO Privacy (184 KB) into privacy/lists/ and
+  embedded them via include_str! (brows12_extras.txt added on top —
+  brows12 policy layer with universal utm/fbclid/gclid/... stripping,
+  ~43 params; uBO deliberately ships no universal utm rules).
+- blocker.rs rewritten: full Verdict surface (block + $redirect body +
+  rewritten_url + $csp directives), 4-list engine build (143,204 rules,
+  148-205 ms on the 2-core box — no serialize cache needed), RequestKind
+  fixed (Subdocument for iframes, Media instead of Image for AV, XHR
+  spelled xmlhttprequest), resources installed via use_resources().
+- scriptlet_resources.rs: uBO-compatible resource bundle — redirect
+  targets ranked by real 2026 list usage (noopjs x81, noopmp3 x32,
+  google-ima x23, ...): noop.js/txt/html/frame, 1x1.gif, 2x2.png,
+  noopmp3-0.1s (ffmpeg), noopmp4-1s (ffmpeg), google-ima.js,
+  googlesyndication_adsbygoogle.js, chartbeat.js, fuckadblock.js-3.2.0,
+  click2load.html + 8 templated scriptlets (set-constant, aopr, aopw,
+  nowebrtc, noeval, window.open-defuser, json-prune, abort-current-script).
+- Cosmetic filtering completed (uBO two-phase protocol): url_cosmetic_
+  resources gives hostname-specific selectors only; generic class/id
+  rules (##.ad-slot) live in hidden_class_id_selectors and need DOM
+  attributes. Implemented: on LoadStatus::Complete the delegate evaluates
+  DOM_INFO_JS (collects classes/ids, cap 4000), matches in Rust
+  (PrivacyBlocker::hidden_class_id_selectors with #@# exceptions), and
+  installs a hide stylesheet. Re-entrancy constraint discovered the hard
+  way: evaluate_javascript cannot be called from inside its own result
+  callback (Servo RefCell borrow) -> pending_js queue on HostState,
+  drained by host loops (headless x2, perf x2, ui x1).
+- servo-host delegate: $redirect serves decoded resource bodies (data:
+  URL -> mime + bytes) with send_body_data; $removeparam serves 301 to
+  the stripped URL; $csp for iframes recorded; set_page_filtering()
+  installs cosmetic stylesheet + scriptlet script + $csp meta script
+  per navigation.
+- UPSTREAM FINDING: adblock 0.13.3 parses $removeparam rules but NEVER
+  matches them (minimal repro: ||example.com^$removeparam=utm_source ->
+  rewritten_url=None; also fails for pattern/domain variants). Worked
+  around with privacy/src/removeparam.rs — own uBO-subset matcher
+  (pattern `*` / `||host^`, domain= include/exclude lists, regex/value/
+  type variants documented as unsupported; 43 brows12 extras rules).
+  Wire-up prefers our matcher, falls back to crate rewritten_url.
+- Verification:
+  * unit: 27 privacy tests green (redirect resource decode, removeparam
+    strip/anchors/domains, $important-over-exception, $csp surfacing,
+    subdocument matching, 2026-list exception behaviour for
+    doubleclick/instream/ad_status.js, scriptlet template hygiene).
+  * fixture E2E (fixtures/privacy/ads-fixture.html over local http):
+    9 blocked (3 ads + 6 trackers), 2 $redirect replacements served,
+    2 $removeparam rewrites, both cosmetic targets hidden, ad SDKs never
+    executed (window.adsbygoogle/fbq absent).
+  * real sites: speedtest.net 11 blocked + all three ad banners
+    cosmetically removed; thesun.co.uk 36 blocked (27 ads + 9 trackers),
+    full content rendered. Chrome 126 side-by-side PNGs:
+    screenshots/v2-servo/phase4/area2_1_{fixture,speedtest,thesun}_side_by_side.png
+    (Chrome shows 3 ad banners on speedtest; brows12 clean; on thesun
+    Chrome was bot-walled while brows12 rendered+blocked).
+- Quality: cargo fmt clean, clippy zero warnings on touched crates,
+  brows-servo binary builds.
+
+Stage Summary:
+- 2.1 complete: 2026 lists (143k rules) + full modifier surface + two-phase
+  cosmetic + scriptlet injection, network-level blocking before any byte
+  leaves the process. Chrome side-by-side verified.
+- Known gaps for the report: scriptlets bundle is a curated subset (the
+  three default lists carry almost no ##+js calls — usage is in uBO
+  Quick fixes/Annoyances, not yet shipped); $csp applied via meta
+  injection (no response-header access on pass-through); procedural
+  cosmetic filters (JSON-encoded actions) not yet executed.
+- removeparam crate bug documented for an upstream issue (Area 1.7 list).

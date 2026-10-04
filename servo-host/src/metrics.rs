@@ -89,11 +89,7 @@ impl CpuMeter {
 
 /// Quick snapshot for logs/JSON reports.
 pub fn snapshot() -> MetricsSnapshot {
-    MetricsSnapshot {
-        rss_kb: rss_kb(),
-        peak_rss_kb: peak_rss_kb(),
-        cpu_seconds: cpu_seconds(),
-    }
+    MetricsSnapshot { rss_kb: rss_kb(), peak_rss_kb: peak_rss_kb(), cpu_seconds: cpu_seconds() }
 }
 
 #[derive(Debug, Clone, serde::Serialize)]

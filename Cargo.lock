@@ -709,6 +709,7 @@ name = "brows12-privacy"
 version = "0.2.0"
 dependencies = [
  "adblock",
+ "base64 0.22.1",
  "brows12-storage",
  "serde",
  "serde_json",
@@ -6557,6 +6558,7 @@ version = "0.2.0"
 dependencies = [
  "brows12-privacy",
  "content-security-policy",
+ "http",
  "image",
  "ipc-channel",
  "serde",

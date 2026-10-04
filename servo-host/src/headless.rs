@@ -70,13 +70,25 @@ pub struct HeadlessReport {
     pub error: Option<String>,
 }
 
-/// Privacy shield results for this run (Phase 1.5).
+/// Privacy shield results for this run (Phase 1.5 / Phase 4 Area 2).
 #[derive(Serialize, Debug, Clone)]
 pub struct PrivacySummary {
     pub enabled: bool,
     pub ads_blocked: u64,
     pub trackers_blocked: u64,
     pub blocked_requests: Vec<String>,
+    /// Requests answered with a `$redirect` replacement resource.
+    pub redirects_served: u64,
+    /// Requests rewritten via `$removeparam`.
+    pub params_stripped: u64,
+    /// `$csp` directive sets surfaced (documents + iframes).
+    pub csp_injections: u64,
+    /// Pages that received uBO scriptlet code this session.
+    pub scriptlets_injected: u64,
+    /// Rules loaded into the filter engine.
+    pub rules_loaded: usize,
+    /// `$csp` recording log (capped).
+    pub csp_log: Vec<String>,
 }
 
 /// Entry point for `brows render --engine servo`.
@@ -89,10 +101,10 @@ pub fn run_headless(config: HeadlessConfig) -> HeadlessReport {
         Ok(soft) => {
             let ctx: Rc<dyn RenderingContext> = Rc::new(soft);
             return run_without_window(config, ctx, started);
-        },
+        }
         Err(_) => {
             // Fall through to the winit/Xvfb (GLX) path below.
-        },
+        }
     }
 
     let event_loop = EventLoop::with_user_event()
@@ -112,30 +124,35 @@ pub fn run_headless(config: HeadlessConfig) -> HeadlessReport {
         result: None,
     };
     event_loop.run_app(&mut app).expect("event loop failed");
-    app.result
-        .unwrap_or_else(|| HeadlessReport {
-            engine: engine_id(),
-            url: config.url.to_string(),
-            final_url: None,
-            title: None,
-            width: config.width,
-            height: config.height,
-            frames: 0,
-            complete: false,
-            crashed: false,
-            crash_reason: None,
-            console_messages: vec![],
-            privacy: PrivacySummary {
-                enabled: false,
-                ads_blocked: 0,
-                trackers_blocked: 0,
-                blocked_requests: vec![],
-            },
-            load_complete_ms: None,
-            total_ms: started.elapsed().as_millis(),
-            png: None,
-            error: Some("event loop ended without capture".into()),
-        })
+    app.result.unwrap_or_else(|| HeadlessReport {
+        engine: engine_id(),
+        url: config.url.to_string(),
+        final_url: None,
+        title: None,
+        width: config.width,
+        height: config.height,
+        frames: 0,
+        complete: false,
+        crashed: false,
+        crash_reason: None,
+        console_messages: vec![],
+        privacy: PrivacySummary {
+            enabled: false,
+            ads_blocked: 0,
+            trackers_blocked: 0,
+            blocked_requests: vec![],
+            redirects_served: 0,
+            params_stripped: 0,
+            csp_injections: 0,
+            scriptlets_injected: 0,
+            rules_loaded: 0,
+            csp_log: vec![],
+        },
+        load_complete_ms: None,
+        total_ms: started.elapsed().as_millis(),
+        png: None,
+        error: Some("event loop ended without capture".into()),
+    })
 }
 
 pub fn engine_id() -> String {
@@ -167,26 +184,21 @@ fn run_without_window(
 
     loop {
         servo.spin_event_loop();
+        // Run follow-up JS queued from evaluation callbacks (e.g. the
+        // phase-2 cosmetic hide stylesheet).
+        for js in state.drain_pending_js() {
+            webview.evaluate_javascript(js, |_| {});
+        }
         if state.is_complete() && settled(&state, config.settle_ms) {
             break;
         }
-        if started.elapsed().as_millis() as u64 > config.timeout_ms
-            || state.crash().is_some()
-        {
+        if started.elapsed().as_millis() as u64 > config.timeout_ms || state.crash().is_some() {
             break;
         }
         waker.wait_timeout(8);
     }
 
-    finish(
-        &config,
-        &servo,
-        &webview,
-        &context,
-        &state,
-        &privacy,
-        started,
-    )
+    finish(&config, &servo, &webview, &context, &state, &privacy, started)
 }
 
 fn settled(state: &Arc<HostState>, settle_ms: u64) -> bool {
@@ -210,10 +222,11 @@ fn finish(
     let png_path = match (&config.png, &img) {
         (Some(path), Some(img)) => {
             crate::capture::save_png(img, path).ok().map(|_| path.display().to_string())
-        },
+        }
         _ => None,
     };
     let (ads_blocked, trackers_blocked, blocked_requests) = privacy.blocked_summary();
+    let csp_log = privacy.csp_log.lock().unwrap().clone();
     let report = HeadlessReport {
         engine: engine_id(),
         url: config.url.to_string(),
@@ -231,6 +244,14 @@ fn finish(
             ads_blocked,
             trackers_blocked,
             blocked_requests,
+            redirects_served: privacy.redirects_served.load(std::sync::atomic::Ordering::Relaxed),
+            params_stripped: privacy.params_stripped.load(std::sync::atomic::Ordering::Relaxed),
+            csp_injections: privacy.csp_injections.load(std::sync::atomic::Ordering::Relaxed),
+            scriptlets_injected: privacy
+                .scriptlets_injected
+                .load(std::sync::atomic::Ordering::Relaxed),
+            rules_loaded: privacy.blocker.rules_loaded,
+            csp_log,
         },
         load_complete_ms: state
             .complete_at
@@ -243,7 +264,8 @@ fn finish(
     };
     if let Some(json_path) = &config.json {
         if let Ok(text) = serde_json::to_string_pretty(&report) {
-            let _ = std::fs::create_dir_all(json_path.parent().unwrap_or(std::path::Path::new(".")));
+            let _ =
+                std::fs::create_dir_all(json_path.parent().unwrap_or(std::path::Path::new(".")));
             let _ = std::fs::write(json_path, text);
         }
     }
@@ -270,9 +292,8 @@ impl ApplicationHandler<HostWakerEvent> for HeadlessApp {
         if self.servo.is_some() {
             return;
         }
-        let display_handle = event_loop
-            .display_handle()
-            .expect("no display handle (run under xvfb-run)");
+        let display_handle =
+            event_loop.display_handle().expect("no display handle (run under xvfb-run)");
         let window = event_loop
             .create_window(winit::window::Window::default_attributes())
             .expect("failed to create X window");
@@ -317,33 +338,24 @@ impl ApplicationHandler<HostWakerEvent> for HeadlessApp {
         self.context = Some(ctx);
     }
 
-    fn user_event(
-        &mut self,
-        _event_loop: &ActiveEventLoop,
-        _event: HostWakerEvent,
-    ) {
+    fn user_event(&mut self, _event_loop: &ActiveEventLoop, _event: HostWakerEvent) {
         if let (Some(servo), Some(state), Some(webview)) =
             (&self.servo, &self.state.as_ref(), &self.webview)
         {
             servo.spin_event_loop();
+            for js in state.drain_pending_js() {
+                webview.evaluate_javascript(js, |_| {});
+            }
             let done = self.capture_done
-                || (state.is_complete()
-                    && settled(state, self.config.settle_ms))
+                || (state.is_complete() && settled(state, self.config.settle_ms))
                 || self.started.elapsed().as_millis() as u64 > self.config.timeout_ms
                 || state.crash().is_some();
             if done && !self.capture_done {
                 self.capture_done = true;
                 let ctx = self.context.as_ref().unwrap();
                 let privacy = self.privacy.as_ref().unwrap();
-                let report = finish(
-                    &self.config,
-                    servo,
-                    webview,
-                    ctx,
-                    state,
-                    privacy,
-                    self.started,
-                );
+                let report =
+                    finish(&self.config, servo, webview, ctx, state, privacy, self.started);
                 self.result = Some(report);
                 _event_loop.exit();
             }

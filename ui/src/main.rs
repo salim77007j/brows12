@@ -431,6 +431,15 @@ impl Gui {
         }
         if let Some(servo) = self.servo.as_ref() {
             servo.spin_event_loop();
+            // Drain follow-up JS queued by evaluation callbacks (phase-2
+            // cosmetic hide stylesheet) for the active tab.
+            if let Some(id) = self.active_id() {
+                if let Some(rt) = self.runtimes.get(&id) {
+                    for js in rt.state.drain_pending_js() {
+                        rt.webview.evaluate_javascript(js, |_| {});
+                    }
+                }
+            }
         }
         self.sync_active_tab_state();
         // Repaint when the active page produced new frames.

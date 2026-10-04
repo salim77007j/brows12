@@ -203,13 +203,20 @@ pub fn run_perf(config: PerfConfig) -> PerfReport {
             .build();
         webview.focus();
         webview.load(url.clone());
-        slots.push(Slot { webview: Some(webview), state: state.clone(), _ctx: context.clone() });
+        slots.push(Slot {
+            webview: Some(webview.clone()),
+            state: state.clone(),
+            _ctx: context.clone(),
+        });
 
         // Load + settle this tab before opening the next (isolates the
         // per-tab RSS marginal).
         let tab_deadline = Instant::now() + Duration::from_millis(config.timeout_ms);
         loop {
             servo.spin_event_loop();
+            for js in state.drain_pending_js() {
+                webview.evaluate_javascript(js, |_| {});
+            }
             if first_frame_ms == 0 && state.frame_count() > 0 {
                 first_frame_ms = started.elapsed().as_millis();
             }
@@ -223,11 +230,8 @@ pub fn run_perf(config: PerfConfig) -> PerfReport {
             waker.wait_timeout(8);
         }
         if first_load_complete_ms.is_none() {
-            first_load_complete_ms = state
-                .complete_at
-                .lock()
-                .unwrap()
-                .map(|t| t.duration_since(started).as_millis());
+            first_load_complete_ms =
+                state.complete_at.lock().unwrap().map(|t| t.duration_since(started).as_millis());
         }
         // Let the engine drain before sampling RSS.
         for _ in 0..10 {
@@ -247,11 +251,8 @@ pub fn run_perf(config: PerfConfig) -> PerfReport {
     }
 
     // ---- Engine memory report (create_memory_report hook) ----------------
-    let memory_report = if config.engine_report {
-        request_engine_memory_report(&servo, &waker)
-    } else {
-        None
-    };
+    let memory_report =
+        if config.engine_report { request_engine_memory_report(&servo, &waker) } else { None };
 
     // ---- Suspension (hibernate background tabs) --------------------------
     let suspension = if config.suspend && slots.len() > 1 {
@@ -320,6 +321,11 @@ pub fn run_perf(config: PerfConfig) -> PerfReport {
             servo.spin_event_loop();
             if let Some(slot) = slots.last() {
                 if let Some(webview) = &slot.webview {
+                    for js in slot.state.drain_pending_js() {
+                        webview.evaluate_javascript(js, |_| {});
+                    }
+                }
+                if let Some(webview) = &slot.webview {
                     webview.notify_input_event(servo::input_events::InputEvent::Wheel(
                         WheelEvent::new(
                             WheelDelta { x: 0.0, y: -76.0, z: 0.0, mode: WheelMode::DeltaPixel },
@@ -363,11 +369,7 @@ pub fn run_perf(config: PerfConfig) -> PerfReport {
             scroll_secs: config.scroll_secs,
             engine_report: config.engine_report,
         },
-        startup: Some(StartupReport {
-            servo_build_ms,
-            first_frame_ms,
-            first_load_complete_ms,
-        }),
+        startup: Some(StartupReport { servo_build_ms, first_frame_ms, first_load_complete_ms }),
         tabs,
         memory_report,
         suspension,

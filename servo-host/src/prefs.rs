@@ -102,22 +102,21 @@ pub fn apply_env_overrides(prefs: &mut Preferences) {
             "true" | "false" => serde_json::Value::Bool(value == "true"),
             v if v.parse::<i64>().is_ok() && !v.contains('.') => {
                 serde_json::Value::from(v.parse::<i64>().unwrap())
-            },
+            }
             v if v.parse::<f64>().is_ok() => serde_json::Value::from(v.parse::<f64>().unwrap()),
             v => serde_json::Value::from(v),
         };
         // Replace only same-typed values so a typo cannot corrupt a pref.
-        let type_ok = obj.get(key).map(|old| {
-            std::mem::discriminant(old) == std::mem::discriminant(&parsed)
-        });
+        let type_ok =
+            obj.get(key).map(|old| std::mem::discriminant(old) == std::mem::discriminant(&parsed));
         match type_ok {
             Some(true) => {
                 obj.insert(key.to_string(), parsed);
-            },
+            }
             _ => {
                 eprintln!("brows12: unknown or mistyped pref in BROWS12_SET_PREF: {key}");
                 continue;
-            },
+            }
         }
         if let Ok(mutated) = serde_json::from_value::<Preferences>(json) {
             *prefs = mutated;
@@ -141,9 +140,6 @@ mod tests {
         assert_eq!(full.js_timers_minimum_duration, 1000);
         // Guard against accidental regressions of the Servo defaults we
         // did NOT intend to touch:
-        assert_eq!(
-            full.network_http_disk_cache_size,
-            compat.network_http_disk_cache_size
-        );
+        assert_eq!(full.network_http_disk_cache_size, compat.network_http_disk_cache_size);
     }
 }

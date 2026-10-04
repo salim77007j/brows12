@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>brows12 Area 2.1 ad-blocking fixture</title>
+<style>
+  body { font-family: sans-serif; margin: 20px; }
+  .probe { margin: 8px 0; padding: 8px; border: 1px solid #ccc; }
+</style>
+</head>
+<body>
+  <h1>brows12 Area 2.1 fixture</h1>
+
+  <div class="ad-slot" style="height:60px;background:#e33;color:#fff">
+    GENERIC COSMETIC TARGET: .ad-slot must be hidden by EasyList ##.ad-slot
+  </div>
+
+  <div class="ad-wrap" style="height:60px;background:#e83;color:#fff">
+    GENERIC COSMETIC TARGET: .ad-wrap must be hidden by EasyList ##.ad-wrap
+  </div>
+
+  <div id="net-probe" class="probe">
+    Network probes: ad scripts/images below must be blocked (empty-200 or
+    redirect-replacement), never leaving the browser.
+  </div>
+
+  <script src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+  <script src="https://connect.facebook.net/en_US/fbevents.js"></script>
+  <script src="https://static.chartbeat.com/js/chartbeat.js"></script>
+  <img src="https://www.google-analytics.com/collect.gif?tid=UA-XXXXX-1" width="1" height="1">
+  <img src="https://pixel.facebook.com/tr?id=123&ev=PageView" width="1" height="1">
+
+  <div id="removeparam-probe" class="probe">
+    $removeparam: the img below requests example.com/get?utm_source=brows12test&id=42
+    &mdash; the request must be rewritten without utm_source (301).
+  </div>
+  <img id="utm-img" src="https://example.com/get?utm_source=brows12test&id=42">
+
+  <div id="result" class="probe">probe running…</div>
+  <script>
+    window.addEventListener('load', function () {
+      var out = [];
+      out.push('adsbygoogle: ' + (window.adsbygoogle ? 'loaded' : 'absent'));
+      out.push('fbq: ' + (window.fbq ? 'loaded' : 'absent'));
+      var r = document.getElementById('result');
+      r.textContent = out.join(' | ');
+      document.title = 'probe:' + out.join('|');
+    });
+  </script>
+</body>
+</html>

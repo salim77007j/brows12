@@ -145,7 +145,7 @@ pub fn eligible_under_pressure(
         Pressure::Nominal => false,
         Pressure::Elevated => {
             cfg.heavy_page_requests > 0 && page_requests >= cfg.heavy_page_requests
-        },
+        }
         Pressure::Critical => true,
     }
 }

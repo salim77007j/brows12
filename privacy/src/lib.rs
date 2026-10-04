@@ -12,6 +12,8 @@
 pub mod blocker;
 pub mod fingerprint;
 pub mod policy;
+pub mod removeparam;
+pub mod scriptlet_resources;
 pub mod upgrade;
 
 pub use blocker::{BlockReason, PrivacyBlocker};

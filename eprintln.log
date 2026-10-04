@@ -1,0 +1,5 @@
+error: XDG_RUNTIME_DIR is invalid or not set in the environment.
+
+thread 'main' (3400) panicked at /home/z/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/surfman-0.13.0/src/base/egl/device.rs:42:5:
+Unable to load the libEGL shared object
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace

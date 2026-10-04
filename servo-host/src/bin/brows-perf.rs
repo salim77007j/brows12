@@ -19,8 +19,7 @@ fn main() {
         match arg.as_str() {
             "--url" => {
                 let u = args.next().expect("--url needs a value");
-                let parsed =
-                    url::Url::parse(&u).unwrap_or_else(|e| panic!("bad url {u}: {e}"));
+                let parsed = url::Url::parse(&u).unwrap_or_else(|e| panic!("bad url {u}: {e}"));
                 if seen_url {
                     cfg.urls.push(parsed);
                 } else {
@@ -28,7 +27,7 @@ fn main() {
                     cfg.urls = vec![parsed];
                     seen_url = true;
                 }
-            },
+            }
             "--width" => cfg.width = args.next().expect("value").parse().expect("u32"),
             "--height" => cfg.height = args.next().expect("value").parse().expect("u32"),
             "--settle-ms" => cfg.settle_ms = args.next().expect("value").parse().expect("u64"),
@@ -36,14 +35,12 @@ fn main() {
             "--suspend" => cfg.suspend = true,
             "--engine-report" => cfg.engine_report = true,
             "--idle-secs" => cfg.idle_secs = args.next().expect("value").parse().expect("u64"),
-            "--scroll-secs" => {
-                cfg.scroll_secs = args.next().expect("value").parse().expect("u64")
-            },
+            "--scroll-secs" => cfg.scroll_secs = args.next().expect("value").parse().expect("u64"),
             "--json" => json = Some(PathBuf::from(args.next().expect("value"))),
             "--help" | "-h" => {
                 eprintln!("{}", __doc__().replace("//! ", ""));
                 std::process::exit(0);
-            },
+            }
             other => panic!("unknown arg {other}"),
         }
     }

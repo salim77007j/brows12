@@ -7,10 +7,7 @@
 use servo_host::{run_headless, HeadlessConfig};
 
 fn arg_value(args: &[String], flag: &str) -> Option<String> {
-    args.iter()
-        .position(|a| a == flag)
-        .and_then(|i| args.get(i + 1))
-        .cloned()
+    args.iter().position(|a| a == flag).and_then(|i| args.get(i + 1)).cloned()
 }
 
 fn main() {
@@ -20,9 +17,7 @@ fn main() {
 
     let url: url::Url = if let Some(html) = html_arg {
         let body = std::fs::read(&html).expect("read --html file");
-        format!("data:text/html;base64,{}", use_base64(&body))
-            .parse()
-            .expect("data url")
+        format!("data:text/html;base64,{}", use_base64(&body)).parse().expect("data url")
     } else if let Some(u) = url_arg {
         u.parse().expect("parse --url")
     } else {
@@ -32,20 +27,12 @@ fn main() {
 
     let config = HeadlessConfig {
         url,
-        width: arg_value(&args, "--width")
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(1280),
-        height: arg_value(&args, "--height")
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(800),
+        width: arg_value(&args, "--width").and_then(|v| v.parse().ok()).unwrap_or(1280),
+        height: arg_value(&args, "--height").and_then(|v| v.parse().ok()).unwrap_or(800),
         png: arg_value(&args, "--png").map(std::path::PathBuf::from),
         json: arg_value(&args, "--json").map(std::path::PathBuf::from),
-        timeout_ms: arg_value(&args, "--timeout-ms")
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(60_000),
-        settle_ms: arg_value(&args, "--settle-ms")
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(1_200),
+        timeout_ms: arg_value(&args, "--timeout-ms").and_then(|v| v.parse().ok()).unwrap_or(60_000),
+        settle_ms: arg_value(&args, "--settle-ms").and_then(|v| v.parse().ok()).unwrap_or(1_200),
     };
 
     let report = run_headless(config);
@@ -60,24 +47,12 @@ fn use_base64(data: &[u8]) -> String {
     const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
     for chunk in data.chunks(3) {
-        let b = [
-            chunk[0],
-            chunk.get(1).copied().unwrap_or(0),
-            chunk.get(2).copied().unwrap_or(0),
-        ];
+        let b = [chunk[0], chunk.get(1).copied().unwrap_or(0), chunk.get(2).copied().unwrap_or(0)];
         let n = (u32::from(b[0]) << 16) | (u32::from(b[1]) << 8) | u32::from(b[2]);
         out.push(T[(n >> 18) as usize & 63] as char);
         out.push(T[(n >> 12) as usize & 63] as char);
-        out.push(if chunk.len() > 1 {
-            T[(n >> 6) as usize & 63] as char
-        } else {
-            '='
-        });
-        out.push(if chunk.len() > 2 {
-            T[n as usize & 63] as char
-        } else {
-            '='
-        });
+        out.push(if chunk.len() > 1 { T[(n >> 6) as usize & 63] as char } else { '=' });
+        out.push(if chunk.len() > 2 { T[n as usize & 63] as char } else { '=' });
     }
     out
 }

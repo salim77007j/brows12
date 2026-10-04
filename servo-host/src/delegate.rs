@@ -7,9 +7,11 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
+use http::header;
+use http::{HeaderMap, StatusCode};
 use servo::{
-    ConsoleLogLevel, LoadStatus, NavigationRequest, WebView, WebViewDelegate, WebResourceLoad,
-    WebResourceResponse,
+    ConsoleLogLevel, LoadStatus, NavigationRequest, WebResourceLoad, WebResourceResponse, WebView,
+    WebViewDelegate,
 };
 use url::Url;
 
@@ -36,11 +38,22 @@ pub struct HostState {
     /// blocked and passed). Proxy for page weight — feeds the governor's
     /// heavy-tab policy. Reset on each navigation.
     pub page_requests: AtomicU64,
+    /// Phase 4 Area 2: JS snippets queued from inside evaluation callbacks.
+    /// `evaluate_javascript` cannot be called re-entrantly (the evaluator
+    /// `RefCell` is still borrowed while a result callback runs), so
+    /// follow-up evaluations are drained by the host loop each iteration.
+    pub pending_js: Mutex<Vec<std::string::String>>,
 }
 
 impl HostState {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Drains queued follow-up JS snippets (called by host loops outside
+    /// evaluation-callback context).
+    pub fn drain_pending_js(&self) -> Vec<String> {
+        std::mem::take(&mut *self.pending_js.lock().unwrap())
     }
 
     pub fn frame_count(&self) -> u64 {
@@ -83,11 +96,29 @@ pub struct HostDelegate {
 
 impl HostDelegate {
     pub fn new(state: Arc<HostState>, privacy: Arc<PrivacyHost>) -> Rc<Self> {
-        Rc::new(Self {
-            state,
-            privacy,
-            fatal: Arc::new(AtomicBool::new(false)),
-        })
+        Rc::new(Self { state, privacy, fatal: Arc::new(AtomicBool::new(false)) })
+    }
+
+    /// uBO-style phase-2 cosmetic filtering: collect the document's class
+    /// and id attributes, match them against EasyList's generic rules in
+    /// the filter engine, and queue the hide-stylesheet JS (executed by the
+    /// host loop — evaluation callbacks cannot evaluate re-entrantly).
+    fn apply_class_id_cosmetics(&self, webview: &WebView) {
+        let privacy = self.privacy.clone();
+        let state = self.state.clone();
+        webview.evaluate_javascript(crate::privacy::DOM_INFO_JS, move |result| {
+            let Ok(servo::JSValue::String(info)) = result else {
+                return;
+            };
+            let selectors = privacy.hidden_selectors_for_page(&info);
+            if selectors.is_empty() {
+                return;
+            }
+            privacy.cosmetic_pages_filtered.fetch_add(1, Ordering::Relaxed);
+            let css = selectors.join(",\n");
+            let js = crate::privacy::hide_stylesheet_js(&css);
+            state.pending_js.lock().unwrap().push(js);
+        });
     }
 }
 
@@ -100,9 +131,13 @@ impl WebViewDelegate for HostDelegate {
         self.state.state.lock().unwrap().title = title;
     }
 
-    fn notify_load_status_changed(&self, _webview: WebView, status: LoadStatus) {
+    fn notify_load_status_changed(&self, webview: WebView, status: LoadStatus) {
         if matches!(status, LoadStatus::Complete) {
             *self.state.complete_at.lock().unwrap() = Some(Instant::now());
+            // Phase 4 Area 2.1: generic class/id cosmetic rules need the
+            // page's DOM attributes (uBO two-phase protocol). Round-trip
+            // through evaluate_javascript, match in Rust, hide via JS.
+            self.apply_class_id_cosmetics(&webview);
         }
         *self.state.load_status.lock().unwrap() = Some(status);
     }
@@ -130,10 +165,11 @@ impl WebViewDelegate for HostDelegate {
     fn request_navigation(&self, _webview: WebView, navigation: NavigationRequest) {
         // Phase 3.9: a new document starts from a fresh page-weight count.
         self.state.page_requests.store(0, Ordering::Relaxed);
-        // Install cosmetic filters for the destination document before it
-        // loads (UCM stylesheet changes apply to the next document).
-        self.privacy.set_cosmetic_filters(navigation.url.as_str());
-        // Default policy: allow. Popup/ads policy decisions can hook here.
+        // Install cosmetic filters + scriptlets (+$csp meta) for the
+        // destination document before it loads (UCM changes apply to the
+        // next document).
+        self.privacy.set_page_filtering(navigation.url.as_str());
+        // Default policy: allow. Popup policy hooks in `request_create_new`.
         navigation.allow();
     }
 
@@ -151,14 +187,51 @@ impl WebViewDelegate for HostDelegate {
         // weight, blocked or not (blocked ones still cost a cache slot).
         self.state.page_requests.fetch_add(1, Ordering::Relaxed);
 
-        if let Some(reason) = self.privacy.should_block(&url_str, &source, kind) {
+        let verdict = self.privacy.verdict(&url_str, &source, kind);
+
+        if let Some(reason) = verdict.block {
             self.privacy.record_block(reason, &url_str);
-            // Answer with an empty 200 so the page sees a settled
-            // resource instead of a network error.
-            let response = WebResourceResponse::new(request.url.clone());
-            load.intercept(response).finish();
+            if let Some(res) = verdict.redirect {
+                // $redirect: serve the real replacement resource body so
+                // the page sees a plausible asset (keeps layout/JS happy).
+                self.privacy.redirects_served.fetch_add(1, Ordering::Relaxed);
+                let response = WebResourceResponse::new(request.url.clone())
+                    .status_code(StatusCode::OK)
+                    .status_message(b"OK".to_vec());
+                let mut intercepted = load.intercept(response);
+                intercepted.send_body_data(res.body);
+                intercepted.finish();
+            } else {
+                // Answer with an empty 200 so the page sees a settled
+                // resource instead of a network error.
+                let response = WebResourceResponse::new(request.url.clone());
+                load.intercept(response).finish();
+            }
             return;
         }
+
+        if let Some(rewritten) = verdict.rewritten_url {
+            // $removeparam: strip tracking params via a permanent redirect.
+            if let Ok(target) = url::Url::parse(&rewritten) {
+                self.privacy.params_stripped.fetch_add(1, Ordering::Relaxed);
+                let mut headers = HeaderMap::new();
+                headers.insert(header::LOCATION, rewritten.parse().unwrap());
+                let response = WebResourceResponse::new(target)
+                    .status_code(StatusCode::MOVED_PERMANENTLY)
+                    .status_message(b"Moved Permanently".to_vec())
+                    .headers(headers);
+                load.intercept(response).finish();
+                return;
+            }
+        }
+
+        if let Some(directives) = verdict.csp_directives {
+            // $csp on an iframe response: we cannot add response headers on
+            // the pass-through path, so record for the report. The
+            // document-level meta injection happens in `set_page_filtering`.
+            self.privacy.record_csp(&url_str, &directives);
+        }
+
         // Not blocked: let Servo load normally.
         drop(load);
     }

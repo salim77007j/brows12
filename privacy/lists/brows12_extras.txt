@@ -1,0 +1,49 @@
+! brows12 privacy extras — brows12 policy layer (Phase 4 Area 2)
+! Universal query-parameter stripping that uBO deliberately leaves out of
+! its default lists but Brave Shields and modern private browsers apply.
+! Kept narrow and evidence-based: tracking-attribution parameters only.
+*$removeparam=utm_source
+*$removeparam=utm_medium
+*$removeparam=utm_campaign
+*$removeparam=utm_term
+*$removeparam=utm_content
+*$removeparam=utm_id
+*$removeparam=utm_name
+*$removeparam=utm_cid
+*$removeparam=utm_reader
+*$removeparam=utm_social
+*$removeparam=utm_brand
+*$removeparam=fbclid
+*$removeparam=gclid
+*$removeparam=gbraid
+*$removeparam=wbraid
+*$removeparam=msclkid
+*$removeparam=dclid
+*$removeparam=twclid
+*$removeparam=ttclid
+*$removeparam=tiktok_click_id
+*$removeparam=igshid
+*$removeparam=igsh
+*$removeparam=li_fat_id
+*$removeparam=mc_eid
+*$removeparam=mcb
+*$removeparam=_hsenc
+*$removeparam=_hsmi
+*$removeparam=hsCtaTracking
+*$removeparam=vero_id
+*$removeparam=wickedid
+*$removeparam=oly_anon_id
+*$removeparam=oly_enc_id
+*$removeparam=yclid
+*$removeparam=_openstat
+*$removeparam=vf
+*$removeparam=sr_id
+*$removeparam=sr_share
+*$removeparam=rb_clickid
+*$removeparam=mwprid
+! Session/casting noise on embedded players
+*$removeparam=autoplay_session
+! Common A/B attribution beacons
+*$removeparam=_ga
+*$removeparam=_gl
+*$removeparam=vero_conv

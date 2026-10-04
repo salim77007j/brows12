@@ -7,7 +7,10 @@ use servo::{DeviceIntRect, RenderingContext, WebView};
 
 /// Renders the current webview state into the rendering context and
 /// reads the framebuffer back as an RGBA image.
-pub fn capture_webview(webview: &WebView, context: &Rc<dyn RenderingContext>) -> Option<image::RgbaImage> {
+pub fn capture_webview(
+    webview: &WebView,
+    context: &Rc<dyn RenderingContext>,
+) -> Option<image::RgbaImage> {
     // Paint the latest display list into the context, then read back
     // before presenting (reading works either way; present flushes to
     // the window surface which we do not need headless).
@@ -23,6 +26,5 @@ pub fn save_png(img: &image::RgbaImage, path: &Path) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    img.save(path)
-        .map_err(|e| std::io::Error::other(format!("png save: {e}")))
+    img.save(path).map_err(|e| std::io::Error::other(format!("png save: {e}")))
 }
