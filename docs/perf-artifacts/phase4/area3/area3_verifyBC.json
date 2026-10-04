@@ -1,0 +1,15 @@
+{
+  "run_b_image_evict": {
+    "baseline_rss_mb": 210.6,
+    "heavy_loaded_rss_mb": 710.7,
+    "heavy_in_bg_rss_mb": 758.6,
+    "after_hibernate_rss_mb": 635.9,
+    "decoded_images_mb_estimate": 40,
+    "freed_by_hibernate_mb": 122.7,
+    "residual_vs_baseline_mb": 425.3
+  },
+  "run_c_texture_residual": {
+    "note": "residual_vs_baseline_mb is the engine-side memory not returned on full WebView drop; Phase 3 attributed the bulk to the global WebRender/texture caches",
+    "residual_mb": 425.3
+  }
+}

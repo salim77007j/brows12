@@ -678,6 +678,13 @@ impl Gui {
         }
         self.tabs[index].suspended = true;
         self.tabs[index].status = Status::Idle;
+        // Phase 4.3.2: return the dropped pipeline's freed arena pages to
+        // the OS on EVERY hibernation (the governor loop used to be the
+        // only trim site — command-driven hibernation left hundreds of MB
+        // allocator-retained, invisible to /proc as free).
+        unsafe {
+            libc::malloc_trim(0);
+        }
         model::emit(format!(
             "hibernate tab={} index={index} rss_before_kb={rss_before} url={}",
             id,

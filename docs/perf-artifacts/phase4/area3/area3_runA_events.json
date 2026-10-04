@@ -1,0 +1,24 @@
+{
+  "run": "A — governor + per-tab budget + JS tier (3.1, 3.4)",
+  "config": {"budget_mb": 110, "governor_interval_ms": 2000, "tab_suspend_secs": 8,
+             "heavy_suspend_secs": 4, "tabs": "2 heavy (20 imgs x 1MB decoded) + 2 light"},
+  "observed_events": [
+    "loaded tab=2 url=http://127.0.0.1:8125/index.html?v=0 title=",
+    "js_heap_tier tier=Small mem_max_mb=128 rss_ratio=1.81 psi_hot=false over_budget_tabs=0",
+    "js_heap_tier tier=Small mem_max_mb=128 rss_ratio=3.48 psi_hot=false over_budget_tabs=0",
+    "hibernate_weight tab=1 page_requests=0",
+    "hibernate tab=1 index=0 rss_before_kb=451152 url=brows12://start",
+    "governor_global level=Critical reclaimed=1 hibernated_total=1",
+    "hibernate_weight tab=2 page_requests=81",
+    "hibernate tab=2 index=1 rss_before_kb=682296 url=http://127.0.0.1:8125/index.html?v=0",
+    "hibernate_weight tab=3 page_requests=81",
+    "hibernate tab=3 index=2 rss_before_kb=540104 url=http://127.0.0.1:8125/index.html?v=1",
+    "governor_global level=Critical reclaimed=2 hibernated_total=3"
+  ],
+  "verdict": {
+    "js_heap_tier_escalation": "PASS — tier Normal->Small applied via set_preference at rss_ratio>1.0",
+    "global_reclaim": "PASS — Critical level hibernated inactive start tab then over-weight background heavy tabs",
+    "weight_aware": "PASS — heavy tabs (page_requests=81) reclaimed on the heavy schedule (4s), start tab on the light schedule",
+    "per_tab_trim_step": "NOT OBSERVED LIVE — at Critical the global reclaim hibernates eligible tabs before the 30s trim grace can elapse; TrimCaches->Hibernate ladder verified by unit tests (budget.rs::degradation_ladder); trim is reachable at Elevated pressure on over-budget light tabs, which this scenario does not produce"
+  }
+}
