@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>brows12 Area 2.3 popup fixture</title>
+<style>body{font-family:monospace;margin:16px} .v{font-weight:bold}</style></head>
+<body>
+<h3>brows12 popup blocker fixture</h3>
+<pre id="out">running…</pre>
+<script>
+// Auto pop-up attempt on load (classic interstitial pattern).
+var opened1 = window.open('http://127.0.0.1:8901/popup-target.html', '_blank');
+// Pop-under attempt (opened then blurred behind).
+var opened2 = window.open('http://127.0.0.1:8901/popup-target.html', '_blank');
+if (opened2) { try { opened2.blur(); window.focus(); } catch (e) {} }
+window.addEventListener('load', function () {
+  setTimeout(function () {
+    var lines = [];
+    lines.push('auto_window_open_result: ' + (opened1 ? 'POPUP CREATED' : 'null (blocked)'));
+    lines.push('popunder_result: ' + (opened2 ? 'POPUP CREATED' : 'null (blocked)'));
+    document.getElementById('out').textContent = lines.join('\n');
+    document.title = 'popup-probe:' + (opened1 ? 'leaked' : 'blocked');
+  }, 300);
+});
+</script>
+</body>
+</html>

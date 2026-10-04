@@ -21,6 +21,7 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 brows12-privacy = { path = "../privacy" }
+brows12-storage = { path = "../storage" }
 servo-net-traits = "=0.6.0"
 servo-embedder-traits = "=0.6.0"
 servo-base = "=0.6.0"

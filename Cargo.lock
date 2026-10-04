@@ -6557,6 +6557,7 @@ name = "servo-host"
 version = "0.2.0"
 dependencies = [
  "brows12-privacy",
+ "brows12-storage",
  "content-security-policy",
  "http",
  "image",

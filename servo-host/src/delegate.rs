@@ -10,8 +10,8 @@ use std::time::Instant;
 use http::header;
 use http::{HeaderMap, StatusCode};
 use servo::{
-    ConsoleLogLevel, LoadStatus, NavigationRequest, WebResourceLoad, WebResourceResponse, WebView,
-    WebViewDelegate,
+    ConsoleLogLevel, CreateNewWebViewRequest, LoadStatus, NavigationRequest, WebResourceLoad,
+    WebResourceResponse, WebView, WebViewDelegate,
 };
 use url::Url;
 
@@ -43,6 +43,9 @@ pub struct HostState {
     /// `RefCell` is still borrowed while a result callback runs), so
     /// follow-up evaluations are drained by the host loop each iteration.
     pub pending_js: Mutex<Vec<std::string::String>>,
+    /// Phase 4 Area 2.3: recent cross-domain navigation hops (time,
+    /// registrable domain) — feeds the interstitial redirect-chain guard.
+    pub nav_hops: Mutex<Vec<(std::time::Instant, String)>>,
 }
 
 impl HostState {
@@ -169,8 +172,53 @@ impl WebViewDelegate for HostDelegate {
         // destination document before it loads (UCM changes apply to the
         // next document).
         self.privacy.set_page_filtering(navigation.url.as_str());
+
+        // Phase 4 Area 2.3: interstitial redirect-chain guard. Track
+        // cross-domain navigation hops in an 8 s window; the 5th distinct
+        // registrable domain in that window is an ad-interstitial funnel,
+        // not human browsing (the initial load is not a hop). Hops are compared against the LAST RECORDED hop (not
+        // the delegate's current-URL state, which may already reflect the
+        // in-flight navigation by callback time).
+        let target_domain =
+            brows12_storage::registrable_domain(navigation.url.host_str().unwrap_or_default());
+        let mut deny = false;
+        let mut prev_domain = String::new();
+        if !target_domain.is_empty() {
+            let mut hops = self.state.nav_hops.lock().unwrap();
+            let now = Instant::now();
+            hops.retain(|(t, _)| now.duration_since(*t) < std::time::Duration::from_secs(8));
+            prev_domain = hops.last().map(|(_, d)| d.clone()).unwrap_or_default();
+            if !prev_domain.is_empty() && target_domain != prev_domain {
+                if hops.len() >= 3 {
+                    deny = true;
+                } else {
+                    hops.push((now, target_domain.clone()));
+                }
+            } else if prev_domain.is_empty() {
+                hops.push((now, target_domain.clone()));
+            }
+        }
+
+        if deny {
+            self.privacy.record_redirect_chain_blocked(&prev_domain, &target_domain);
+            navigation.deny();
+            return;
+        }
+
         // Default policy: allow. Popup policy hooks in `request_create_new`.
         navigation.allow();
+    }
+
+    /// Phase 4 Area 2.3: pop-up blocker. `window.open()` (and pop-unders,
+    /// which are the same API opened behind the current window) creates an
+    /// auxiliary webview through this hook; ignoring the request means no
+    /// webview is created. brows12 blocks all auxiliary webviews by
+    /// default — stricter than Chrome's gesture heuristic — because the
+    /// embedder cannot observe user activation. Future UI: per-site
+    /// exceptions.
+    fn request_create_new(&self, parent_webview: WebView, _request: CreateNewWebViewRequest) {
+        let source = parent_webview.url().map(|u| u.to_string()).unwrap_or_default();
+        self.privacy.record_popup_blocked(&source);
     }
 
     fn load_web_resource(&self, _webview: WebView, load: WebResourceLoad) {

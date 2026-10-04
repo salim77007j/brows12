@@ -52,6 +52,12 @@ pub struct PrivacyHost {
     pub session_seed: u64,
     /// Pages that had the fingerprint defense installed.
     pub fingerprint_pages_protected: AtomicU64,
+    /// Pop-ups (window.open etc.) blocked at `request_create_new`.
+    pub popups_blocked: AtomicU64,
+    /// Interstitial redirect chains cut off by the hop-rate guard.
+    pub redirect_chains_blocked: AtomicU64,
+    /// Pop-up / redirect events for the report (capped).
+    pub popup_log: Mutex<Vec<String>>,
     ucm: Mutex<Option<Rc<UserContentManager>>>,
     cosmetic_stylesheet: Mutex<Option<Rc<UserStyleSheet>>>,
     scriptlet_script: Mutex<Option<Rc<servo::user_contents::UserScript>>>,
@@ -77,6 +83,9 @@ impl PrivacyHost {
             fingerprint: Mutex::new(FingerprintConfig::default()),
             session_seed: FingerprintConfig::fresh_session_seed(),
             fingerprint_pages_protected: AtomicU64::new(0),
+            popups_blocked: AtomicU64::new(0),
+            redirect_chains_blocked: AtomicU64::new(0),
+            popup_log: Mutex::new(Vec::new()),
             ucm: Mutex::new(None),
             cosmetic_stylesheet: Mutex::new(None),
             scriptlet_script: Mutex::new(None),
@@ -210,6 +219,27 @@ impl PrivacyHost {
             self.trackers_blocked.load(Ordering::Relaxed),
             self.blocked_log.lock().unwrap().clone(),
         )
+    }
+
+    /// Records a blocked pop-up attempt (called from `request_create_new`;
+    /// the request is dropped, so no auxiliary webview is created — this
+    /// covers window.open pop-ups AND pop-unders, which are the same
+    /// mechanism opened behind the current window).
+    pub fn record_popup_blocked(&self, source_url: &str) {
+        self.popups_blocked.fetch_add(1, Ordering::Relaxed);
+        let mut log = self.popup_log.lock().unwrap();
+        if log.len() < 128 {
+            log.push(format!("popup blocked from {source_url}"));
+        }
+    }
+
+    /// Records a cut-off interstitial redirect chain.
+    pub fn record_redirect_chain_blocked(&self, from: &str, to: &str) {
+        self.redirect_chains_blocked.fetch_add(1, Ordering::Relaxed);
+        let mut log = self.popup_log.lock().unwrap();
+        if log.len() < 128 {
+            log.push(format!("redirect chain cut: {from} -> {to}"));
+        }
     }
 
     /// Records `$csp` directives surfaced for a pass-through iframe/subframe

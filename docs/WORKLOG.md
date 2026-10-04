@@ -613,3 +613,49 @@ Stage Summary:
   yet — hooks installed and will activate when it lands); audio noise is
   ±1e-7 (inaudible); Proxy wrap adds overhead to getChannelData reads
   (acceptable: Servo media stack is stubbed today).
+
+---
+Task ID: phase4-area2-2.3
+Agent: Super Z (main)
+Task: Phase 4 Focus Area 2, sub-item 2.3 — pop-up / pop-under /
+  interstitial-redirect blocking.
+
+Work Log:
+- request_create_new implemented as a total pop-up blocker: every
+  auxiliary-webview request (window.open with any features string —
+  pop-unders are the same API opened behind the current window) is
+  dropped, which Servo documents as "no new WebView will be opened";
+  counted in popups_blocked with a capped log. Stricter than Chrome's
+  user-activation heuristic (the embedder cannot observe gestures);
+  per-site exceptions left for the future UI.
+- Interstitial redirect-chain guard in request_navigation: cross-domain
+  hops tracked in an 8 s rolling window (registrable_domain comparison
+  against the LAST RECORDED hop — the delegate's current-URL state can
+  already reflect the in-flight navigation by callback time, which
+  silently defeated the first implementation). The 5th distinct
+  registrable domain in the window is denied + counted
+  (redirect_chains_blocked). Human browsing (a click to a new domain
+  every >2 s) never reaches the threshold; funnels at 120-500 ms/hop do.
+- Verification:
+  * popup fixture: auto window.open + pop-under attempt → both return
+    null; title probe "popup-probe:blocked".
+  * redirect-chain fixture: 5 hops across 5 loopback IPs (distinct
+    registrable domains) at 120 ms/hop → chain cut at hop 4 (final URL
+    127.0.0.4, hop 5 denied).
+  * Chrome side-by-side PNG:
+    screenshots/v2-servo/phase4/area2_3_popup_side_by_side.png
+    — headless Chrome (no UI) ALLOWED both window.open calls
+    ("POPUP CREATED" ×2); brows12 blocked both. Interactive Chrome
+    blocks gesture-less popups; brows12 is stricter by design.
+- Disk pressure recurrence: build temp files filled the rootfs twice;
+  mitigated with cargo clean of leaf crates + registry cache removal +
+  deleting rebuildable debug binaries; OOM guard (-j 1) kept.
+- Quality: fmt clean, clippy zero warnings.
+
+Stage Summary:
+- 2.3 complete: total auxiliary-webview blocking + rate-based
+  interstitial-redirect guard, both counted and logged for the dashboard.
+- Honest notes: clickjacking-overlay detection needs DOM heuristics
+  (deferred; cosmetic filtering already removes common overlay selectors,
+  and frame-ancestors/XFO behavior is verified in 2.7); popup allowlist
+  awaits the UI.
