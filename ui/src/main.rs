@@ -106,6 +106,10 @@ struct Gui {
     next_session_save_at: Option<Instant>,
     /// Phase 4.4.5: tab-search index (title/url/snippet per tab).
     search_index: servo_host::tabsearch::TabSearchIndex,
+    /// Phase 4.4.7: the idle-suspend policy (never / N seconds / 60s).
+    suspend_policy: servo_host::suspend::SuspendPolicy,
+    /// Phase 4.4.7: user-level URL exemptions (substrings).
+    suspend_exempt_urls: Vec<String>,
     active: usize,
     text: UiText,
     cursor: (f32, f32),
@@ -222,6 +226,8 @@ impl ApplicationHandler<HostWakerEvent> for App {
             session_path: session_path_from_env(),
             next_session_save_at: None,
             search_index: servo_host::tabsearch::TabSearchIndex::new(),
+            suspend_policy: servo_host::suspend::SuspendPolicy::from_env(),
+            suspend_exempt_urls: servo_host::suspend::exempt_urls_from_env(),
             active: 0,
             text: UiText::new(),
             cursor: (0.0, 0.0),
@@ -1120,6 +1126,14 @@ impl Gui {
             _ => Pressure::Nominal,
         };
 
+        // ---- Phase 4.4.7: idle-suspend policy pass --------------------
+        // Runs at EVERY pressure level (this is the "suspend after N
+        // minutes" behavior; the pressure ladders below are additive).
+        let suspended = self.idle_suspend_pass();
+        if suspended > 0 {
+            model::emit(format!("idle_suspend_pass count={suspended}"));
+        }
+
         // ---- Phase 4.3.4: JS-heap tier --------------------------------
         let total = budget::total_budget_kb(available, &self.budget);
         let rss_ratio = rss as f64 / total.max(1) as f64;
@@ -1172,6 +1186,57 @@ impl Gui {
         }
         // And the per-tab ladder always runs when the tab strip is live.
         self.enforce_per_tab_budgets(total);
+    }
+
+    /// Phase 4.4.7: the idle-suspension pass. Background tabs past the
+    /// policy's idle threshold are hibernated, honoring every exemption
+    /// (active / pinned / playing media / URL list). `never` disables
+    /// ONLY this pass — the pressure responses stay armed.
+    fn idle_suspend_pass(&mut self) -> usize {
+        let Some(_threshold) = self.suspend_policy.idle_threshold() else {
+            return 0;
+        };
+        let active_id = self.active_id();
+        let now = Instant::now();
+        let mut targets: Vec<usize> = self
+            .tabs
+            .iter()
+            .enumerate()
+            .filter(|(i, t)| {
+                let Some(id) = t.id else { return false };
+                if t.suspended {
+                    return false;
+                }
+                let media_playing = self
+                    .runtimes
+                    .get(&id)
+                    .map(|rt| rt.state.media_playing.load(std::sync::atomic::Ordering::Relaxed))
+                    .unwrap_or(false);
+                servo_host::suspend::should_suspend(
+                    Some(id) == active_id,
+                    t.pinned,
+                    media_playing,
+                    now.duration_since(t.last_active),
+                    &t.url(),
+                    &self.suspend_policy,
+                    &self.suspend_exempt_urls,
+                )
+            })
+            .map(|(i, _)| i)
+            .collect();
+        targets.sort_unstable();
+        let mut count = 0;
+        for i in targets {
+            let url = self.tabs[i].url();
+            self.hibernate(i, false);
+            self.governor_hibernated += 1;
+            count += 1;
+            model::emit(format!(
+                "idle_suspend index={i} url={}",
+                model::ev_escape(&url)
+            ));
+        }
+        count
     }
 
     /// Phase 4.3.1: how many background tabs are over their individual

@@ -1,0 +1,11 @@
+{
+  "area4_7": {
+    "checks": {
+      "idle tabs suspended at nominal pressure": true,
+      "active tab not suspended": true,
+      "never mode keeps idle tabs alive": true,
+      "exempt-URL tab survives idle suspension": true,
+      "non-exempt background tab suspended": true
+    }
+  }
+}

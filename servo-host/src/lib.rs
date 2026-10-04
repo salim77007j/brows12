@@ -16,6 +16,7 @@ pub mod prefs;
 pub mod privacy;
 pub mod psi;
 pub mod session;
+pub mod suspend;
 pub mod tabgroups;
 pub mod tabsearch;
 pub mod tabstats;

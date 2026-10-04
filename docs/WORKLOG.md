@@ -1151,3 +1151,33 @@ Work Log:
 Stage Summary:
 - 4.6 complete: pinned tabs are exempt from every memory policy,
   visible in the strip, and persist across sessions.
+
+---
+Task ID: phase4-area4-4.7
+Agent: Super Z (main)
+Task: Phase 4 Focus Area 4, sub-item 4.7 — configurable suspend policy.
+
+Work Log:
+- servo-host/src/suspend.rs (new): SuspendPolicy Never/AfterIdle(N)
+  from BROWS12_SUSPEND_POLICY (never|0 = never; aggressive = 60 s;
+  <secs> = AfterIdle; default 300 s) + exempt URL list from
+  BROWS12_SUSPEND_EXEMPT_URLS; pure should_suspend() decision with
+  active/pinned/media/URL exemptions. 4 unit tests.
+- Media detection: HostDelegate::notify_media_session_event maps
+  MediaSessionEvent::PlaybackStateChange(Playing) to
+  HostState.media_playing (reset on navigation). ENGINE GAP found and
+  documented: servo-script 0.6 stores navigator.mediaSession
+  .playbackState writes in a DomRefCell without notifying the
+  embedder — real media playback events flow, playbackState writes do
+  not (upstream issue candidate).
+- Shell: idle_suspend_pass() runs every governor tick at ANY pressure
+  level (this IS the "suspend after N minutes" behavior); hibernated
+  tabs emit idle_suspend events; `never` disables only this pass.
+- E2E (phase4_area4.py --only 4.7, 3 runs): AfterIdle(3s) suspends
+  both idle background tabs at NOMINAL pressure (active exempt);
+  never mode suspends nothing; URL-exempt tab survives while the
+  non-exempt one is suspended. All 5 checks PASS.
+
+Stage Summary:
+- 4.7 complete + Focus Area 4 implementation done: configurable idle
+  suspension with full exemption matrix; one upstream gap documented.

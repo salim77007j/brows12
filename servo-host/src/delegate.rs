@@ -10,8 +10,9 @@ use std::time::Instant;
 use http::header;
 use http::{HeaderMap, StatusCode};
 use servo::{
-    ConsoleLogLevel, CreateNewWebViewRequest, LoadStatus, NavigationRequest, WebResourceLoad,
-    WebResourceResponse, WebView, WebViewDelegate,
+    ConsoleLogLevel, CreateNewWebViewRequest, LoadStatus, MediaSessionEvent,
+    MediaSessionPlaybackState, NavigationRequest, WebResourceLoad, WebResourceResponse, WebView,
+    WebViewDelegate,
 };
 use url::Url;
 
@@ -62,6 +63,10 @@ pub struct HostState {
     /// heading) captured at load completion, feeding the tab-search
     /// index.
     pub page_snippet: Mutex<Option<String>>,
+    /// Phase 4.4.7: the page is currently PLAYING media (from the
+    /// engine's media-session playback-state events). A playing tab is
+    /// exempt from idle suspension. Reset on navigation.
+    pub media_playing: AtomicBool,
 }
 
 /// uBO-style form-state capture, run when a tab goes to the background:
@@ -279,6 +284,8 @@ impl WebViewDelegate for HostDelegate {
 
         // Phase 3.9: a new document starts from a fresh page-weight count.
         self.state.page_requests.store(0, Ordering::Relaxed);
+        // Phase 4.4.7: a new document starts with unknown media state.
+        self.state.media_playing.store(false, Ordering::Relaxed);
         // Install cosmetic filters + scriptlets (+$csp meta) for the
         // destination document before it loads (UCM changes apply to the
         // next document).
@@ -330,6 +337,16 @@ impl WebViewDelegate for HostDelegate {
     fn request_create_new(&self, parent_webview: WebView, _request: CreateNewWebViewRequest) {
         let source = parent_webview.url().map(|u| u.to_string()).unwrap_or_default();
         self.privacy.record_popup_blocked(&source);
+    }
+
+    /// Phase 4.4.7: media-session playback state — the audio/video
+    /// "is playing" signal that exempts a tab from idle suspension.
+    fn notify_media_session_event(&self, _webview: WebView, event: MediaSessionEvent) {
+        if let MediaSessionEvent::PlaybackStateChange(state) = event {
+            self.state
+                .media_playing
+                .store(matches!(state, MediaSessionPlaybackState::Playing), Ordering::Relaxed);
+        }
     }
 
     fn load_web_resource(&self, _webview: WebView, load: WebResourceLoad) {

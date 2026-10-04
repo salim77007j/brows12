@@ -626,6 +626,95 @@ def verify_46(out):
         srv.terminate()
 
 
+# ---------------------------------------------------------------- 4.7 --
+def verify_47(out):
+    """Suspend policy: AfterIdle(N) suspends idle background tabs at
+    NOMINAL pressure; `never` disables the idle pass; playing-media
+    tabs are exempt."""
+    site = pathlib.Path("/tmp/a4_site7")
+    site.mkdir(parents=True, exist_ok=True)
+    (site / "plain.html").write_text(
+        "<!doctype html><html><head><title>P7 plain</title></head>"
+        "<body><h1>plain page</h1></body></html>")
+    (site / "media.html").write_text(
+        "<!doctype html><html><head><title>P7 media</title></head>"
+        "<body><h1>media page</h1></body></html>")
+    srv = subprocess.Popen(
+        [sys.executable, "-m", "http.server", "8142", "--directory", str(site)],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    assert wait_http("http://127.0.0.1:8142/plain.html"), "http server"
+
+    def hibernated_after(run, secs):
+        time.sleep(secs)
+        return hibernated_indices(list(run.events))
+
+    checks = {}
+    try:
+        # ---- Run 1: AfterIdle(3 s), no memory pressure ----------------
+        env = {
+            "BROWS12_GOVERNOR": "1",
+            "BROWS12_GOVERNOR_INTERVAL_MS": "1200",
+            # Warmup must cover the whole setup phase so the idle pass
+            # only runs after the final <SWITCH>.
+            "BROWS12_GOVERNOR_WARMUP_MS": "16000",
+            "BROWS12_SUSPEND_POLICY": "3",
+            "BROWS12_MEM_BUDGET_MB": "2000",
+        }
+        run = UiRun(env, "47a")
+        try:
+            run.wait_for(lambda e: e.startswith("start "), 60, "start")
+            open_tab(run, "http://127.0.0.1:8142/plain.html", "plain.html")
+            open_tab(run, "http://127.0.0.1:8142/media.html", "media.html")
+            run.cmd("<SWITCH> 0")  # active = start; 1+2 background
+            # First tick lands at warmup+interval ≈ 17.2 s; tabs have
+            # been idle > 3 s since ~7 s, so the first pass suspends.
+            hib = hibernated_after(run, 18)
+            checks["idle tabs suspended at nominal pressure"] = (
+                1 in hib and 2 in hib)
+            checks["active tab not suspended"] = 0 not in hib
+        finally:
+            run.close()
+
+        # ---- Run 2: never mode → no idle suspension -------------------
+        env2 = {**env, "BROWS12_SUSPEND_POLICY": "never"}
+        run = UiRun(env2, "47b")
+        try:
+            run.wait_for(lambda e: e.startswith("start "), 60, "start")
+            open_tab(run, "http://127.0.0.1:8142/plain.html", "plain.html")
+            run.cmd("<SWITCH> 0")
+            hib = hibernated_after(run, 18)
+            checks["never mode keeps idle tabs alive"] = len(hib) == 0
+        finally:
+            run.close()
+
+        # ---- Run 3: URL exemptions + active/pinned -------------------
+        # NOTE: the playing-media exemption is implemented embedder-side
+        # (HostDelegate::notify_media_session_event -> media_playing,
+        # unit-tested in suspend.rs), but Servo 0.6 does not deliver
+        # PlaybackStateChange for navigator.mediaSession.playbackState
+        # writes (upstream gap, see report) — so the e2e exercises the
+        # user-level URL exemption instead.
+        env3 = {**env, "BROWS12_SUSPEND_EXEMPT_URLS": "media.html"}
+        run = UiRun(env3, "47c")
+        try:
+            run.wait_for(lambda e: e.startswith("start "), 60, "start")
+            open_tab(run, "http://127.0.0.1:8142/media.html", "media.html")
+            open_tab(run, "http://127.0.0.1:8142/plain.html", "plain.html")
+            run.cmd("<SWITCH> 0")
+            hib = hibernated_after(run, 18)
+            checks["exempt-URL tab survives idle suspension"] = 1 not in hib
+            checks["non-exempt background tab suspended"] = 2 in hib
+        finally:
+            run.close()
+
+        out["area4_7"] = {"checks": checks}
+        for k, ok in checks.items():
+            print(("PASS " if ok else "FAIL ") + k)
+        return all(checks.values())
+    finally:
+        srv.terminate()
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", default="all",
@@ -653,6 +742,8 @@ def main():
         ok &= verify_45(out)
     if args.only in ("all", "4.6"):
         ok &= verify_46(out)
+    if args.only in ("all", "4.7"):
+        ok &= verify_47(out)
     pathlib.Path(args.out).write_text(json.dumps(out, indent=2))
     print(f"artifact: {args.out}")
     sys.exit(0 if ok else 1)
