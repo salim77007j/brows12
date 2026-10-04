@@ -151,7 +151,7 @@ impl StackingContextTreeClipStore {
                         parent_scroll_node_id,
                         parent_clip_chain_id,
                     ),
-                BasicShape::Polygon(polygon) => {
+                BasicShape::Polygon(ref polygon) => {
                     let width = Length::new(layout_rect.width() as f32);
                     let height = Length::new(layout_rect.height() as f32);
                     let points: Vec<LayoutPoint> = polygon

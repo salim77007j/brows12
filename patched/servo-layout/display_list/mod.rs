@@ -66,9 +66,8 @@ use crate::display_list::clip::PolygonMaskClip;
 use crate::display_list::conversions::FilterToWebRender;
 pub(crate) use crate::display_list::conversions::ToWebRender;
 use crate::display_list::paint_traversal::{PaintTraversal, PaintTraversalHandler, TraversalState};
-use crate::display_list::polygon_mask::{
-    PolygonMaskImageCache, polygon_mask_cache_key, rasterize_polygon_mask,
-};
+pub(crate) use crate::display_list::polygon_mask::PolygonMaskImageCache;
+use crate::display_list::polygon_mask::{polygon_mask_cache_key, rasterize_polygon_mask};
 use crate::fragment_tree::{
     BackgroundMode, BaseFragment, BoxFragment, BoxFragmentWithStyle, ContainingBlockCalculation,
     Fragment, FragmentFlags, FragmentStatus, FragmentTree, IFrameFragment, ImageFragment,
