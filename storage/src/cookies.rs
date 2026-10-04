@@ -4,6 +4,18 @@ use crate::registrable_domain;
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+/// How third-party cookies are handled (Phase 4 Area 2.6).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ThirdPartyCookieMode {
+    /// CHIPS: partition only when the cookie opts in via `Partitioned`.
+    Allow,
+    /// Total Cookie Protection: force-partition all third-party cookies.
+    #[default]
+    PartitionAll,
+    /// Block third-party cookies outright.
+    Reject,
+}
+
 /// SameSite attribute.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SameSite {
@@ -105,6 +117,70 @@ impl CookieJar {
         // Replace existing cookie with same identity, then append (RFC 6265 5.3.11)
         self.cookies.retain(|c| !same_identity(c, &pc));
         self.cookies.push(pc.into_cookie());
+    }
+
+    /// Policy-aware Set-Cookie processing (Phase 4 Area 2.6).
+    ///
+    /// * [`ThirdPartyCookieMode::Allow`] — CHIPS semantics: only cookies
+    ///   carrying the `Partitioned` attribute get a partition key.
+    /// * [`ThirdPartyCookieMode::PartitionAll`] — Total Cookie Protection:
+    ///   every third-party cookie is force-partitioned under the top-level
+    ///   site, regardless of the attribute.
+    /// * [`ThirdPartyCookieMode::Reject`] — third-party cookies are
+    ///   dropped entirely; first-party unaffected.
+    ///
+    /// `__Host-`-prefixed names additionally require Secure, no Domain
+    /// attribute and Path=/ (RFC 6265bis §4.1.3.2) — violations reject the
+    /// cookie in every mode.
+    pub fn set_from_header_with_policy(
+        &mut self,
+        url: &url::Url,
+        header: &str,
+        top_level_site: &str,
+        mode: ThirdPartyCookieMode,
+    ) {
+        let Some(mut pc) = parse_set_cookie(header) else {
+            return;
+        };
+        let Some(host) = url.host_str() else {
+            return;
+        };
+        let host = host.to_ascii_lowercase();
+
+        // __Host- prefix requirements (checked before anything else).
+        if pc.name.starts_with("__Host-") {
+            let ok = pc.secure && pc.domain_attr.is_none() && pc.path_attr.as_deref() == Some("/");
+            if !ok {
+                return;
+            }
+        }
+
+        let top_site = registrable_domain(top_level_site);
+        let own_site = registrable_domain(&host);
+        let third_party = !top_site.is_empty() && top_site != own_site;
+
+        match mode {
+            ThirdPartyCookieMode::Reject if third_party => return,
+            ThirdPartyCookieMode::PartitionAll if third_party && pc.partition_key.is_none() => {
+                // Force-partition under the top-level site (Total Cookie
+                // Protection). Partitioned-with-key cookies keep their key.
+                pc.partitioned = true;
+            }
+            _ => {}
+        }
+
+        self.set_from_header(url, header, top_level_site);
+        // set_from_header recomputed partition_key from pc.partitioned via
+        // its own parse; for PartitionAll we must overwrite it (the parse
+        // inside does not know the policy).
+        if matches!(mode, ThirdPartyCookieMode::PartitionAll) && third_party {
+            let key = Some(top_site.clone());
+            for c in self.cookies.iter_mut() {
+                if c.name == pc.name && c.domain == host {
+                    c.partition_key = key.clone();
+                }
+            }
+        }
     }
 
     /// Serialize the cookie header for a request URL.
@@ -437,5 +513,119 @@ mod tests {
         let http = url("http://example.com/");
         assert!(jar.header_for_url(&http, "example.com", false).is_none());
         assert!(jar.header_for_url(&https, "example.com", false).is_some());
+    }
+}
+
+#[cfg(test)]
+mod tcp_tests {
+    use super::*;
+
+    fn url(scheme: &str, host: &str) -> url::Url {
+        url::Url::parse(&format!("{scheme}://{host}/page/index.html")).unwrap()
+    }
+
+    #[test]
+    fn total_protection_force_partitions_third_party() {
+        let mut jar = CookieJar::new();
+        // tracker.com sets a plain (unpartitioned) cookie inside site.com.
+        let u = url("https", "tracker.com");
+        jar.set_from_header_with_policy(
+            &u,
+            "sid=abc123; Path=/",
+            "site.com",
+            ThirdPartyCookieMode::PartitionAll,
+        );
+        let all = jar.all();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].partition_key.as_deref(), Some("site.com"));
+    }
+
+    #[test]
+    fn total_protection_leaves_first_party_unpartitioned() {
+        let mut jar = CookieJar::new();
+        let u = url("https", "site.com");
+        jar.set_from_header_with_policy(
+            &u,
+            "session=xyz; Path=/",
+            "site.com",
+            ThirdPartyCookieMode::PartitionAll,
+        );
+        let all = jar.all();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].partition_key, None);
+    }
+
+    #[test]
+    fn allow_mode_partitions_only_explicit_chips() {
+        let mut jar = CookieJar::new();
+        let u = url("https", "tracker.com");
+        jar.set_from_header_with_policy(
+            &u,
+            "plain=1; Path=/",
+            "site.com",
+            ThirdPartyCookieMode::Allow,
+        );
+        assert_eq!(jar.all()[0].partition_key, None);
+        jar.set_from_header_with_policy(
+            &u,
+            "chips=1; Path=/; Secure; Partitioned",
+            "site.com",
+            ThirdPartyCookieMode::Allow,
+        );
+        assert_eq!(jar.all()[1].partition_key.as_deref(), Some("site.com"));
+    }
+
+    #[test]
+    fn reject_mode_drops_third_party_keeps_first_party() {
+        let mut jar = CookieJar::new();
+        jar.set_from_header_with_policy(
+            &url("https", "tracker.com"),
+            "t=1; Path=/",
+            "site.com",
+            ThirdPartyCookieMode::Reject,
+        );
+        jar.set_from_header_with_policy(
+            &url("https", "site.com"),
+            "f=1; Path=/",
+            "site.com",
+            ThirdPartyCookieMode::Reject,
+        );
+        assert_eq!(jar.len(), 1);
+        assert_eq!(jar.all()[0].name, "f");
+    }
+
+    #[test]
+    fn host_prefix_rules_enforced() {
+        let mut jar = CookieJar::new();
+        // Valid __Host- cookie.
+        jar.set_from_header_with_policy(
+            &url("https", "site.com"),
+            "__Host-a=1; Path=/; Secure",
+            "site.com",
+            ThirdPartyCookieMode::PartitionAll,
+        );
+        // Missing Secure -> rejected.
+        jar.set_from_header_with_policy(
+            &url("https", "site.com"),
+            "__Host-b=1; Path=/",
+            "site.com",
+            ThirdPartyCookieMode::PartitionAll,
+        );
+        // Domain attribute present -> rejected.
+        jar.set_from_header_with_policy(
+            &url("https", "site.com"),
+            "__Host-c=1; Path=/; Secure; Domain=site.com",
+            "site.com",
+            ThirdPartyCookieMode::PartitionAll,
+        );
+        // Path != / -> rejected.
+        jar.set_from_header_with_policy(
+            &url("https", "site.com"),
+            "__Host-d=1; Path=/sub; Secure",
+            "site.com",
+            ThirdPartyCookieMode::PartitionAll,
+        );
+        let names: Vec<&str> = jar.all().iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(names, vec!["__Host-a"]);
     }
 }

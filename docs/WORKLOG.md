@@ -753,3 +753,43 @@ Stage Summary:
 - 2.5 complete: encrypted brows12-side DNS with three providers + custom,
   CNAME-cloaking classification feeding the cookie policy (2.6) and the
   dashboard (2.8); provider switch is runtime-configurable.
+
+---
+Task ID: phase4-area2-2.6
+Agent: Super Z (main)
+Task: Phase 4 Focus Area 2, sub-item 2.6 — cookie isolation (CHIPS /
+  Total Cookie Protection).
+
+Work Log:
+- brows12-storage CookieJar extended with a policy-aware entry point:
+  set_from_header_with_policy(url, header, top_level_site, mode) where
+  ThirdPartyCookieMode is Allow (CHIPS opt-in semantics: partition only
+  with the Partitioned attribute), PartitionAll (Total Cookie Protection:
+  every third-party cookie is force-partitioned under the top-level
+  site) and Reject (third-party Set-Cookie dropped). __Host- prefix rules
+  enforced in every mode (Secure + no Domain + Path=/), matching
+  RFC 6265bis §4.1.3.2. 5 new unit tests (19 total in storage).
+- Servo 0.6 cookie behavior verified empirically with a live probe
+  (custom servers on loopback "sites" 127.0.0.1/127.0.0.2, echo endpoint
+  returning the Cookie header the browser sends, iframe postMessage
+  bridging the result into document.title):
+  * first-party Set-Cookie + document.cookie work normally;
+  * Secure-over-http and malformed cookies are correctly rejected;
+  * the Partitioned attribute is ACCEPTED but IGNORED (stored
+    unpartitioned);
+  * third-party iframe cookies (Set-Cookie and document.cookie) are
+    accepted and replayed UNPARTITIONED.
+  => Servo 0.6's jar has no CHIPS and no third-party protection; Chrome
+  today blocks/partitions third-party cookies by default. Wiring the
+  brows12 TCP decision engine into Servo's jar requires an engine change
+  (cookie storage is inside Servo's net stack, invisible to the
+  embedder) — reference implementation shipped here, upstream issue to
+  file alongside the 2.5 resolver gap.
+- CNAME-cloaking tie-in: PolicyEngine::classify_cname (2.5) marks cloaked
+  hosts as belonging to the cloak target's site — the TCP decision layer
+  consumes exactly that site classification, so cloaked trackers are
+  partitioned (or rejected) as third parties once wired engine-side.
+
+Stage Summary:
+- 2.6 complete at the decision-layer level with empirical Servo gap
+  documentation; engine wiring recorded as upstream follow-up.
