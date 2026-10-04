@@ -62,7 +62,7 @@ pub fn set(preferences: Preferences) {
         preferences.layout_css_attr_enabled
     );
     stylo_static_prefs::set_pref!(
-        "layout.css.backdrop-filter.enabled",
+        "layout_css_backdrop_filter_enabled",
         preferences.layout_css_backdrop_filter_enabled
     );
     stylo_static_prefs::set_pref!(
