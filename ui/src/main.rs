@@ -18,26 +18,26 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use keyboard_types::{Code, Key as KKey, KeyState, KeyboardEvent, Location, Modifiers};
-use servo::input_events::{
-    InputEvent, MouseButtonAction, MouseButtonEvent, MouseMoveEvent,
-};
+use servo::input_events::{InputEvent, MouseButtonAction, MouseButtonEvent, MouseMoveEvent};
 use servo::{
     DeviceIntRect, DeviceIntSize, DevicePoint, KeyboardEvent as ServoKeyboardEvent,
-    OffscreenRenderingContext, RenderingContext, Servo, ServoBuilder, UserContentManager,
-    WebView, WebViewBuilder, WheelDelta, WheelEvent, WheelMode, WindowRenderingContext,
+    OffscreenRenderingContext, RenderingContext, Servo, ServoBuilder, UserContentManager, WebView,
+    WebViewBuilder, WheelDelta, WheelEvent, WheelMode, WindowRenderingContext,
 };
 use servo_host::budget::{self, BudgetConfig, Degradation, JsHeapTier};
 use servo_host::delegate::{HostDelegate, HostState};
 use servo_host::memory::{self, GovernorConfig, Pressure};
-use servo_host::psi::{self, PsiConfig};
 use servo_host::privacy::PrivacyHost;
+use servo_host::psi::{self, PsiConfig};
 use servo_host::waker::HostWakerEvent;
 use tiny_skia::{Pixmap, PremultipliedColorU8};
 use url::Url;
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::dpi::PhysicalSize;
-use winit::event::{ElementState, KeyEvent, MouseButton as WinitButton, MouseScrollDelta, WindowEvent};
+use winit::event::{
+    ElementState, KeyEvent, MouseButton as WinitButton, MouseScrollDelta, WindowEvent,
+};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy};
 use winit::keyboard::{Key, NamedKey};
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle};
@@ -50,15 +50,9 @@ use text::UiText;
 fn main() {
     servo_host::init_crypto_provider();
     let started = Instant::now();
-    let event_loop = EventLoop::with_user_event()
-        .build()
-        .expect("event loop");
+    let event_loop = EventLoop::with_user_event().build().expect("event loop");
     event_loop.set_control_flow(ControlFlow::Wait);
-    let mut app = App {
-        proxy: Some(event_loop.create_proxy()),
-        inner: None,
-        started,
-    };
+    let mut app = App { proxy: Some(event_loop.create_proxy()), inner: None, started };
     init_pending_channel();
     event_loop.run_app(&mut app).expect("run loop");
 }
@@ -186,11 +180,7 @@ impl ApplicationHandler<HostWakerEvent> for App {
                 .expect("GL context for window (run under Xvfb or a desktop session)"),
         );
 
-        let proxy = self
-            .proxy
-            .as_ref()
-            .expect("event loop proxy")
-            .clone();
+        let proxy = self.proxy.as_ref().expect("event loop proxy").clone();
         let waker = servo_host::waker::ProxyWaker::new(proxy.clone());
         let build_started = Instant::now();
         let servo: Servo = ServoBuilder::default()
@@ -243,7 +233,10 @@ impl ApplicationHandler<HostWakerEvent> for App {
             // the predictive reclaim starts ranking.
             next_governor_at: Instant::now() + governor_cfg.interval + governor_cfg.warmup,
             governor_hibernated: 0,
-            budget: BudgetConfig { total_budget_kb: governor_cfg.budget_kb, ..BudgetConfig::default() },
+            budget: BudgetConfig {
+                total_budget_kb: governor_cfg.budget_kb,
+                ..BudgetConfig::default()
+            },
             psi: PsiConfig::from_env(),
             next_psi_reclaim_at: Instant::now(),
             js_tier: JsHeapTier::Normal,
@@ -254,10 +247,9 @@ impl ApplicationHandler<HostWakerEvent> for App {
         // Phase 4.4.4: initialize the automation event fifo BEFORE the
         // session restore, so `session_restored` / `session_live_tab`
         // events reach the harness.
-        if let (Ok(_fifo), Ok(events)) = (
-            std::env::var("BROWS12_UI_CMD_FIFO"),
-            std::env::var("BROWS12_UI_EVENT_FIFO"),
-        ) {
+        if let (Ok(_fifo), Ok(events)) =
+            (std::env::var("BROWS12_UI_CMD_FIFO"), std::env::var("BROWS12_UI_EVENT_FIFO"))
+        {
             model::init_event_fifo(&events);
         }
         gui.restore_session_or_new();
@@ -307,10 +299,12 @@ impl ApplicationHandler<HostWakerEvent> for App {
                         } else if let Some(rest) = line.strip_prefix("<GROUP_ADD> ") {
                             let mut it = rest.splitn(2, '|');
                             match (it.next(), it.next()) {
-                                (Some(g), Some(t)) => match (g.parse::<u32>(), t.parse::<usize>()) {
-                                    (Ok(g), Ok(t)) => Some(InjectCmd::GroupAdd(g, t)),
-                                    _ => None,
-                                },
+                                (Some(g), Some(t)) => {
+                                    match (g.parse::<u32>(), t.parse::<usize>()) {
+                                        (Ok(g), Ok(t)) => Some(InjectCmd::GroupAdd(g, t)),
+                                        _ => None,
+                                    }
+                                }
                                 _ => None,
                             }
                         } else if let Some(rest) = line.strip_prefix("<GROUP_REMOVE> ") {
@@ -347,10 +341,8 @@ impl ApplicationHandler<HostWakerEvent> for App {
                             continue;
                         }
                         if let Some(cmd) = cmd {
-                            let sent = PENDING_TX
-                                .get()
-                                .map(|tx| tx.send(cmd).is_ok())
-                                .unwrap_or(false);
+                            let sent =
+                                PENDING_TX.get().map(|tx| tx.send(cmd).is_ok()).unwrap_or(false);
                             if sent && start_proxy.send_event(HostWakerEvent).is_ok() {
                                 start_wake.request_redraw();
                             }
@@ -438,11 +430,8 @@ impl ApplicationHandler<HostWakerEvent> for App {
         // transitions). Otherwise wait for engine events (ProxyWaker) or
         // the next governor tick. This is what makes idle CPU ~0.
         let busy = gui.any_busy();
-        let mut next_wake = if busy {
-            Some(Instant::now() + Duration::from_millis(16))
-        } else {
-            None
-        };
+        let mut next_wake =
+            if busy { Some(Instant::now() + Duration::from_millis(16)) } else { None };
         // Phase 4.4.4: periodic session save (crash insurance between
         // quit-time saves).
         if let Some(at) = gui.next_session_save_at {
@@ -510,11 +499,7 @@ fn base64_encode(data: &[u8]) -> String {
     const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
     for chunk in data.chunks(3) {
-        let b = [
-            chunk[0],
-            chunk.get(1).copied().unwrap_or(0),
-            chunk.get(2).copied().unwrap_or(0),
-        ];
+        let b = [chunk[0], chunk.get(1).copied().unwrap_or(0), chunk.get(2).copied().unwrap_or(0)];
         let n = (u32::from(b[0]) << 16) | (u32::from(b[1]) << 8) | u32::from(b[2]);
         out.push(T[(n >> 18) as usize & 63] as char);
         out.push(T[(n >> 12) as usize & 63] as char);
@@ -616,10 +601,8 @@ impl Gui {
             // the preserved scroll position and form state now.
             if t.pending_state_restore {
                 t.pending_state_restore = false;
-                let js = servo_host::delegate::restore_state_js(
-                    t.scroll_est,
-                    t.form_state.as_deref(),
-                );
+                let js =
+                    servo_host::delegate::restore_state_js(t.scroll_est, t.form_state.as_deref());
                 if let Some(rt) = self.runtimes.get(&id) {
                     rt.state.pending_js.lock().unwrap().push(js);
                 }
@@ -657,16 +640,10 @@ impl Gui {
     fn search_index_update(&mut self, i: usize) {
         let Some(t) = self.tabs.get(i) else { return };
         let Some(id) = t.id else { return };
-        let snippet = t
-            .id
-            .and_then(|id| self.runtimes.get(&id))
-            .and_then(|rt| rt.state.page_snippet.lock().unwrap().clone());
-        self.search_index.upsert(
-            id,
-            &t.title,
-            &t.url(),
-            snippet.as_deref(),
-        );
+        let snippet =
+            t.id.and_then(|id| self.runtimes.get(&id))
+                .and_then(|rt| rt.state.page_snippet.lock().unwrap().clone());
+        self.search_index.upsert(id, &t.title, &t.url(), snippet.as_deref());
     }
 
     /// Phase 2.1: keep shell metadata (URL + title) for BACKGROUND tabs in
@@ -763,10 +740,9 @@ impl Gui {
             .and_then(|v| servo_host::session::parse_restore_mode(&v));
         let want_restore = mode.is_some();
         let session = mode.and_then(|m| match m {
-            servo_host::session::RestoreMode::Last => self
-                .session_path
-                .as_deref()
-                .and_then(servo_host::session::load),
+            servo_host::session::RestoreMode::Last => {
+                self.session_path.as_deref().and_then(servo_host::session::load)
+            }
             servo_host::session::RestoreMode::Explicit(p) => {
                 servo_host::session::load(std::path::Path::new(&p))
             }
@@ -782,8 +758,7 @@ impl Gui {
         }
         if self.session_path.is_some() {
             let interval = session_save_interval();
-            self.next_session_save_at =
-                (interval.as_secs() > 0).then(|| Instant::now() + interval);
+            self.next_session_save_at = (interval.as_secs() > 0).then(|| Instant::now() + interval);
         }
     }
 
@@ -819,8 +794,7 @@ impl Gui {
             }
             if i == active_idx {
                 tab.status = Status::Loading;
-                tab.pending_state_restore =
-                    tab.scroll_est > 0.0 || tab.form_state.is_some();
+                tab.pending_state_restore = tab.scroll_est > 0.0 || tab.form_state.is_some();
                 let url = servo_host::session::Session::tab_url(st);
                 let load_url = if url == "brows12://start" || url.is_empty() {
                     start_page_url()
@@ -921,8 +895,7 @@ impl Gui {
         ));
         // Reschedule the periodic save.
         let interval = session_save_interval();
-        self.next_session_save_at =
-            (interval.as_secs() > 0).then(|| Instant::now() + interval);
+        self.next_session_save_at = (interval.as_secs() > 0).then(|| Instant::now() + interval);
     }
 
     /// Central tab activation: restores the tab if hibernated, throttles
@@ -1115,9 +1088,7 @@ impl Gui {
             Some((s, src)) => (Some(s), src),
             None => (None, "none"),
         };
-        let psi_lvl = psi_snap
-            .map(|s| psi::psi_level(&s, &self.psi))
-            .unwrap_or(Pressure::Nominal);
+        let psi_lvl = psi_snap.map(|s| psi::psi_level(&s, &self.psi)).unwrap_or(Pressure::Nominal);
         let rss_level = memory::pressure(&self.governor, rss);
         // The worse of "our own budget" and "the system is thrashing".
         let level = match (rss_level, psi_lvl) {
@@ -1231,10 +1202,7 @@ impl Gui {
             self.hibernate(i, false);
             self.governor_hibernated += 1;
             count += 1;
-            model::emit(format!(
-                "idle_suspend index={i} url={}",
-                model::ev_escape(&url)
-            ));
+            model::emit(format!("idle_suspend index={i} url={}", model::ev_escape(&url)));
         }
         count
     }
@@ -1271,8 +1239,7 @@ impl Gui {
         self.tabs
             .iter()
             .map(|t| {
-                t.id
-                    .and_then(|id| self.runtimes.get(&id))
+                t.id.and_then(|id| self.runtimes.get(&id))
                     .map(|rt| budget::tab_estimate_kb(rt.state.page_requests(), &self.budget))
                     .unwrap_or(self.budget.tab_base_kb)
             })
@@ -1286,14 +1253,14 @@ impl Gui {
         self.tabs
             .iter()
             .map(|t| {
-                let page_requests = t
-                    .id
-                    .and_then(|id| self.runtimes.get(&id))
-                    .map(|rt| rt.state.page_requests())
-                    .unwrap_or(0);
+                let page_requests =
+                    t.id.and_then(|id| self.runtimes.get(&id))
+                        .map(|rt| rt.state.page_requests())
+                        .unwrap_or(0);
                 servo_host::tabstats::TabUsage {
                     activations: t.activations,
-                    last_active_ms: now_ms.saturating_sub(t.last_active.elapsed().as_millis() as u64),
+                    last_active_ms: now_ms
+                        .saturating_sub(t.last_active.elapsed().as_millis() as u64),
                     page_requests,
                 }
             })
@@ -1336,7 +1303,8 @@ impl Gui {
                 // (idle timers / rAF loop still running) is treated on
                 // the heavy schedule — it is burning CPU + memory while
                 // invisible, so it gives up its pipeline sooner.
-                let awake_in_background = matches!(rt.state.ms_since_activity(), Some(ms) if ms < 5_000);
+                let awake_in_background =
+                    matches!(rt.state.ms_since_activity(), Some(ms) if ms < 5_000);
                 let effective_weight = if awake_in_background && level != Pressure::Nominal {
                     self.governor.heavy_page_requests.max(weight)
                 } else {
@@ -1357,16 +1325,12 @@ impl Gui {
         let order = servo_host::tabstats::hibernation_order(&usages, &candidates, self.now_ms());
         candidates.clear();
         candidates.extend(order);
-        model::emit(format!(
-            "predict_order why={why} level={level:?} candidates={candidates:?}"
-        ));
+        model::emit(format!("predict_order why={why} level={level:?} candidates={candidates:?}"));
         let mut reclaimed = 0;
         for i in candidates {
             if why != "psi"
-                && memory::pressure(
-                    &self.governor,
-                    servo_host::metrics::rss_kb().unwrap_or(_rss),
-                ) == Pressure::Nominal
+                && memory::pressure(&self.governor, servo_host::metrics::rss_kb().unwrap_or(_rss))
+                    == Pressure::Nominal
             {
                 break;
             }
@@ -1558,10 +1522,7 @@ impl Gui {
     // ---- Input ------------------------------------------------------------
 
     fn viewport_point(&self) -> (f32, f32) {
-        (
-            self.cursor.0,
-            (self.cursor.1 - chrome::CHROME_H).max(0.0),
-        )
+        (self.cursor.0, (self.cursor.1 - chrome::CHROME_H).max(0.0))
     }
 
     fn forward_mouse_move(&mut self) {
@@ -1749,10 +1710,7 @@ impl Gui {
                 self.dirty = true;
             }
             InjectCmd::GroupsDump => {
-                model::emit(format!(
-                    "groups_json {}",
-                    model::ev_escape(&self.groups.to_json())
-                ));
+                model::emit(format!("groups_json {}", model::ev_escape(&self.groups.to_json())));
             }
             InjectCmd::TabSearch(q) => {
                 // Phase 4.4.5: ranked hits, strip index + score per hit.
@@ -1800,11 +1758,7 @@ impl Gui {
     fn sync_title(&mut self) {
         let t = &self.tabs[self.active];
         let status = t.status.label();
-        let head = if status.is_empty() {
-            t.url()
-        } else {
-            format!("{} — {}", t.url(), status)
-        };
+        let head = if status.is_empty() { t.url() } else { format!("{} — {}", t.url(), status) };
         self.window.set_title(format!("brows12 | {head}").as_str());
     }
 
@@ -1827,11 +1781,7 @@ impl Gui {
         let group_colors: Vec<Option<[u8; 3]>> = self
             .tabs
             .iter()
-            .map(|t| {
-                t.id
-                    .and_then(|id| self.groups.color_for(id))
-                    .map(|c| c.rgb())
-            })
+            .map(|t| t.id.and_then(|id| self.groups.color_for(id)).map(|c| c.rgb()))
             .collect();
         chrome::draw_chrome(
             &mut px,
@@ -1849,8 +1799,10 @@ impl Gui {
             if let Some(rt) = self.runtimes.get_mut(&id) {
                 servo.spin_event_loop();
                 rt.webview.paint();
-                let rect =
-                    DeviceIntRect::from_size(DeviceIntSize::new(VIEWPORT_W as i32, VIEWPORT_H as i32));
+                let rect = DeviceIntRect::from_size(DeviceIntSize::new(
+                    VIEWPORT_W as i32,
+                    VIEWPORT_H as i32,
+                ));
                 captured = rt.ctx.read_to_image(rect);
                 rt.last_painted_frame = rt.state.frame_count();
             }
@@ -1864,13 +1816,9 @@ impl Gui {
                 let x = (i % page_w as usize) as u32;
                 let y = (i / page_w as usize) as u32;
                 let si = (y * img.width() + x) as usize * 4;
-                *dst = PremultipliedColorU8::from_rgba(
-                    raw[si],
-                    raw[si + 1],
-                    raw[si + 2],
-                    raw[si + 3],
-                )
-                .unwrap_or(PremultipliedColorU8::TRANSPARENT);
+                *dst =
+                    PremultipliedColorU8::from_rgba(raw[si], raw[si + 1], raw[si + 2], raw[si + 3])
+                        .unwrap_or(PremultipliedColorU8::TRANSPARENT);
             }
             px.draw_pixmap(
                 0,
@@ -1907,8 +1855,7 @@ impl Gui {
         // Validation hook: dump the composited frame after each page load.
         if let Ok(snapshot_path) = std::env::var("BROWS12_UI_SNAPSHOT") {
             let gen = self.snapshot_gen;
-            static LAST_SAVED: std::sync::atomic::AtomicU64 =
-                std::sync::atomic::AtomicU64::new(0);
+            static LAST_SAVED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
             if gen > 0 && LAST_SAVED.load(std::sync::atomic::Ordering::Relaxed) != gen {
                 LAST_SAVED.store(gen, std::sync::atomic::Ordering::Relaxed);
                 let _ = px.save_png(&snapshot_path);

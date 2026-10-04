@@ -53,8 +53,7 @@ pub fn uss_kb(pid: u32) -> Option<u64> {
     let rollup = std::fs::read_to_string(format!("/proc/{pid}/smaps_rollup")).ok()?;
     let field = |prefix: &str| -> Option<u64> {
         rollup.lines().find_map(|l| {
-            l.strip_prefix(prefix)
-                .and_then(|rest| rest.split_whitespace().next()?.parse().ok())
+            l.strip_prefix(prefix).and_then(|rest| rest.split_whitespace().next()?.parse().ok())
         })
     };
     Some(field("Private_Clean:")? + field("Private_Dirty:")?)

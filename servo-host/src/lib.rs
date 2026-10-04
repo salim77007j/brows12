@@ -23,17 +23,15 @@ pub mod tabstats;
 pub mod waker;
 
 pub use budget::{
-    decide as decide_degradation, tab_budget_kb, tab_estimate_kb, total_budget_kb, Degradation,
-    BudgetConfig, JsHeapTier,
+    decide as decide_degradation, tab_budget_kb, tab_estimate_kb, total_budget_kb, BudgetConfig,
+    Degradation, JsHeapTier,
 };
 pub use dashboard::{
     dashboard_json, snapshot as dashboard_snapshot, CookieDecisionSink, CookieSection,
     PrivacyDashboard,
 };
 pub use headless::{run_headless, HeadlessConfig, HeadlessReport};
-pub use psi::{
-    psi_level, read_psi, read_system_psi, PsiConfig, PsiSnapshot,
-};
+pub use psi::{psi_level, read_psi, read_system_psi, PsiConfig, PsiSnapshot};
 
 /// Install a process-level rustls CryptoProvider exactly once.
 ///

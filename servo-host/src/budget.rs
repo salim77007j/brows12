@@ -78,8 +78,7 @@ pub fn tab_estimate_kb(page_requests: u64, cfg: &BudgetConfig) -> u64 {
 pub fn total_budget_kb(available_kb: Option<u64>, cfg: &BudgetConfig) -> u64 {
     match available_kb {
         Some(avail) if cfg.availability_fraction > 0.0 => {
-            let adaptive = cfg.baseline_kb
-                + (avail as f64 * cfg.availability_fraction) as u64;
+            let adaptive = cfg.baseline_kb + (avail as f64 * cfg.availability_fraction) as u64;
             cfg.total_budget_kb.min(adaptive)
         }
         _ => cfg.total_budget_kb,
@@ -104,12 +103,8 @@ pub fn tab_budget_kb(
     // Fair share of the whole budget for this tab, then the active-tab
     // multiplier applied by taking from the common pool.
     let share = if is_active {
-        let others: u64 = weights_kb
-            .iter()
-            .enumerate()
-            .filter(|(i, _)| *i != my_index)
-            .map(|(_, w)| *w)
-            .sum();
+        let others: u64 =
+            weights_kb.iter().enumerate().filter(|(i, _)| *i != my_index).map(|(_, w)| *w).sum();
         // Active takes its weight + share multiplier out of what is left
         // after the others' weights, bounded below by its own weight.
         let pool_after_others = total_kb.saturating_sub(others);
@@ -192,11 +187,7 @@ impl JsHeapTier {
 
     /// The tier for the current conditions. `psi_hot`: PSI says the
     /// *system* is thrashing (independent of our own RSS).
-    pub fn for_conditions(
-        rss_ratio: f64,
-        psi_hot: bool,
-        over_budget_tabs: usize,
-    ) -> JsHeapTier {
+    pub fn for_conditions(rss_ratio: f64, psi_hot: bool, over_budget_tabs: usize) -> JsHeapTier {
         if psi_hot && rss_ratio >= 0.8 {
             JsHeapTier::Minimal
         } else if psi_hot || rss_ratio >= 1.0 {
@@ -265,15 +256,9 @@ mod tests {
         // Over budget, never trimmed → trim.
         assert_eq!(decide(20 * 1024, 16 * 1024, None, 1000, &cfg), Degradation::TrimCaches);
         // Over budget, trimmed recently → grace period, no escalation.
-        assert_eq!(
-            decide(20 * 1024, 16 * 1024, Some(1000), 20_000, &cfg),
-            Degradation::None
-        );
+        assert_eq!(decide(20 * 1024, 16 * 1024, Some(1000), 20_000, &cfg), Degradation::None);
         // Grace elapsed → hibernate.
-        assert_eq!(
-            decide(20 * 1024, 16 * 1024, Some(1000), 35_000, &cfg),
-            Degradation::Hibernate
-        );
+        assert_eq!(decide(20 * 1024, 16 * 1024, Some(1000), 35_000, &cfg), Degradation::Hibernate);
     }
 
     #[test]
@@ -281,10 +266,7 @@ mod tests {
         assert_eq!(JsHeapTier::Normal.mem_max_mb(), 256);
         assert_eq!(JsHeapTier::Minimal.mem_max_mb(), 96);
         // Nominal everything → Normal.
-        assert_eq!(
-            JsHeapTier::for_conditions(0.5, false, 0),
-            JsHeapTier::Normal
-        );
+        assert_eq!(JsHeapTier::for_conditions(0.5, false, 0), JsHeapTier::Normal);
         // RSS at 90% → Tight.
         assert_eq!(JsHeapTier::for_conditions(0.9, false, 0), JsHeapTier::Tight);
         // One tab over its own budget → Tight even at low RSS.

@@ -242,8 +242,7 @@ impl WebViewDelegate for HostDelegate {
             let state = self.state.clone();
             webview.evaluate_javascript(SNIPPET_JS, move |result| {
                 if let Ok(servo::JSValue::String(s)) = result {
-                    *state.page_snippet.lock().unwrap() =
-                        if s.is_empty() { None } else { Some(s) };
+                    *state.page_snippet.lock().unwrap() = if s.is_empty() { None } else { Some(s) };
                 }
             });
         }

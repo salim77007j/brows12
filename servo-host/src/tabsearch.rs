@@ -71,11 +71,8 @@ impl TabSearchIndex {
     /// weights (+ prefix bonus). Returns `(tab_id, score)` best-first,
     /// capped at `limit`.
     pub fn search(&self, query: &str, limit: usize) -> Vec<(u64, f32)> {
-        let tokens: Vec<String> = query
-            .split_whitespace()
-            .map(|t| t.to_lowercase())
-            .filter(|t| !t.is_empty())
-            .collect();
+        let tokens: Vec<String> =
+            query.split_whitespace().map(|t| t.to_lowercase()).filter(|t| !t.is_empty()).collect();
         if tokens.is_empty() {
             return Vec::new();
         }
@@ -91,10 +88,12 @@ impl TabSearchIndex {
                 for tok in &tokens {
                     let mut best = 0.0f32;
                     if let Some(pos) = title.find(tok) {
-                        best = best.max(W_TITLE + (pos == 0).then_some(W_PREFIX_BONUS).unwrap_or(0.0));
+                        best =
+                            best.max(W_TITLE + (pos == 0).then_some(W_PREFIX_BONUS).unwrap_or(0.0));
                     }
                     if let Some(pos) = url.find(tok) {
-                        best = best.max(W_URL + (pos == 0).then_some(W_PREFIX_BONUS).unwrap_or(0.0));
+                        best =
+                            best.max(W_URL + (pos == 0).then_some(W_PREFIX_BONUS).unwrap_or(0.0));
                     }
                     if snippet.contains(tok) {
                         best = best.max(W_SNIPPET);
@@ -119,8 +118,18 @@ mod tests {
 
     fn idx() -> TabSearchIndex {
         let mut i = TabSearchIndex::new();
-        i.upsert(1, "Rust Programming Language", "https://www.rust-lang.org/", Some("A language empowering everyone"));
-        i.upsert(2, "GitHub - servo/servo", "https://github.com/servo/servo", Some("The Servo browser engine"));
+        i.upsert(
+            1,
+            "Rust Programming Language",
+            "https://www.rust-lang.org/",
+            Some("A language empowering everyone"),
+        );
+        i.upsert(
+            2,
+            "GitHub - servo/servo",
+            "https://github.com/servo/servo",
+            Some("The Servo browser engine"),
+        );
         i.upsert(3, "Hacker News", "https://news.ycombinator.com/", None);
         i
     }

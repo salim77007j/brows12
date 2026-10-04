@@ -71,7 +71,11 @@ impl PsiSnapshot {
                 }
             }
         }
-        if saw_any { Some(snap) } else { None }
+        if saw_any {
+            Some(snap)
+        } else {
+            None
+        }
     }
 }
 

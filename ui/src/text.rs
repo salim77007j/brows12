@@ -19,10 +19,7 @@ impl Default for UiText {
 
 impl UiText {
     pub fn new() -> Self {
-        Self {
-            font_system: cosmic_text::FontSystem::new(),
-            swash: SwashCache::new(),
-        }
+        Self { font_system: cosmic_text::FontSystem::new(), swash: SwashCache::new() }
     }
 
     fn shaped_width(
@@ -46,7 +43,9 @@ impl UiText {
         for run in buffer.layout_runs() {
             for glyph in run.glyphs {
                 let physical = glyph.physical((0.0, run.line_y), 1.0);
-                if let Some(img) = self.swash.get_image(&mut self.font_system, physical.cache_key).clone() {
+                if let Some(img) =
+                    self.swash.get_image(&mut self.font_system, physical.cache_key).clone()
+                {
                     width = width.max(glyph.x + glyph.w);
                     glyphs.push((physical.x, physical.y, img));
                 }

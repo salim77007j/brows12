@@ -103,11 +103,7 @@ pub fn return_score(usage: &TabUsage, now_ms: u64, _max_requests_in_strip: u64) 
 /// Ties (scores within `TIE_EPS`) break by heavier page first — when
 /// prediction is indifferent, suspending the heaviest buys back the
 /// most memory. Returns the candidate indices in suspension order.
-pub fn hibernation_order(
-    usages: &[TabUsage],
-    candidates: &[usize],
-    now_ms: u64,
-) -> Vec<usize> {
+pub fn hibernation_order(usages: &[TabUsage], candidates: &[usize], now_ms: u64) -> Vec<usize> {
     const TIE_EPS: f64 = 0.02;
     let max_req = usages.iter().map(|u| u.page_requests).max().unwrap_or(0);
     let mut scored: Vec<(usize, f64)> = candidates
@@ -121,7 +117,8 @@ pub fn hibernation_order(
             // Near-equal prediction: heavier first, then staler first.
             let wa = usages[a.0].page_requests;
             let wb = usages[b.0].page_requests;
-            wb.cmp(&wa).then(usages[a.0].since_active_ms(now_ms).cmp(&usages[b.0].since_active_ms(now_ms)))
+            wb.cmp(&wa)
+                .then(usages[a.0].since_active_ms(now_ms).cmp(&usages[b.0].since_active_ms(now_ms)))
         } else {
             sa.partial_cmp(&sb).unwrap_or(std::cmp::Ordering::Equal)
         }
@@ -177,7 +174,8 @@ mod tests {
         // Just-activated, frequently used tab.
         let hot = TabUsage { activations: 10, last_active_ms: t - 1_000, page_requests: 40 };
         // Stale, never re-visited tab.
-        let cold = TabUsage { activations: 1, last_active_ms: t - 60 * 60 * 1000, page_requests: 5 };
+        let cold =
+            TabUsage { activations: 1, last_active_ms: t - 60 * 60 * 1000, page_requests: 5 };
         assert!(return_score(&hot, t, 40) > return_score(&cold, t, 40));
         // Score stays in range for both extremes.
         for u in [&hot, &cold] {
@@ -191,9 +189,9 @@ mod tests {
         let t = now();
         let usages = vec![
             TabUsage { activations: 1, last_active_ms: t - 55 * 60 * 1000, page_requests: 10 }, // 0: stale
-            TabUsage { activations: 9, last_active_ms: t - 2 * 60 * 1000, page_requests: 90 },  // 1: hot + heavy
+            TabUsage { activations: 9, last_active_ms: t - 2 * 60 * 1000, page_requests: 90 }, // 1: hot + heavy
             TabUsage { activations: 2, last_active_ms: t - 50 * 60 * 1000, page_requests: 30 }, // 2: stale-ish
-            TabUsage { activations: 5, last_active_ms: t - 5 * 60 * 1000, page_requests: 15 },  // 3: warm
+            TabUsage { activations: 5, last_active_ms: t - 5 * 60 * 1000, page_requests: 15 }, // 3: warm
         ];
         let order = hibernation_order(&usages, &[0, 1, 2, 3], t);
         // The never-coming-back tab goes first; the hot tab last.

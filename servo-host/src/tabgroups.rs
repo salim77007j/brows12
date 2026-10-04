@@ -98,7 +98,8 @@ impl TabGroupStore {
     pub fn create(&mut self, name: &str, color: GroupColor) -> u32 {
         let id = self.next_group_id;
         self.next_group_id += 1;
-        let name = if name.trim().is_empty() { color.name().to_string() } else { name.trim().to_string() };
+        let name =
+            if name.trim().is_empty() { color.name().to_string() } else { name.trim().to_string() };
         self.groups.push(TabGroup { id, name, color, collapsed: false });
         id
     }
@@ -186,11 +187,7 @@ impl TabGroupStore {
 
     /// Tab ids in a group, in insertion order.
     pub fn tabs_in(&self, group_id: u32) -> Vec<u64> {
-        self.membership
-            .iter()
-            .filter(|(_, gid)| **gid == group_id)
-            .map(|(tid, _)| *tid)
-            .collect()
+        self.membership.iter().filter(|(_, gid)| **gid == group_id).map(|(tid, _)| *tid).collect()
     }
 
     /// Strip-rendering helper: color for each tab, aligned by tab id.
@@ -205,8 +202,7 @@ impl TabGroupStore {
             .groups
             .iter()
             .map(|g| {
-                let tabs: Vec<String> =
-                    self.tabs_in(g.id).iter().map(|t| t.to_string()).collect();
+                let tabs: Vec<String> = self.tabs_in(g.id).iter().map(|t| t.to_string()).collect();
                 format!(
                     r#"{{"id":{},"name":"{}","color":"{}","collapsed":{},"tabs":[{}]}}"#,
                     g.id,

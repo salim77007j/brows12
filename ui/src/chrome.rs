@@ -222,16 +222,7 @@ pub fn draw_chrome(
         } else {
             INK_DIM
         };
-        text(
-            px,
-            raster,
-            &title,
-            tx + 8.0,
-            ty + 7.0,
-            12.0,
-            ink,
-            tw - 34.0,
-        );
+        text(px, raster, &title, tx + 8.0, ty + 7.0, 12.0, ink, tw - 34.0);
         // Close button.
         fill(px, tx + tw - 20.0, ty + 4.0, 16.0, 16.0, CLOSE_BG, 4.0);
         stroke_shape(

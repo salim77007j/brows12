@@ -105,10 +105,7 @@ mod tests {
             SuspendPolicy::parse("aggressive"),
             SuspendPolicy::AfterIdle(Duration::from_secs(60))
         );
-        assert_eq!(
-            SuspendPolicy::parse("45"),
-            SuspendPolicy::AfterIdle(Duration::from_secs(45))
-        );
+        assert_eq!(SuspendPolicy::parse("45"), SuspendPolicy::AfterIdle(Duration::from_secs(45)));
         // Garbage falls back to the default.
         assert_eq!(
             SuspendPolicy::parse("nonsense"),
@@ -122,15 +119,33 @@ mod tests {
         let (policy, exempt) = ctx();
         // Fresh tab: no suspension.
         assert!(!should_suspend(
-            false, false, false, Duration::from_secs(10), "https://x/", &policy, &exempt
+            false,
+            false,
+            false,
+            Duration::from_secs(10),
+            "https://x/",
+            &policy,
+            &exempt
         ));
         // Past the threshold: suspend.
         assert!(should_suspend(
-            false, false, false, Duration::from_secs(301), "https://x/", &policy, &exempt
+            false,
+            false,
+            false,
+            Duration::from_secs(301),
+            "https://x/",
+            &policy,
+            &exempt
         ));
         // Exactly at the threshold: suspend (>=).
         assert!(should_suspend(
-            false, false, false, Duration::from_secs(300), "https://x/", &policy, &exempt
+            false,
+            false,
+            false,
+            Duration::from_secs(300),
+            "https://x/",
+            &policy,
+            &exempt
         ));
     }
 
@@ -139,33 +154,37 @@ mod tests {
         let (policy, exempt) = ctx();
         let long = Duration::from_secs(4000);
         // Active tab.
-        assert!(!should_suspend(
-            true, false, false, long, "https://x/", &policy, &exempt
-        ));
+        assert!(!should_suspend(true, false, false, long, "https://x/", &policy, &exempt));
         // Pinned tab.
-        assert!(!should_suspend(
-            false, true, false, long, "https://x/", &policy, &exempt
-        ));
+        assert!(!should_suspend(false, true, false, long, "https://x/", &policy, &exempt));
         // Playing media.
-        assert!(!should_suspend(
-            false, false, true, long, "https://x/", &policy, &exempt
-        ));
+        assert!(!should_suspend(false, false, true, long, "https://x/", &policy, &exempt));
         // URL exemption (substring).
         let (p2, e2) = (policy.clone(), vec!["music.example".to_string()]);
         assert!(!should_suspend(
-            false, false, false, long, "https://music.example/listen", &p2, &e2
+            false,
+            false,
+            false,
+            long,
+            "https://music.example/listen",
+            &p2,
+            &e2
         ));
         // Other URLs still suspend.
-        assert!(should_suspend(
-            false, false, false, long, "https://news.example/", &p2, &e2
-        ));
+        assert!(should_suspend(false, false, false, long, "https://news.example/", &p2, &e2));
     }
 
     #[test]
     fn never_mode_disables_idle_suspension() {
         let (policy, exempt) = (SuspendPolicy::Never, vec![]);
         assert!(!should_suspend(
-            false, false, false, Duration::from_secs(999_999), "https://x/", &policy, &exempt
+            false,
+            false,
+            false,
+            Duration::from_secs(999_999),
+            "https://x/",
+            &policy,
+            &exempt
         ));
     }
 }
