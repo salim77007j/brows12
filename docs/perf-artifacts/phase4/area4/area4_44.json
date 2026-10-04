@@ -1,0 +1,12 @@
+{
+  "area4_4": {
+    "checks": {
+      "quit saved the session": true,
+      "restore: 3 tabs, 1 group, active=1": true,
+      "restore: active tab (a.html) came back live": true,
+      "restore: suspended tab rehydrated to b.html": true,
+      "restore: group survived with members": true,
+      "restore: specific session file": true
+    }
+  }
+}

@@ -364,6 +364,114 @@ def verify_43(out):
         run.close()
 
 
+# ---------------------------------------------------------------- 4.4 --
+def verify_44(out):
+    """Full session restore: quit-time save (tabs/history/groups/active),
+    restore-last-session, restore-specific-session. The active tab comes
+    back live; background tabs return as suspended metadata that
+    rehydrates on activation (fast startup)."""
+    sess_dir = pathlib.Path("/tmp/a4-44")
+    sess_dir.mkdir(parents=True, exist_ok=True)
+    for f in sess_dir.iterdir():
+        f.unlink()
+    sess_file = str(sess_dir / "session.json")
+    specific_file = str(sess_dir / "specific.json")
+
+    site = pathlib.Path("/tmp/a4_site4")
+    site.mkdir(parents=True, exist_ok=True)
+    for n, t in (("a.html", "A4 s4 a"), ("b.html", "A4 s4 b")):
+        (site / n).write_text(
+            f"<!doctype html><html><head><title>{t}</title></head>"
+            f"<body><h1>{t}</h1></body></html>")
+    srv = subprocess.Popen(
+        [sys.executable, "-m", "http.server", "8139", "--directory", str(site)],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    assert wait_http("http://127.0.0.1:8139/a.html"), "http server"
+
+    base_env = {
+        "BROWS12_GOVERNOR": "0",
+        "BROWS12_SESSION_FILE": sess_file,
+        "BROWS12_SESSION_SAVE_SECS": "0",
+    }
+    checks = {}
+    try:
+        # ---- Run 1: build state, save on quit -------------------------
+        run = UiRun(base_env, "44a")
+        try:
+            run.wait_for(lambda e: e.startswith("start "), 60, "start")
+            open_tab(run, "http://127.0.0.1:8139/a.html", "a.html")
+            open_tab(run, "http://127.0.0.1:8139/b.html", "b.html")
+            run.cmd("<SWITCH> 1")  # a.html becomes the active tab
+            time.sleep(0.5)
+            run.cmd("<GROUP_NEW> research|purple")
+            created = run.wait_for(lambda e: e.startswith("group_created "),
+                                   15, "group_created")
+            gid = int(created.split("id=")[1].split()[0])
+            run.cmd(f"<GROUP_ADD> {gid}|0")
+            run.cmd(f"<GROUP_ADD> {gid}|2")
+            time.sleep(0.5)
+            run.cmd("<QUIT>")
+            saved = run.wait_for(
+                lambda e: e.startswith("session_saved why=quit ok=true"),
+                15, "session_saved")
+            checks["quit saved the session"] = (
+                "tabs=3" in saved and "groups=1" in saved)
+        finally:
+            run.close()
+        pathlib.Path(specific_file).write_bytes(
+            pathlib.Path(sess_file).read_bytes())
+
+        # ---- Run 2: restore LAST session ------------------------------
+        run = UiRun({**base_env, "BROWS12_SESSION_RESTORE": "1"}, "44b")
+        try:
+            run.wait_for(lambda e: e.startswith("start "), 60, "start")
+            restored = run.wait_for(
+                lambda e: e.startswith("session_restored "),
+                30, "session_restored")
+            live = run.wait_for(
+                lambda e: e.startswith("session_live_tab"), 30, "session_live_tab")
+            run.wait_for(
+                lambda e: e.startswith("loaded tab=") and "a.html" in e,
+                120, "loaded a.html (restored active tab)")
+            # A suspended tab rehydrates with the right URL.
+            run.cmd("<SWITCH> 2")
+            run.wait_for(
+                lambda e: e.startswith("loaded tab=") and "b.html" in e,
+                120, "loaded b.html (rehydrated tab)")
+            run.cmd("<GROUPS>")
+            dump = run.wait_for(lambda e: e.startswith("groups_json "),
+                                15, "groups_json")
+            g = json.loads(dump.split("groups_json ", 1)[1].strip())
+            checks["restore: 3 tabs, 1 group, active=1"] = (
+                "tabs=3" in restored and "groups=1" in restored
+                and "active=1" in restored)
+            checks["restore: active tab (a.html) came back live"] = (
+                "a.html" in live and "session_live_tab index=1" in live)
+            checks["restore: suspended tab rehydrated to b.html"] = True
+            checks["restore: group survived with members"] = (
+                len(g["groups"]) == 1 and sorted(g["groups"][0]["tabs"]) == [1, 3])
+        finally:
+            run.close()
+
+        # ---- Run 3: restore a SPECIFIC session file --------------------
+        run = UiRun({**base_env, "BROWS12_SESSION_RESTORE": specific_file}, "44c")
+        try:
+            run.wait_for(lambda e: e.startswith("start "), 60, "start")
+            restored = run.wait_for(
+                lambda e: e.startswith("session_restored "),
+                30, "session_restored (specific)")
+            checks["restore: specific session file"] = "tabs=3" in restored
+        finally:
+            run.close()
+
+        out["area4_4"] = {"checks": checks}
+        for k, ok in checks.items():
+            print(("PASS " if ok else "FAIL ") + k)
+        return all(checks.values())
+    finally:
+        srv.terminate()
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", default="all",
@@ -385,6 +493,8 @@ def main():
         ok &= verify_42(out)
     if args.only in ("all", "4.3"):
         ok &= verify_43(out)
+    if args.only in ("all", "4.4"):
+        ok &= verify_44(out)
     pathlib.Path(args.out).write_text(json.dumps(out, indent=2))
     print(f"artifact: {args.out}")
     sys.exit(0 if ok else 1)

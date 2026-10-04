@@ -99,6 +99,11 @@ struct Gui {
     /// Phase 4.4.3: tab groups data layer (name/color/collapsed +
     /// membership); exposed via FIFO commands and the strip color bar.
     groups: servo_host::tabgroups::TabGroupStore,
+    /// Phase 4.4.4: where the "last session" file lives (None = no
+    /// persistence). Restores happen at startup; saves on quit + every
+    /// `BROWS12_SESSION_SAVE_SECS` (default 60).
+    session_path: Option<std::path::PathBuf>,
+    next_session_save_at: Option<Instant>,
     active: usize,
     text: UiText,
     cursor: (f32, f32),
@@ -212,6 +217,8 @@ impl ApplicationHandler<HostWakerEvent> for App {
             runtimes: HashMap::new(),
             next_tab_id: 1,
             groups: servo_host::tabgroups::TabGroupStore::new(),
+            session_path: session_path_from_env(),
+            next_session_save_at: None,
             active: 0,
             text: UiText::new(),
             cursor: (0.0, 0.0),
@@ -235,7 +242,16 @@ impl ApplicationHandler<HostWakerEvent> for App {
             first_present_ms: None,
             started: self.started,
         };
-        gui.new_tab();
+        // Phase 4.4.4: initialize the automation event fifo BEFORE the
+        // session restore, so `session_restored` / `session_live_tab`
+        // events reach the harness.
+        if let (Ok(_fifo), Ok(events)) = (
+            std::env::var("BROWS12_UI_CMD_FIFO"),
+            std::env::var("BROWS12_UI_EVENT_FIFO"),
+        ) {
+            model::init_event_fifo(&events);
+        }
+        gui.restore_session_or_new();
         let start_proxy = gui.proxy.clone();
         let start_wake = gui.window.clone();
         self.inner = Some(gui);
@@ -244,10 +260,8 @@ impl ApplicationHandler<HostWakerEvent> for App {
         start_wake.request_redraw();
 
         // Automation channels (validation under Xvfb) — same protocol as v1.
+        // The event fifo was initialized above (before session restore).
         if let Ok(fifo) = std::env::var("BROWS12_UI_CMD_FIFO") {
-            if let Ok(events) = std::env::var("BROWS12_UI_EVENT_FIFO") {
-                model::init_event_fifo(&events);
-            }
             model::emit(format!(
                 "start pid={} viewport={}x{}",
                 std::process::id(),
@@ -347,7 +361,11 @@ impl ApplicationHandler<HostWakerEvent> for App {
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         let Some(gui) = self.inner.as_mut() else { return };
         match event {
-            WindowEvent::CloseRequested => event_loop.exit(),
+            WindowEvent::CloseRequested => {
+                // Phase 4.4.4: quit-time session save on window close.
+                gui.save_session("close");
+                event_loop.exit();
+            }
             WindowEvent::RedrawRequested => {
                 gui.tick();
                 gui.draw();
@@ -412,6 +430,19 @@ impl ApplicationHandler<HostWakerEvent> for App {
         } else {
             None
         };
+        // Phase 4.4.4: periodic session save (crash insurance between
+        // quit-time saves).
+        if let Some(at) = gui.next_session_save_at {
+            if Instant::now() >= at {
+                gui.save_session("periodic");
+            }
+            if let Some(next) = gui.next_session_save_at {
+                next_wake = Some(match next_wake {
+                    Some(t) => t.min(next),
+                    None => next,
+                });
+            }
+        }
         // Phase 2.1: the governor runs here — this is the ONLY callback
         // winit fires when a WaitUntil deadline expires on an idle system.
         if gui.governor.enabled && Instant::now() >= gui.next_governor_at {
@@ -440,6 +471,26 @@ fn init_pending_channel() {
     let (tx, rx) = std::sync::mpsc::channel::<InjectCmd>();
     let _ = PENDING_TX.set(tx);
     let _ = PENDING_RX.set(std::sync::Mutex::new(rx));
+}
+
+/// Phase 4.4.4: the "last session" file. Env `BROWS12_SESSION_FILE`;
+/// unset means session persistence is off entirely.
+fn session_path_from_env() -> Option<std::path::PathBuf> {
+    std::env::var("BROWS12_SESSION_FILE")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .map(std::path::PathBuf::from)
+}
+
+/// Session save cadence. Env `BROWS12_SESSION_SAVE_SECS` (default 60;
+/// 0 disables periodic saves — quit-time saves always happen).
+fn session_save_interval() -> Duration {
+    Duration::from_secs(
+        std::env::var("BROWS12_SESSION_SAVE_SECS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(60),
+    )
 }
 
 fn base64_encode(data: &[u8]) -> String {
@@ -662,6 +713,177 @@ impl Gui {
         }
         self.dirty = true;
         self.sync_title();
+    }
+
+    // ---- Phase 4.4.4: session persistence + restore ----------------------
+
+    /// Startup: restore the last (or a specific) session when one is
+    /// requested and loadable; otherwise a cold start with one tab.
+    fn restore_session_or_new(&mut self) {
+        let mode = std::env::var("BROWS12_SESSION_RESTORE")
+            .ok()
+            .and_then(|v| servo_host::session::parse_restore_mode(&v));
+        let want_restore = mode.is_some();
+        let session = mode.and_then(|m| match m {
+            servo_host::session::RestoreMode::Last => self
+                .session_path
+                .as_deref()
+                .and_then(servo_host::session::load),
+            servo_host::session::RestoreMode::Explicit(p) => {
+                servo_host::session::load(std::path::Path::new(&p))
+            }
+        });
+        match session {
+            Some(sess) => self.restore_session(sess),
+            None => {
+                self.new_tab();
+                if want_restore {
+                    model::emit("session_restore_failed cold_start");
+                }
+            }
+        }
+        if self.session_path.is_some() {
+            let interval = session_save_interval();
+            self.next_session_save_at =
+                (interval.as_secs() > 0).then(|| Instant::now() + interval);
+        }
+    }
+
+    /// Rebuild the strip from a session: groups first (members reference
+    /// their ids), then tabs — the ACTIVE tab is rebuilt live, every
+    /// other tab comes back as suspended metadata that rehydrates on
+    /// activation, so startup builds one webview, not the whole strip.
+    fn restore_session(&mut self, sess: servo_host::session::Session) {
+        if sess.tabs.is_empty() {
+            self.new_tab();
+            return;
+        }
+        for g in &sess.groups {
+            let color = servo_host::tabgroups::GroupColor::from_name(&g.color)
+                .unwrap_or(servo_host::tabgroups::GroupColor::Grey);
+            self.groups.restore_group(g.id, g.name.clone(), color, g.collapsed);
+        }
+        let active_idx = sess.active.min(sess.tabs.len() - 1);
+        for (i, st) in sess.tabs.iter().enumerate() {
+            let id = self.next_tab_id;
+            self.next_tab_id += 1;
+            let mut tab = UiTab::new();
+            tab.id = Some(id);
+            tab.history = st.history.clone();
+            tab.hindex = st.hindex.min(tab.history.len().saturating_sub(1));
+            tab.title = st.title.clone();
+            tab.scroll_est = st.scroll_est;
+            tab.form_state = st.form_state.clone();
+            tab.activations = 1;
+            if let Some(gid) = st.group {
+                self.groups.add_tab(id, gid);
+            }
+            if i == active_idx {
+                tab.status = Status::Loading;
+                tab.pending_state_restore =
+                    tab.scroll_est > 0.0 || tab.form_state.is_some();
+                let url = servo_host::session::Session::tab_url(st);
+                let load_url = if url == "brows12://start" || url.is_empty() {
+                    start_page_url()
+                } else {
+                    Url::parse(&url).unwrap_or_else(|_| start_page_url())
+                };
+                self.tabs.push(tab);
+                let runtime = self.spawn_webview(load_url);
+                self.runtimes.insert(id, runtime);
+                model::emit(format!(
+                    "session_live_tab index={i} url={} scroll={} forms={}",
+                    model::ev_escape(&url),
+                    self.tabs[i].scroll_est,
+                    self.tabs[i].form_state.is_some() as u8,
+                ));
+            } else {
+                tab.suspended = true;
+                self.tabs.push(tab);
+            }
+        }
+        self.active = active_idx;
+        model::emit(format!(
+            "session_restored tabs={} groups={} active={} version={}",
+            self.tabs.len(),
+            sess.groups.len(),
+            active_idx,
+            sess.version
+        ));
+        self.dirty = true;
+        self.sync_title();
+    }
+
+    /// Build one offscreen webview (shared by new_tab, restore and the
+    /// session's live tab).
+    fn spawn_webview(&mut self, load_url: Url) -> TabRuntime {
+        let (Some(servo), Some(parent)) = (self.servo.as_ref(), self.parent_ctx.as_ref()) else {
+            panic!("servo not initialized");
+        };
+        let ctx = Rc::new(parent.offscreen_context(PhysicalSize::new(VIEWPORT_W, VIEWPORT_H)));
+        let ctx_dyn: Rc<dyn RenderingContext> = ctx.clone();
+        let state = Arc::new(HostState::new());
+        let delegate = HostDelegate::new(state.clone(), self.privacy.clone());
+        let webview = WebViewBuilder::new(servo, ctx_dyn)
+            .delegate(delegate)
+            .user_content_manager(self.ucm.clone())
+            .build();
+        webview.focus();
+        webview.resize(PhysicalSize::new(VIEWPORT_W, VIEWPORT_H));
+        webview.load(load_url);
+        TabRuntime { webview, state, ctx, last_painted_frame: 0, trimmed_at: None }
+    }
+
+    /// Snapshot the strip into a Session and write it atomically.
+    fn save_session(&mut self, why: &str) {
+        let Some(path) = self.session_path.clone() else { return };
+        let active = self.active.min(self.tabs.len().saturating_sub(1));
+        let tabs = self
+            .tabs
+            .iter()
+            .map(|t| servo_host::session::SessionTab {
+                history: t.history.clone(),
+                hindex: t.hindex,
+                title: t.title.clone(),
+                scroll_est: t.scroll_est,
+                form_state: t.form_state.clone(),
+                pinned: t.pinned,
+                group: t.id.and_then(|id| self.groups.group_of(id)),
+            })
+            .collect();
+        let groups = self
+            .groups
+            .groups()
+            .iter()
+            .map(|g| servo_host::session::SessionGroup {
+                id: g.id,
+                name: g.name.clone(),
+                color: g.color.name().to_string(),
+                collapsed: g.collapsed,
+            })
+            .collect();
+        let saved_at_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        let session = servo_host::session::Session {
+            version: servo_host::session::SESSION_VERSION,
+            saved_at_ms,
+            active,
+            tabs,
+            groups,
+        };
+        let ok = servo_host::session::save(&path, &session).is_ok();
+        model::emit(format!(
+            "session_saved why={why} ok={ok} tabs={} groups={} path={}",
+            session.tabs.len(),
+            session.groups.len(),
+            model::ev_escape(&path.to_string_lossy())
+        ));
+        // Reschedule the periodic save.
+        let interval = session_save_interval();
+        self.next_session_save_at =
+            (interval.as_secs() > 0).then(|| Instant::now() + interval);
     }
 
     /// Central tab activation: restores the tab if hibernated, throttles
@@ -1422,6 +1644,8 @@ impl Gui {
             }
             InjectCmd::Sleep(_) => {}
             InjectCmd::Quit => {
+                // Phase 4.4.4: persist the session before the loop exits.
+                self.save_session("quit");
                 model::emit("quit");
                 self.quit = true;
             }

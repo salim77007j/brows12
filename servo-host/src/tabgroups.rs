@@ -171,6 +171,15 @@ impl TabGroupStore {
         self.remove_tab(tab_id);
     }
 
+    /// Phase 4.4.4 session restore: re-insert a group with its ORIGINAL
+    /// id (id space advanced past it so new creates never collide).
+    pub fn restore_group(&mut self, id: u32, name: String, color: GroupColor, collapsed: bool) {
+        self.next_group_id = self.next_group_id.max(id + 1);
+        if self.get(id).is_none() {
+            self.groups.push(TabGroup { id, name, color, collapsed });
+        }
+    }
+
     pub fn group_of(&self, tab_id: u64) -> Option<u32> {
         self.membership.get(&tab_id).copied()
     }

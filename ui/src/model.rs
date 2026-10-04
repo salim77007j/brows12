@@ -58,6 +58,9 @@ pub struct UiTab {
     /// Phase 4.4.2: form-state JSON captured when the tab went to the
     /// background (`SERIALIZE_FORMS_JS`); re-applied on restore.
     pub form_state: Option<String>,
+    /// Phase 4.4.4 (schema-ready for 4.6): pinned tabs never hibernate
+    /// and are restored on every startup.
+    pub pinned: bool,
     /// Phase 4.4.2: queue the scroll+form restore once the reloaded
     /// document completes.
     pub pending_state_restore: bool,
@@ -78,6 +81,7 @@ impl UiTab {
             discarded: false,
             scroll_est: 0.0,
             form_state: None,
+            pinned: false,
             pending_state_restore: false,
         }
     }

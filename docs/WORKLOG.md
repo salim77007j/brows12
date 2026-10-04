@@ -1063,3 +1063,37 @@ Stage Summary:
   API + FIFO, visually anchored by the strip color bar. Collapse
   state is stored for the future UI (strip keeps drawing all tabs —
   data-layer scope per mission).
+
+---
+Task ID: phase4-area4-4.4
+Agent: Super Z (main)
+Task: Phase 4 Focus Area 4, sub-item 4.4 — full session restore.
+
+Work Log:
+- servo-host/src/session.rs (new): Session {version, saved_at_ms,
+  active, tabs, groups}; SessionTab carries history+hindex, title,
+  scroll estimate, form-state JSON, pinned flag (schema-ready),
+  group id. Atomic save (tmp+rename); load refuses corrupt/
+  future-version/empty files (restore fails closed to a cold start).
+  RestoreMode parsing: BROWS12_SESSION_RESTORE=1|last ->
+  BROWS12_SESSION_FILE; =<path> -> specific file. 4 unit tests.
+- Shell: restore_session_or_new() at startup — groups rehydrated with
+  original ids (TabGroupStore::restore_group), the ACTIVE tab rebuilt
+  live (spawn_webview, shared helper), all other tabs restored as
+  SUSPENDED metadata that rehydrates on activation — startup builds
+  one webview regardless of strip size. Scroll+form reapply rides the
+  existing 4.2 pending_state_restore path. Saves: on <QUIT>, on
+  window close, and periodic (BROWS12_SESSION_SAVE_SECS, default 60,
+  0=off). Events: session_restored/session_live_tab/session_saved/
+  session_restore_failed.
+- Harness fix: event fifo now initialized BEFORE session restore
+  (session_restored used to be emitted before the writer existed).
+- E2E (phase4_area4.py --only 4.4, 3 UI runs): run1 saves on quit
+  (tabs=3 groups=1); run2 restores last — active a.html live,
+  suspended tab rehydrates to b.html, group survives with members;
+  run3 restores an explicit session file. All 6 checks PASS.
+
+Stage Summary:
+- 4.4 complete: full session persistence (tabs, history, scroll,
+  forms, groups, active) + restore-last and restore-specific modes,
+  with lazy rehydration keeping startup cost at one tab.
