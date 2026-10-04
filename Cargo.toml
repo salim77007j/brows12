@@ -54,3 +54,13 @@ strip = "debuginfo"
 
 [profile.bench]
 debug = true
+
+# --- Phase 4 Area 1: local Servo engine patches -------------------------------
+# The brows12 project carries minimal, upstreamable patches to the Servo
+# engine crates (all published to crates.io). Each patch fixes a Phase 3
+# gap; see docs/PHASE4_AREA1_REPORT.md and the git history of patched/.
+[patch.crates-io]
+stylo = { path = "patched/stylo" }
+servo-config = { path = "patched/servo-config" }
+servo-layout = { path = "patched/servo-layout" }
+servo-canvas = { path = "patched/servo-canvas" }
