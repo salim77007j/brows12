@@ -21,6 +21,45 @@ pub fn peak_rss_kb() -> Option<u64> {
     field_from_status("VmHWM:")
 }
 
+/// Phase 4.3.1 — memory the system can grant without swapping, in KiB
+/// (`MemAvailable` from /proc/meminfo). Feeds the per-tab budget's
+/// availability adaption. None when /proc/meminfo is unreadable.
+pub fn mem_available_kb() -> Option<u64> {
+    let meminfo = std::fs::read_to_string("/proc/meminfo").ok()?;
+    for line in meminfo.lines() {
+        if let Some(rest) = line.strip_prefix("MemAvailable:") {
+            return rest.split_whitespace().next()?.parse().ok();
+        }
+    }
+    None
+}
+
+/// Phase 4.3.7 — proportional set size of a pid from
+/// /proc/<pid>/smaps_rollup (`Pss:`), KiB. None if the file is absent
+/// (very old kernels) or unreadable.
+pub fn pss_kb(pid: u32) -> Option<u64> {
+    let rollup = std::fs::read_to_string(format!("/proc/{pid}/smaps_rollup")).ok()?;
+    for line in rollup.lines() {
+        if let Some(rest) = line.strip_prefix("Pss:") {
+            return rest.split_whitespace().next()?.parse().ok();
+        }
+    }
+    None
+}
+
+/// Phase 4.3.7 — unique set size of a pid (private memory), KiB, from
+/// `Private_Clean + Private_Dirty` in smaps_rollup.
+pub fn uss_kb(pid: u32) -> Option<u64> {
+    let rollup = std::fs::read_to_string(format!("/proc/{pid}/smaps_rollup")).ok()?;
+    let field = |prefix: &str| -> Option<u64> {
+        rollup.lines().find_map(|l| {
+            l.strip_prefix(prefix)
+                .and_then(|rest| rest.split_whitespace().next()?.parse().ok())
+        })
+    };
+    Some(field("Private_Clean:")? + field("Private_Dirty:")?)
+}
+
 fn field_from_status(field: &str) -> Option<u64> {
     let status = std::fs::read_to_string("/proc/self/status").ok()?;
     for line in status.lines() {

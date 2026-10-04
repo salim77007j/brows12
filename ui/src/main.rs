@@ -26,8 +26,10 @@ use servo::{
     OffscreenRenderingContext, RenderingContext, Servo, ServoBuilder, UserContentManager,
     WebView, WebViewBuilder, WheelDelta, WheelEvent, WheelMode, WindowRenderingContext,
 };
+use servo_host::budget::{self, BudgetConfig, Degradation, JsHeapTier};
 use servo_host::delegate::{HostDelegate, HostState};
 use servo_host::memory::{self, GovernorConfig, Pressure};
+use servo_host::psi::{self, PsiConfig};
 use servo_host::privacy::PrivacyHost;
 use servo_host::waker::HostWakerEvent;
 use tiny_skia::{Pixmap, PremultipliedColorU8};
@@ -75,6 +77,10 @@ struct TabRuntime {
     #[allow(dead_code)]
     ctx: Rc<OffscreenRenderingContext>,
     last_painted_frame: u64,
+    /// Phase 4.3.1: ladder state — the tab was trimmed (hide + throttle
+    /// + malloc_trim) at this instant, and escalation to hibernate only
+    /// happens after the trim grace. Reset on restore (new runtime).
+    trimmed_at: Option<Instant>,
 }
 
 #[allow(dead_code)]
@@ -106,6 +112,15 @@ struct Gui {
     next_governor_at: Instant,
     /// Total tabs hibernated by the governor this session.
     governor_hibernated: u64,
+    // ---- Phase 4.3.1/3.4/3.6: per-tab budgets, JS-heap tiers, PSI --------
+    budget: BudgetConfig,
+    psi: PsiConfig,
+    /// PSI-triggered reclaims respect this cooldown so a sustained spike
+    /// reclaims at a humane pace instead of hibernating the whole strip.
+    next_psi_reclaim_at: Instant,
+    /// JS-heap tier currently applied to the engine (to avoid re-sending
+    /// set_preference every tick).
+    js_tier: JsHeapTier,
     /// Wall time of ServoBuilder::build(), for BROWS12_UI_START_METRICS.
     servo_build_ms: u128,
     /// Wall time of the first presented frame (set once).
@@ -178,6 +193,9 @@ impl ApplicationHandler<HostWakerEvent> for App {
         let ucm = Rc::new(UserContentManager::new(&servo));
         privacy.set_user_content_manager(ucm.clone());
 
+        // Phase 4.3: one env parse, shared between the RSS governor and
+        // the per-tab budget (BROWS12_MEM_BUDGET_MB is meaningful to both).
+        let governor_cfg = GovernorConfig::from_env();
         let mut gui = Gui {
             window,
             context,
@@ -199,9 +217,13 @@ impl ApplicationHandler<HostWakerEvent> for App {
             quit: false,
             blink_phase: 0,
             snapshot_gen: 0,
-            governor: GovernorConfig::from_env(),
-            next_governor_at: Instant::now() + GovernorConfig::default().interval,
+            governor: governor_cfg.clone(),
+            next_governor_at: Instant::now() + governor_cfg.interval,
             governor_hibernated: 0,
+            budget: BudgetConfig { total_budget_kb: governor_cfg.budget_kb, ..BudgetConfig::default() },
+            psi: PsiConfig::from_env(),
+            next_psi_reclaim_at: Instant::now(),
+            js_tier: JsHeapTier::Normal,
             servo_build_ms,
             first_present_ms: None,
             started: self.started,
@@ -574,7 +596,7 @@ impl Gui {
         webview.load(start_page_url());
         self.runtimes.insert(
             id,
-            TabRuntime { webview, state, ctx, last_painted_frame: 0 },
+            TabRuntime { webview, state, ctx, last_painted_frame: 0, trimmed_at: None },
         );
 
         let mut tab = UiTab::new();
@@ -618,6 +640,10 @@ impl Gui {
         if let Some(id) = new_active {
             if let Some(rt) = self.runtimes.get_mut(&id) {
                 rt.webview.set_throttled(false);
+                // Phase 4.3.1: undo a budget trim (hidden tab) — the
+                // active tab must always be visible and unthrottled.
+                rt.webview.show();
+                rt.trimmed_at = None;
                 rt.webview.focus();
                 rt.last_painted_frame = 0; // force a repaint of this tab
             }
@@ -690,7 +716,7 @@ impl Gui {
         webview.load(load_url);
         self.runtimes.insert(
             id,
-            TabRuntime { webview, state, ctx, last_painted_frame: 0 },
+            TabRuntime { webview, state, ctx, last_painted_frame: 0, trimmed_at: None },
         );
         self.tabs[index].suspended = false;
         self.tabs[index].status = Status::Loading;
@@ -707,12 +733,132 @@ impl Gui {
     /// every tab past its (weight-dependent) delay is. Heavy = the page
     /// issued many resource requests (~100MB-class sites), and heavy tabs
     /// become eligible far sooner (`BROWS12_HEAVY_SUSPEND_SECS`).
+    ///
+    /// Phase 4.3.1 — on top of the global-RSS reclaim, every background
+    /// tab is now also checked against its own budget: estimated weight
+    /// vs share. Over budget → `TrimCaches` (hide + throttle +
+    /// `malloc_trim`); still over after the trim grace → hibernate.
+    ///
+    /// Phase 4.3.6 — PSI (kernel/cgroup memory-pressure stall info) can
+    /// trigger the same reclaim when the *system* is thrashing even if
+    /// our own RSS is nominal, on a cooldown.
+    ///
+    /// Phase 4.3.4 — the JS-heap tier tracks the worst current condition
+    /// and is applied engine-wide via `Servo::set_preference` (takes
+    /// effect for runtimes created from then on — i.e. every tab
+    /// restored from hibernation under pressure comes back smaller).
     fn governor_tick(&mut self) {
         let Some(rss) = servo_host::metrics::rss_kb() else { return };
-        let level = memory::pressure(&self.governor, rss);
+        let available = servo_host::metrics::mem_available_kb();
+        let (psi_snap, psi_source) = match psi::read_psi() {
+            Some((s, src)) => (Some(s), src),
+            None => (None, "none"),
+        };
+        let psi_lvl = psi_snap
+            .map(|s| psi::psi_level(&s, &self.psi))
+            .unwrap_or(Pressure::Nominal);
+        let rss_level = memory::pressure(&self.governor, rss);
+        // The worse of "our own budget" and "the system is thrashing".
+        let level = match (rss_level, psi_lvl) {
+            (Pressure::Critical, _) | (_, Pressure::Critical) => Pressure::Critical,
+            (Pressure::Elevated, _) | (_, Pressure::Elevated) => Pressure::Elevated,
+            _ => Pressure::Nominal,
+        };
+
+        // ---- Phase 4.3.4: JS-heap tier --------------------------------
+        let total = budget::total_budget_kb(available, &self.budget);
+        let rss_ratio = rss as f64 / total.max(1) as f64;
+        let over_budget = self.over_budget_background_tabs(total);
+        let tier = JsHeapTier::for_conditions(rss_ratio, psi_lvl != Pressure::Nominal, over_budget);
+        if tier != self.js_tier {
+            if let Some(servo) = self.servo.as_ref() {
+                servo.set_preference(
+                    "js_mem_max",
+                    servo::prefs::PrefValue::Int(tier.mem_max_mb() as i64),
+                );
+                model::emit(format!(
+                    "js_heap_tier tier={tier:?} mem_max_mb={mem_max} rss_ratio={rss_ratio:.2} psi_hot={psi_hot} over_budget_tabs={over_budget}",
+                    mem_max = tier.mem_max_mb(),
+                    psi_hot = psi_lvl != Pressure::Nominal,
+                ));
+                self.js_tier = tier;
+            }
+        }
+
+        // ---- PSI-triggered reclaim (4.3.6) ----------------------------
+        // When the system (or our cgroup) stalls on memory we act even if
+        // our own RSS is nominal — but only once per cooldown, and only
+        // on tabs that are past their (weight-aware) suspend delay.
+        if psi_lvl != Pressure::Nominal && Instant::now() >= self.next_psi_reclaim_at {
+            let reclaimed = self.reclaim_background_tabs(level, rss, "psi");
+            self.next_psi_reclaim_at = Instant::now() + self.psi.cooldown;
+            if reclaimed > 0 {
+                model::emit(format!(
+                    "psi_reclaim source={psi_source} level={level:?} reclaimed={reclaimed}"
+                ));
+            }
+        }
+
         if level == Pressure::Nominal {
+            // Even at nominal pressure, enforce per-tab budgets: one
+            // runaway tab must not sit under the total while starving
+            // the rest (its trim/hibernate decision is independent).
+            self.enforce_per_tab_budgets(total);
             return;
         }
+
+        // ---- Global reclaim (Phase 2.1/3.9 path, unchanged) -----------
+        let reclaimed = self.reclaim_background_tabs(level, rss, "rss");
+        if reclaimed > 0 {
+            model::emit(format!(
+                "governor_global level={level:?} reclaimed={reclaimed} hibernated_total={}",
+                self.governor_hibernated
+            ));
+        }
+        // And the per-tab ladder always runs when the tab strip is live.
+        self.enforce_per_tab_budgets(total);
+    }
+
+    /// Phase 4.3.1: how many background tabs are over their individual
+    /// budget right now (feeds the JS-heap tier policy).
+    fn over_budget_background_tabs(&self, total_kb: u64) -> usize {
+        let active_id = self.active_id();
+        let weights = self.aligned_tab_weights();
+        self.tabs
+            .iter()
+            .enumerate()
+            .filter(|(i, t)| {
+                let Some(id) = t.id else { return false };
+                if Some(id) == active_id || t.suspended {
+                    return false;
+                }
+                let Some(rt) = self.runtimes.get(&id) else { return false };
+                let est = budget::tab_estimate_kb(rt.state.page_requests(), &self.budget);
+                let b = budget::tab_budget_kb(total_kb, false, &weights, *i, &self.budget);
+                est > b
+            })
+            .count()
+    }
+
+    /// Per-tab weight estimates aligned to `self.tabs` indices (tabs
+    /// without a live runtime — suspended or starting — carry the base
+    /// weight so index i in this vec always describes tab i).
+    fn aligned_tab_weights(&self) -> Vec<u64> {
+        self.tabs
+            .iter()
+            .map(|t| {
+                t.id
+                    .and_then(|id| self.runtimes.get(&id))
+                    .map(|rt| budget::tab_estimate_kb(rt.state.page_requests(), &self.budget))
+                    .unwrap_or(self.budget.tab_base_kb)
+            })
+            .collect()
+    }
+
+    /// The Phase 2.1/3.9 reclaim: hibernate background tabs eligible
+    /// under `level` until pressure clears (or candidates run out).
+    /// Returns how many tabs were hibernated. `why` tags the event.
+    fn reclaim_background_tabs(&mut self, level: Pressure, _rss: u64, why: &str) -> usize {
         let now = Instant::now();
         let active_id = self.active_id();
         let mut candidates: Vec<usize> = self
@@ -724,13 +870,20 @@ impl Gui {
                 if Some(id) == active_id || t.suspended {
                     return false;
                 }
-                let weight = self
-                    .runtimes
-                    .get(&id)
-                    .map(|rt| rt.state.page_requests())
-                    .unwrap_or(0);
+                let Some(rt) = self.runtimes.get(&id) else { return false };
+                let weight = rt.state.page_requests();
+                // Phase 4.3.4: a background tab with *recent activity*
+                // (idle timers / rAF loop still running) is treated on
+                // the heavy schedule — it is burning CPU + memory while
+                // invisible, so it gives up its pipeline sooner.
+                let awake_in_background = matches!(rt.state.ms_since_activity(), Some(ms) if ms < 5_000);
+                let effective_weight = if awake_in_background && level != Pressure::Nominal {
+                    self.governor.heavy_page_requests.max(weight)
+                } else {
+                    weight
+                };
                 memory::eligible_under_pressure(
-                    weight,
+                    effective_weight,
                     now.duration_since(t.last_active),
                     level,
                     &self.governor,
@@ -747,13 +900,19 @@ impl Gui {
                 .unwrap_or(0);
             (std::cmp::Reverse(weight), self.tabs[i].last_active)
         });
-        let mut rss_now = rss;
+        let mut reclaimed = 0;
         for i in candidates {
-            if memory::pressure(&self.governor, rss_now) == Pressure::Nominal {
+            if why != "psi"
+                && memory::pressure(
+                    &self.governor,
+                    servo_host::metrics::rss_kb().unwrap_or(_rss),
+                ) == Pressure::Nominal
+            {
                 break;
             }
             self.hibernate(i);
             self.governor_hibernated += 1;
+            reclaimed += 1;
             // RSS lags the free (allocator retention); sample after a
             // short spin so the loop does not hibernate the whole strip
             // on one stale reading.
@@ -769,13 +928,64 @@ impl Gui {
             unsafe {
                 libc::malloc_trim(0);
             }
-            rss_now = servo_host::metrics::rss_kb().unwrap_or(rss_now);
         }
-        if rss_now != rss {
-            model::emit(format!(
-                "governor rss_before_kb={rss} rss_after_kb={rss_now} hibernated_total={}",
-                self.governor_hibernated
-            ));
+        reclaimed
+    }
+
+    /// Phase 4.3.1: the per-tab graceful-degradation ladder. Background
+    /// tabs estimated over their own budget are trimmed first (hide +
+    /// throttle + malloc_trim) and hibernated only if still over after
+    /// the trim grace. Purely additive to the global reclaim.
+    fn enforce_per_tab_budgets(&mut self, total_kb: u64) {
+        let active_id = self.active_id();
+        let weights = self.aligned_tab_weights();
+        // Collect decisions first (borrow checker: hibernate needs &mut).
+        let mut actions: Vec<(usize, Degradation)> = Vec::new();
+        for (i, t) in self.tabs.iter().enumerate() {
+            let Some(id) = t.id else { continue };
+            if Some(id) == active_id || t.suspended {
+                continue;
+            }
+            let Some(rt) = self.runtimes.get(&id) else { continue };
+            let est = budget::tab_estimate_kb(rt.state.page_requests(), &self.budget);
+            let b = budget::tab_budget_kb(total_kb, false, &weights, i, &self.budget);
+            // decide(now, since) computes now - since: pass the trim
+            // elapsed as the clock with since = 0, or None when never
+            // trimmed (then the ladder starts at TrimCaches).
+            let (since, now) = match rt.trimmed_at {
+                Some(_) => (Some(0), rt.trimmed_at.unwrap().elapsed().as_millis() as u64),
+                None => (None, 0),
+            };
+            let decision = budget::decide(est, b, since, now, &self.budget);
+            if decision != Degradation::None {
+                actions.push((i, decision));
+            }
+        }
+        for (i, decision) in actions {
+            match decision {
+                Degradation::TrimCaches => {
+                    if let Some(id) = self.tabs[i].id {
+                        if let Some(rt) = self.runtimes.get_mut(&id) {
+                            rt.webview.set_throttled(true);
+                            rt.webview.hide();
+                            rt.trimmed_at = Some(Instant::now());
+                        }
+                    }
+                    unsafe {
+                        libc::malloc_trim(0);
+                    }
+                    model::emit(format!("tab_trim index={i}"));
+                }
+                Degradation::Hibernate => {
+                    self.hibernate(i);
+                    self.governor_hibernated += 1;
+                    model::emit(format!(
+                        "tab_budget_hibernate index={i} hibernated_total={}",
+                        self.governor_hibernated
+                    ));
+                }
+                Degradation::None => {}
+            }
         }
     }
 

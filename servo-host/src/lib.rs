@@ -4,6 +4,7 @@
 //! paint, SpiderMonkey 153 JS) behind the brows12 shell and headless
 //! harness. See docs/SERVO_INTEGRATION_PLAN.md for decisions D1-D7.
 
+pub mod budget;
 pub mod capture;
 pub mod dashboard;
 pub mod delegate;
@@ -13,13 +14,21 @@ pub mod metrics;
 pub mod perf;
 pub mod prefs;
 pub mod privacy;
+pub mod psi;
 pub mod waker;
 
+pub use budget::{
+    decide as decide_degradation, tab_budget_kb, tab_estimate_kb, total_budget_kb, Degradation,
+    BudgetConfig, JsHeapTier,
+};
 pub use dashboard::{
     dashboard_json, snapshot as dashboard_snapshot, CookieDecisionSink, CookieSection,
     PrivacyDashboard,
 };
 pub use headless::{run_headless, HeadlessConfig, HeadlessReport};
+pub use psi::{
+    psi_level, read_psi, read_system_psi, PsiConfig, PsiSnapshot,
+};
 
 /// Install a process-level rustls CryptoProvider exactly once.
 ///

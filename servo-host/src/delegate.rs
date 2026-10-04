@@ -48,6 +48,19 @@ pub struct HostState {
     /// Phase 4 Area 2.3: recent cross-domain navigation hops (time,
     /// registrable domain) — feeds the interstitial redirect-chain guard.
     pub nav_hops: Mutex<Vec<(std::time::Instant, String)>>,
+    /// Phase 4.3.4: unix-millis timestamp of the last observable page
+    /// activity (a new frame — rAF/timer-driven repaint — or a resource
+    /// request). A *background* tab that keeps touching this is running
+    /// idle timers/animations; the budget governor hibernates it on the
+    /// heavy-tab schedule instead of the light one. 0 = never active.
+    pub last_activity_ms: AtomicU64,
+}
+
+fn unix_now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 impl HostState {
@@ -88,6 +101,21 @@ impl HostState {
     /// Phase 3.9: page weight proxy — resource requests this document made.
     pub fn page_requests(&self) -> u64 {
         self.page_requests.load(Ordering::Relaxed)
+    }
+
+    /// Phase 4.3.4: record observable page activity (now).
+    pub fn touch(&self) {
+        self.last_activity_ms.store(unix_now_ms(), Ordering::Relaxed);
+    }
+
+    /// Phase 4.3.4: ms since the last observable page activity. Returns
+    /// None if the page has never been active (e.g. never painted).
+    pub fn ms_since_activity(&self) -> Option<u64> {
+        let last = self.last_activity_ms.load(Ordering::Relaxed);
+        if last == 0 {
+            return None;
+        }
+        Some(unix_now_ms().saturating_sub(last))
     }
 }
 
@@ -149,6 +177,11 @@ impl WebViewDelegate for HostDelegate {
 
     fn notify_new_frame_ready(&self, _webview: WebView) {
         self.state.frames.fetch_add(1, Ordering::Relaxed);
+        // Phase 4.3.4: a new frame is observable activity — rAF loops,
+        // CSS animations and timer-driven repaints all land here. The
+        // budget governor uses it to spot idle-timer tabs in the
+        // background.
+        self.state.touch();
     }
 
     fn notify_animating_changed(&self, _webview: WebView, animating: bool) {
@@ -242,6 +275,9 @@ impl WebViewDelegate for HostDelegate {
         // Phase 3.9: every resource the page asks for counts toward its
         // weight, blocked or not (blocked ones still cost a cache slot).
         self.state.page_requests.fetch_add(1, Ordering::Relaxed);
+        // Phase 4.3.4: a resource request is observable activity too
+        // (fetch/XHR-driven idle timers poll this way).
+        self.state.touch();
 
         // Phase 4 Area 2.5: CNAME-cloaking classification of document
         // hosts over DoH (cached 5 min; fails open). Runs here because the
