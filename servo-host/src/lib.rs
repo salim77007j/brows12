@@ -17,6 +17,7 @@ pub mod privacy;
 pub mod psi;
 pub mod session;
 pub mod tabgroups;
+pub mod tabsearch;
 pub mod tabstats;
 pub mod waker;
 

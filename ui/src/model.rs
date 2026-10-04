@@ -131,6 +131,8 @@ pub enum InjectCmd {
     GroupToggle(u32),
     /// Dump the group store as a `groups_json` event.
     GroupsDump,
+    /// Phase 4.4.5: search open tabs (title/url/snippet).
+    TabSearch(String),
     /// Pace the automation script (handled on the reader thread, in order).
     Sleep(u64),
     /// Exit the event loop cleanly (acknowledged with an `quit` event).

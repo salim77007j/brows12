@@ -472,6 +472,75 @@ def verify_44(out):
         srv.terminate()
 
 
+# ---------------------------------------------------------------- 4.5 --
+def verify_45(out):
+    """Tab search: index built from titles/URLs/snippets; AND queries,
+    ranking, snippet hits via <TABSEARCH>."""
+    site = pathlib.Path("/tmp/a4_site5")
+    site.mkdir(parents=True, exist_ok=True)
+    pages = {
+        "alpha.html": ("Alpha Rocket Docs", "alpha moon landing systems"),
+        "beta.html": ("Beta Cooking Guide", "beta sourdough recipes"),
+        "gamma.html": ("Gamma Travel Log", "gamma island hopping notes"),
+    }
+    for name, (title, desc) in pages.items():
+        (site / name).write_text(
+            f"<!doctype html><html><head><title>{title}</title>"
+            f'<meta name="description" content="{desc}"></head>'
+            f"<body><h1>{title}</h1><p>{desc}</p></body></html>")
+    srv = subprocess.Popen(
+        [sys.executable, "-m", "http.server", "8140", "--directory", str(site)],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    assert wait_http("http://127.0.0.1:8140/alpha.html"), "http server"
+    try:
+        run = UiRun({"BROWS12_GOVERNOR": "0"}, "45")
+        try:
+            run.wait_for(lambda e: e.startswith("start "), 60, "start")
+            open_tab(run, "http://127.0.0.1:8140/alpha.html", "alpha.html")
+            open_tab(run, "http://127.0.0.1:8140/beta.html", "beta.html")
+            open_tab(run, "http://127.0.0.1:8140/gamma.html", "gamma.html")
+            time.sleep(2.0)  # snippet capture + index refresh
+
+            def do_search(q):
+                run.cmd(f"<TABSEARCH> {q}")
+                mark = len(run.events)
+                end = time.time() + 15
+                while time.time() < end:
+                    new = run.events[mark:]
+                    res = next((e for e in new if e.startswith("tabsearch_results")), None)
+                    if res:
+                        hits = [e for e in new if e.startswith("tabsearch_hit")]
+                        return res, hits
+                    time.sleep(0.1)
+                raise TimeoutError(f"tabsearch {q}")
+
+            res_all, hits_all = do_search("guide")
+            res_desc, hits_desc = do_search("sourdough")
+            res_and2, hits_and2 = do_search("moon alpha")
+            res_none, _ = do_search("zzz-not-there")
+            checks = {
+                "AND query hits one tab": "count=1" in res_all
+                    and len(hits_all) == 1 and "beta.html" in hits_all[0],
+                "snippet-only query hits (meta description)":
+                    "count=1" in res_desc and "beta.html" in hits_desc[0],
+                "multi-token AND query": "count=1" in res_and2
+                    and len(hits_and2) == 1 and "alpha.html" in hits_and2[0],
+                "no match returns count=0": "count=0" in res_none,
+            }
+            out["area4_5"] = {
+                "results_all": res_all, "hits_all": hits_all,
+                "results_desc": res_desc,
+                "checks": checks,
+            }
+            for k, ok in checks.items():
+                print(("PASS " if ok else "FAIL ") + k)
+            return all(checks.values())
+        finally:
+            run.close()
+    finally:
+        srv.terminate()
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", default="all",
@@ -495,6 +564,8 @@ def main():
         ok &= verify_43(out)
     if args.only in ("all", "4.4"):
         ok &= verify_44(out)
+    if args.only in ("all", "4.5"):
+        ok &= verify_45(out)
     pathlib.Path(args.out).write_text(json.dumps(out, indent=2))
     print(f"artifact: {args.out}")
     sys.exit(0 if ok else 1)

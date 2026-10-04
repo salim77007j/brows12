@@ -1097,3 +1097,31 @@ Stage Summary:
 - 4.4 complete: full session persistence (tabs, history, scroll,
   forms, groups, active) + restore-last and restore-specific modes,
   with lazy rehydration keeping startup cost at one tab.
+
+---
+Task ID: phase4-area4-4.5
+Agent: Super Z (main)
+Task: Phase 4 Focus Area 4, sub-item 4.5 — tab search (fast index over
+title/URL/content snippet).
+
+Work Log:
+- servo-host/src/tabsearch.rs (new): TabSearchIndex upsert/remove/
+  search — whitespace tokens with AND semantics, case-insensitive,
+  field weights (title 3.0 / url 2.0 / snippet 1.0) + prefix bonus,
+  best-first capped results. 5 unit tests.
+- Snippet capture: HostState.page_snippet filled by SNIPPET_JS on
+  LoadStatus::Complete (meta description / og:description + first h1,
+  capped 240 chars) — the delegate already evaluates on completion, so
+  no extra pass.
+- Shell: Gui.search_index refreshed for the active tab on every sync
+  and for background tabs in sync_background_tabs; closed tabs leave
+  the index. FIFO: <TABSEARCH> query -> tabsearch_results count=N +
+  tabsearch_hit rank/index/score/title/url/snippet events.
+- E2E (phase4_area4.py --only 4.5): 3 pages with distinct titles +
+  meta descriptions; title query, snippet-only query (sourdough,
+  present only in the meta description), multi-token AND (moon alpha),
+  no-match count=0. All 4 checks PASS.
+
+Stage Summary:
+- 4.5 complete: fast tab search over title/URL/content snippet,
+  unit-tested + verified end-to-end via the automation FIFO.

@@ -1,0 +1,15 @@
+{
+  "area4_5": {
+    "results_all": "tabsearch_results query=guide count=1",
+    "hits_all": [
+      "tabsearch_hit rank=0 index=2 score=3.00 title=Beta_Cooking_Guide url=http://127.0.0.1:8140/beta.html snippet=beta_sourdough_recipes_|_Beta_Cooking_Guide"
+    ],
+    "results_desc": "tabsearch_results query=sourdough count=1",
+    "checks": {
+      "AND query hits one tab": true,
+      "snippet-only query hits (meta description)": true,
+      "multi-token AND query": true,
+      "no match returns count=0": true
+    }
+  }
+}

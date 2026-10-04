@@ -104,6 +104,8 @@ struct Gui {
     /// `BROWS12_SESSION_SAVE_SECS` (default 60).
     session_path: Option<std::path::PathBuf>,
     next_session_save_at: Option<Instant>,
+    /// Phase 4.4.5: tab-search index (title/url/snippet per tab).
+    search_index: servo_host::tabsearch::TabSearchIndex,
     active: usize,
     text: UiText,
     cursor: (f32, f32),
@@ -219,6 +221,7 @@ impl ApplicationHandler<HostWakerEvent> for App {
             groups: servo_host::tabgroups::TabGroupStore::new(),
             session_path: session_path_from_env(),
             next_session_save_at: None,
+            search_index: servo_host::tabsearch::TabSearchIndex::new(),
             active: 0,
             text: UiText::new(),
             cursor: (0.0, 0.0),
@@ -310,6 +313,8 @@ impl ApplicationHandler<HostWakerEvent> for App {
                             rest.parse::<u32>().ok().map(InjectCmd::GroupToggle)
                         } else if line == "<GROUPS>" {
                             Some(InjectCmd::GroupsDump)
+                        } else if let Some(rest) = line.strip_prefix("<TABSEARCH> ") {
+                            Some(InjectCmd::TabSearch(rest.to_string()))
                         } else if let Some(rest) = line.strip_prefix("<SLEEP> ") {
                             rest.parse::<u64>().ok().map(InjectCmd::Sleep)
                         } else {
@@ -634,7 +639,26 @@ impl Gui {
             self.dirty = true;
             self.sync_title();
         }
+        // Phase 4.4.5: keep the tab-search entry fresh for the active tab.
+        self.search_index_update(self.active);
         self.sync_background_tabs();
+    }
+
+    /// Phase 4.4.5: refresh the search-index entry for strip index `i`
+    /// from the shell metadata + the runtime's page snippet.
+    fn search_index_update(&mut self, i: usize) {
+        let Some(t) = self.tabs.get(i) else { return };
+        let Some(id) = t.id else { return };
+        let snippet = t
+            .id
+            .and_then(|id| self.runtimes.get(&id))
+            .and_then(|rt| rt.state.page_snippet.lock().unwrap().clone());
+        self.search_index.upsert(
+            id,
+            &t.title,
+            &t.url(),
+            snippet.as_deref(),
+        );
     }
 
     /// Phase 2.1: keep shell metadata (URL + title) for BACKGROUND tabs in
@@ -670,6 +694,12 @@ impl Gui {
                 if !title.is_empty() {
                     t.title = title;
                 }
+            }
+        }
+        // Phase 4.4.5: refresh the search entries for background tabs.
+        for i in 0..self.tabs.len() {
+            if i != self.active {
+                self.search_index_update(i);
             }
         }
     }
@@ -1349,6 +1379,8 @@ impl Gui {
             if let Some(id) = id {
                 // Phase 4.4.3: membership dies with the tab.
                 self.groups.tab_closed(id);
+                // Phase 4.4.5: drop the search entry too.
+                self.search_index.remove(id);
                 if let Some(rt) = self.runtimes.remove(&id) {
                     rt.webview.hide();
                 }
@@ -1641,6 +1673,26 @@ impl Gui {
                     "groups_json {}",
                     model::ev_escape(&self.groups.to_json())
                 ));
+            }
+            InjectCmd::TabSearch(q) => {
+                // Phase 4.4.5: ranked hits, strip index + score per hit.
+                let hits = self.search_index.search(&q, 10);
+                model::emit(format!(
+                    "tabsearch_results query={} count={}",
+                    model::ev_escape(&q),
+                    hits.len()
+                ));
+                for (rank, (tab_id, score)) in hits.iter().enumerate() {
+                    let idx = self.tabs.iter().position(|t| t.id == Some(*tab_id));
+                    if let (Some(i), Some(e)) = (idx, self.search_index.entry(*tab_id)) {
+                        model::emit(format!(
+                            "tabsearch_hit rank={rank} index={i} score={score:.2} title={} url={} snippet={}",
+                            model::ev_escape(&e.title),
+                            model::ev_escape(&e.url),
+                            model::ev_escape(e.snippet.as_deref().unwrap_or("")),
+                        ));
+                    }
+                }
             }
             InjectCmd::Sleep(_) => {}
             InjectCmd::Quit => {

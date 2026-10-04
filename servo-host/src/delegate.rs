@@ -58,6 +58,10 @@ pub struct HostState {
     /// captured when the tab goes to the background. Read at hibernation
     /// time so a discarded tab can restore its form inputs on reload.
     pub form_snapshot: Mutex<Option<String>>,
+    /// Phase 4.4.5: page-content snippet (meta description / first
+    /// heading) captured at load completion, feeding the tab-search
+    /// index.
+    pub page_snippet: Mutex<Option<String>>,
 }
 
 /// uBO-style form-state capture, run when a tab goes to the background:
@@ -74,6 +78,19 @@ pub const SERIALIZE_FORMS_JS: &str = r#"
     else { out.push([e.type || 'text', e.value]); }
   }
   return JSON.stringify(out);
+})()
+"#;
+
+/// Phase 4.4.5: page-content snippet for the tab-search index — meta
+/// description and/or the first heading, capped at 240 chars.
+pub const SNIPPET_JS: &str = r#"
+(function(){
+  var m = document.querySelector('meta[name="description"], meta[property="og:description"]');
+  var h = document.querySelector('h1');
+  var parts = [];
+  if (m && m.content) { parts.push(m.content.trim()); }
+  if (h && h.textContent) { parts.push(h.textContent.trim().slice(0, 120)); }
+  return parts.join(' | ').slice(0, 240);
 })()
 "#;
 
@@ -216,6 +233,14 @@ impl WebViewDelegate for HostDelegate {
             // page's DOM attributes (uBO two-phase protocol). Round-trip
             // through evaluate_javascript, match in Rust, hide via JS.
             self.apply_class_id_cosmetics(&webview);
+            // Phase 4.4.5: capture the page snippet for tab search.
+            let state = self.state.clone();
+            webview.evaluate_javascript(SNIPPET_JS, move |result| {
+                if let Ok(servo::JSValue::String(s)) = result {
+                    *state.page_snippet.lock().unwrap() =
+                        if s.is_empty() { None } else { Some(s) };
+                }
+            });
         }
         *self.state.load_status.lock().unwrap() = Some(status);
     }
