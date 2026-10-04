@@ -6183,8 +6183,6 @@ dependencies = [
 [[package]]
 name = "servo-canvas"
 version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eccc73b66104a685044c731eb5256c3bdaa48c1649e093f9fee99b9a127a4ee5"
 dependencies = [
  "bytemuck",
  "crossbeam-channel",
@@ -6234,8 +6232,6 @@ dependencies = [
 [[package]]
 name = "servo-config"
 version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eaea1dd597e014be058f147d5ba764d612bc454c67b291be5aec0c04101eca91"
 dependencies = [
  "num_enum",
  "serde",
@@ -6602,8 +6598,6 @@ dependencies = [
 [[package]]
 name = "servo-layout"
 version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eab0a736d663ba25a4e285df01518bbf7859aedfc2fb82b4686d9d57d144e8fe"
 dependencies = [
  "accesskit",
  "app_units",
@@ -7307,8 +7301,6 @@ dependencies = [
 [[package]]
 name = "servo-script-bindings"
 version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8c1b94222a1b3484cb6a0e22f0ba7256affac6e29b5f7c1f5b88795c76e0e3aa"
 dependencies = [
  "atomic_refcell",
  "bitflags 2.13.2",
@@ -7928,8 +7920,6 @@ dependencies = [
 [[package]]
 name = "stylo"
 version = "0.21.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "631d138475c566e37168f8394380e8ec89a6089dc806c7a76d355d73e9006553"
 dependencies = [
  "app_units",
  "arrayvec",
@@ -8036,8 +8026,6 @@ dependencies = [
 [[package]]
 name = "stylo_static_prefs"
 version = "0.21.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "75e76005daba1feda388038f018ecbcdcddaabac66b02d1a10ad3379fdd1455d"
 dependencies = [
  "toml 1.1.6+spec-1.1.0",
 ]
