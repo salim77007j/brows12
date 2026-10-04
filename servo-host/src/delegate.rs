@@ -338,6 +338,68 @@ impl WebViewDelegate for HostDelegate {
             }
         }
 
+        // Phase 4 Area 2.7: response-header security guard.
+        //
+        // (a) Clickjacking defense: cross-origin frames are embedded only
+        // if the frame target's own headers allow it (X-Frame-Options /
+        // CSP frame-ancestors, probed + cached). Same-origin frames pass.
+        if matches!(kind, RequestKind::Subdocument) {
+            if let Some(parent) = request.referrer_url.as_ref() {
+                if let Some(why) = self.privacy.security.check_frame(parent.as_str(), &url_str) {
+                    self.privacy.security.record_frame_blocked(&url_str, &why);
+                    let response = WebResourceResponse::new(request.url.clone());
+                    load.intercept(response).finish();
+                    return;
+                }
+            }
+        }
+
+        // (b) CSP enforcement on subresources: the document site's probed
+        // policy (script-src / style-src / img-src / connect-src / …) is
+        // evaluated with the Servo-team `content_security_policy` crate.
+        // The main-frame document itself has no parent CSP to consult.
+        if !matches!(kind, RequestKind::Document) {
+            if let Some(parent) = request.referrer_url.as_ref() {
+                if let Some(why) = self.privacy.security.check_subresource(
+                    parent.as_str(),
+                    &url_str,
+                    &request.destination,
+                ) {
+                    self.privacy.security.record_csp_blocked(&url_str, &why);
+                    let response = WebResourceResponse::new(request.url.clone());
+                    load.intercept(response).finish();
+                    return;
+                }
+            }
+        }
+
+        // (c) Mixed content: an https document asking for a plain-http
+        // subresource that the upgrader did NOT rewrite (exempt host /
+        // HTTPS-Only off) is blocked outright — matches Chrome's
+        // post-M79 all-mixed-content blocking. Reaches here only when the
+        // upgrade branch above did not early-return.
+        if request.url.scheme() == "http" {
+            if let Some(parent) = request.referrer_url.as_ref() {
+                if parent.scheme() == "https"
+                    && self.privacy.security.check_mixed_content(parent.as_str(), &url_str)
+                {
+                    self.privacy.security.record_mixed_content_blocked(&url_str);
+                    let response = WebResourceResponse::new(request.url.clone());
+                    load.intercept(response).finish();
+                    return;
+                }
+            }
+        }
+
+        // (d) Header probe for the main-frame document (cached 5 min):
+        // parses CSP / XFO / frame-ancestors / HSTS / COOP-COEP-CORP and
+        // feeds runtime HSTS into the upgrader. Runs synchronously in the
+        // document's own load hook, so every later subresource sees the
+        // policy already cached.
+        if matches!(kind, RequestKind::Document) && request.is_for_main_frame {
+            self.privacy.security.probe_document(&url_str);
+        }
+
         // Not blocked: let Servo load normally.
         drop(load);
     }

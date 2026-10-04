@@ -793,3 +793,80 @@ Work Log:
 Stage Summary:
 - 2.6 complete at the decision-layer level with empirical Servo gap
   documentation; engine wiring recorded as upstream follow-up.
+
+---
+Task ID: phase4-area2-2.7
+Agent: Super Z (main)
+Task: Phase 4 Focus Area 2, sub-item 2.7 — security hardening (CSP
+  enforcement, X-Frame-Options / frame-ancestors, COOP/COEP/CORP, SRI,
+  mixed content).
+
+Work Log:
+- Empirical engine audit (servo 0.6.0 crates.io source): the net/script
+  crates never read Content-Security-Policy, X-Frame-Options,
+  Strict-Transport-Security, or COOP/COEP/CORP — zero engine-side
+  enforcement. The embedder cannot see pass-through response headers
+  (WebResourceLoad exposes the request only), so header enforcement had
+  to be embedder-side via a probe.
+- privacy/src/security.rs (new): SecurityGuard —
+  * header PROBE per main-frame document + cross-site frame target
+    (ureq GET, 2 s connect / 4 s total, cached 5 min positive / 60 s
+    negative, fail-open: an unreachable probe never breaks browsing);
+  * CSP parsed with the Servo-team content_security_policy crate
+    (spec-accurate source matching); every later subresource from that
+    document is evaluated with should_request_be_blocked BEFORE Servo
+    fetches it. Nonce/hash/strict-dynamic policies are skipped for
+    script/style (element metadata invisible to the embedder — no
+    over-blocking);
+  * XFO + frame-ancestors clickjacking guard: same-origin frames pass;
+    cross-origin frames embed only if the frame target's own headers
+    allow (frame-ancestors supersedes XFO per spec);
+  * runtime HSTS learning: probe responses feed
+    HttpsUpgrader::record_hsts — closes the gap recorded in 2.4 without
+    an engine hook;
+  * mixed content: https document + plain-http subresource that the
+    upgrader did not rewrite (exempt host / mode off) is blocked
+    outright (Chrome post-M79 semantics);
+  * COOP/COEP/CORP presence recorded (counters + logs) — full
+    cross-origin-isolation enforcement documented as upstream work.
+- servo-host wiring: PrivacyHost gains `security: SecurityGuard`
+  (upgrader now Arc, shared for HSTS); delegate load_web_resource adds
+  four enforcement points (frame-guard → CSP check → mixed-content
+  block → main-frame probe) after the existing privacy verdict.
+- PrivacySummary extended (2.8 dashboard feed): security_probes,
+  frames_blocked, csp_blocked, mixed_content_blocked, hsts_learned,
+  coop/coep/corp observed + frame_log + csp_block_log.
+- Verification:
+  * unit: 46 privacy tests green (HSTS parse, frame-ancestors parse +
+    spec decisions incl. DENY-blocks-same-origin, CSP cross-site script
+    block via the real crate matcher, raw-TcpListener probe tests,
+    fail-open negative cache, mixed-content decision);
+  * E2E (scripts/phase4_area2_7.py, three loopback hosts): main doc
+    with CSP script-src 'self' + HSTS header; evil.js on 127.0.0.2;
+    XFO:DENY frame target on 127.0.0.3 → probes=2, csp_blocked=1
+    (evil.js denied), frames_blocked=1, hsts_learned=1, page title
+    intact (script never executed);
+  * Chrome parity (Playwright Chromium side-by-side): Chrome blocks the
+    same script via its own CSP engine — identical rendered outcome;
+    screenshots/v2-servo/phase4/area2_7_security_side_by_side.png;
+  * real-site sanity: example.com loads complete with probe=1 and zero
+    false positives (csp_blocked=0, frames_blocked=0).
+- Env recovery this session (recorded for future resets): rustup 1.99
+  reinstalled; user-space Mesa GL stack rebuilt to ~/.local/gl (apt
+  download libegl1 libegl-mesa0 libgl1 libglx0 libgbm1 libdrm2
+  libx11-xcb1 + dpkg -x) with __EGL_VENDOR_LIBRARY_FILENAMES pointed at
+  the extracted 50_mesa.json — matches the phase4_real_site.py recipe;
+  builds need -j 1 + CARGO_INCREMENTAL=0 on this 3 GB box (servo-script
+  OOMs the default parallelism); disk freed via target/debug/incremental
+  + registry cache (3.3 GB reclaimed at 100% full).
+
+Stage Summary:
+- 2.7 complete: brows12 now enforces response-header security the
+  engine never did — CSP network-path enforcement, XFO/frame-ancestors
+  clickjacking defense, runtime HSTS learning, mixed-content blocking,
+  COOP/COEP/CORP observation, all fail-open and cached.
+- Honest gaps (Area 2 report): SRI not implementable embedder-side (no
+  integrity metadata on WebResourceRequest, no response body on
+  pass-through) — upstream issue; inline-script CSP (nonce/hash) is JS-
+  level; multiple CSP headers read first-only (ureq limitation);
+  cross-origin isolation (COOP/COEP) recorded, not enforced.

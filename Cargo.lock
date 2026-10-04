@@ -711,6 +711,7 @@ dependencies = [
  "adblock",
  "base64 0.22.1",
  "brows12-storage",
+ "content-security-policy",
  "serde",
  "serde_json",
  "thiserror 2.0.21",

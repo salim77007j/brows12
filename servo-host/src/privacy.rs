@@ -22,6 +22,7 @@ use brows12_privacy::blocker::{BlockReason, RequestKind, Verdict};
 use brows12_privacy::doh::DohClient;
 use brows12_privacy::fingerprint::{FingerprintConfig, SpoofLevel};
 use brows12_privacy::policy::{CnameVerdict, PolicyEngine};
+use brows12_privacy::security::SecurityGuard;
 use brows12_privacy::upgrade::HttpsUpgrader;
 use brows12_privacy::PrivacyBlocker;
 use content_security_policy::Destination;
@@ -61,8 +62,13 @@ pub struct PrivacyHost {
     pub redirect_chains_blocked: AtomicU64,
     /// Pop-up / redirect events for the report (capped).
     pub popup_log: Mutex<Vec<String>>,
-    /// HTTPS-Only upgrader + HSTS state (Phase 4 Area 2.4).
-    pub upgrader: HttpsUpgrader,
+    /// HTTPS-Only upgrader + HSTS state (Phase 4 Area 2.4). Shared with
+    /// the security guard, which feeds it runtime-learned HSTS (2.7).
+    pub upgrader: Arc<HttpsUpgrader>,
+    /// Response-header security guard (Phase 4 Area 2.7): CSP
+    /// enforcement, XFO/frame-ancestors clickjacking defense, runtime
+    /// HSTS learning, mixed-content blocking, COOP/COEP/CORP observation.
+    pub security: SecurityGuard,
     /// Encrypted-DNS client (Phase 4 Area 2.5): every brows12-side
     /// resolution goes over DoH; feeds CNAME-cloaking detection.
     pub doh: DohClient,
@@ -81,6 +87,7 @@ pub struct PrivacyHost {
 impl PrivacyHost {
     #[allow(clippy::arc_with_non_send_sync)]
     pub fn new() -> Arc<Self> {
+        let upgrader = Arc::new(HttpsUpgrader::new());
         Arc::new(Self {
             blocker: PrivacyBlocker::new(),
             enabled: AtomicBool::new(true),
@@ -100,7 +107,8 @@ impl PrivacyHost {
             popups_blocked: AtomicU64::new(0),
             redirect_chains_blocked: AtomicU64::new(0),
             popup_log: Mutex::new(Vec::new()),
-            upgrader: HttpsUpgrader::new(),
+            security: SecurityGuard::new(upgrader.clone()),
+            upgrader,
             doh: DohClient::new(),
             policy: PolicyEngine { block_cname_cloaking: true, ..Default::default() },
             cname_cloaks: AtomicU64::new(0),

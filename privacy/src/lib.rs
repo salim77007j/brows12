@@ -8,6 +8,9 @@
 //!   injected into JS realms (canvas noise, spoofed navigator, screen, etc).
 //! * [`upgrade`] — HTTPS upgrade + HSTS cache.
 //! * [`policy`] — cookie policy, WebRTC leak policy, CNAME cloaking guard.
+//! * [`security`] — response-header security guard: CSP enforcement,
+//!   X-Frame-Options / frame-ancestors clickjacking defense, runtime HSTS
+//!   learning, mixed-content blocking, COOP/COEP/CORP observation.
 
 pub mod blocker;
 pub mod doh;
@@ -15,12 +18,14 @@ pub mod fingerprint;
 pub mod policy;
 pub mod removeparam;
 pub mod scriptlet_resources;
+pub mod security;
 pub mod upgrade;
 
 pub use blocker::{BlockReason, PrivacyBlocker};
 pub use doh::{DohClient, DohProvider};
 pub use fingerprint::{FingerprintConfig, NavigatorSpoof, SpoofLevel};
 pub use policy::{CnameVerdict, CookiePolicy, PolicyEngine, WebRtcPolicy};
+pub use security::{SecurityGuard, SecuritySummary, SiteSecurity};
 pub use upgrade::HttpsUpgrader;
 
 use thiserror::Error;

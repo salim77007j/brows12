@@ -101,6 +101,23 @@ pub struct PrivacySummary {
     pub cname_cloaks: u64,
     /// DoH queries made by the browser itself.
     pub doh_queries: u64,
+    /// Area 2.7 security guard: header probes performed.
+    pub security_probes: u64,
+    /// Frames denied by XFO / frame-ancestors.
+    pub frames_blocked: u64,
+    /// Subresource requests blocked by CSP enforcement.
+    pub csp_blocked: u64,
+    /// Plain-http subresources blocked on https documents.
+    pub mixed_content_blocked: u64,
+    /// HSTS policies learned at runtime from response headers.
+    pub hsts_learned: u64,
+    pub coop_observed: u64,
+    pub coep_observed: u64,
+    pub corp_observed: u64,
+    /// Frame-guard decision log (capped).
+    pub frame_log: Vec<String>,
+    /// CSP violation log (capped).
+    pub csp_block_log: Vec<String>,
 }
 
 /// Entry point for `brows render --engine servo`.
@@ -166,6 +183,16 @@ pub fn run_headless(config: HeadlessConfig) -> HeadlessReport {
             redirect_chains_blocked: 0,
             cname_cloaks: 0,
             doh_queries: 0,
+            security_probes: 0,
+            frames_blocked: 0,
+            csp_blocked: 0,
+            mixed_content_blocked: 0,
+            hsts_learned: 0,
+            coop_observed: 0,
+            coep_observed: 0,
+            corp_observed: 0,
+            frame_log: vec![],
+            csp_block_log: vec![],
         },
         load_complete_ms: None,
         total_ms: started.elapsed().as_millis(),
@@ -246,7 +273,7 @@ fn finish(
     };
     let (ads_blocked, trackers_blocked, blocked_requests) = privacy.blocked_summary();
     let csp_log = privacy.csp_log.lock().unwrap().clone();
-    let report = HeadlessReport {
+    let mut report = HeadlessReport {
         engine: engine_id(),
         url: config.url.to_string(),
         final_url: state.url(),
@@ -279,6 +306,16 @@ fn finish(
                 .load(std::sync::atomic::Ordering::Relaxed),
             cname_cloaks: privacy.cname_cloaks.load(std::sync::atomic::Ordering::Relaxed),
             doh_queries: privacy.doh.query_count(),
+            security_probes: 0,
+            frames_blocked: 0,
+            csp_blocked: 0,
+            mixed_content_blocked: 0,
+            hsts_learned: 0,
+            coop_observed: 0,
+            coep_observed: 0,
+            corp_observed: 0,
+            frame_log: vec![],
+            csp_block_log: vec![],
         },
         load_complete_ms: state
             .complete_at
@@ -289,6 +326,18 @@ fn finish(
         png: png_path,
         error: img.is_none().then(|| "capture produced no image".to_string()),
     };
+    // Phase 4 Area 2.7: merge the security guard's counters + logs.
+    let security = privacy.security.summary();
+    report.privacy.security_probes = security.probes;
+    report.privacy.frames_blocked = security.frames_blocked;
+    report.privacy.csp_blocked = security.csp_blocked;
+    report.privacy.mixed_content_blocked = security.mixed_content_blocked;
+    report.privacy.hsts_learned = security.hsts_learned;
+    report.privacy.coop_observed = security.coop_observed;
+    report.privacy.coep_observed = security.coep_observed;
+    report.privacy.corp_observed = security.corp_observed;
+    report.privacy.frame_log = security.frame_log;
+    report.privacy.csp_block_log = security.csp_block_log;
     if let Some(json_path) = &config.json {
         if let Ok(text) = serde_json::to_string_pretty(&report) {
             let _ =
