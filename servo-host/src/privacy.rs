@@ -19,6 +19,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use brows12_privacy::blocker::{BlockReason, RequestKind, Verdict};
+use brows12_privacy::fingerprint::{FingerprintConfig, SpoofLevel};
 use brows12_privacy::PrivacyBlocker;
 use content_security_policy::Destination;
 use embedder_traits::user_contents::UserStyleSheet;
@@ -45,6 +46,12 @@ pub struct PrivacyHost {
     pub csp_log: Mutex<Vec<String>>,
     /// Pages that received phase-2 (class/id) cosmetic hiding.
     pub cosmetic_pages_filtered: AtomicU64,
+    /// Anti-fingerprinting config (level is runtime-switchable).
+    pub fingerprint: Mutex<FingerprintConfig>,
+    /// 64-bit per-session entropy for the fingerprint defense.
+    pub session_seed: u64,
+    /// Pages that had the fingerprint defense installed.
+    pub fingerprint_pages_protected: AtomicU64,
     ucm: Mutex<Option<Rc<UserContentManager>>>,
     cosmetic_stylesheet: Mutex<Option<Rc<UserStyleSheet>>>,
     scriptlet_script: Mutex<Option<Rc<servo::user_contents::UserScript>>>,
@@ -67,6 +74,9 @@ impl PrivacyHost {
             blocked_log: Mutex::new(Vec::new()),
             csp_log: Mutex::new(Vec::new()),
             cosmetic_pages_filtered: AtomicU64::new(0),
+            fingerprint: Mutex::new(FingerprintConfig::default()),
+            session_seed: FingerprintConfig::fresh_session_seed(),
+            fingerprint_pages_protected: AtomicU64::new(0),
             ucm: Mutex::new(None),
             cosmetic_stylesheet: Mutex::new(None),
             scriptlet_script: Mutex::new(None),
@@ -75,7 +85,28 @@ impl PrivacyHost {
     }
 
     pub fn set_user_content_manager(&self, ucm: Rc<UserContentManager>) {
+        // Install the anti-fingerprinting defense script once: it applies to
+        // every document (main frame + iframes) created from now on.
+        let cfg = self.fingerprint.lock().unwrap().clone();
+        let script = brows12_privacy::fingerprint::defense_script(&cfg, self.session_seed);
+        if !script.is_empty() {
+            ucm.add_script(Rc::new(servo::user_contents::UserScript::new(script, None)));
+            self.fingerprint_pages_protected.store(1, Ordering::Relaxed);
+        }
         *self.ucm.lock().unwrap() = Some(ucm);
+    }
+
+    /// Switch the fingerprint protection level (applies to new documents).
+    pub fn set_fingerprint_level(&self, level: SpoofLevel) {
+        self.fingerprint.lock().unwrap().level = level;
+        // Re-install the script so future documents pick the new level.
+        if let Some(ucm) = self.ucm.lock().unwrap().clone() {
+            let cfg = self.fingerprint.lock().unwrap().clone();
+            let script = brows12_privacy::fingerprint::defense_script(&cfg, self.session_seed);
+            if !script.is_empty() {
+                ucm.add_script(Rc::new(servo::user_contents::UserScript::new(script, None)));
+            }
+        }
     }
 
     pub fn set_enabled(&self, on: bool) {

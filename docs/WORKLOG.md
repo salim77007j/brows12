@@ -548,3 +548,68 @@ Stage Summary:
   injection (no response-header access on pass-through); procedural
   cosmetic filters (JSON-encoded actions) not yet executed.
 - removeparam crate bug documented for an upstream issue (Area 1.7 list).
+
+---
+Task ID: phase4-area2-2.2
+Agent: Super Z (main)
+Task: Phase 4 Focus Area 2, sub-item 2.2 — 2026-grade anti-fingerprinting
+  (canvas/audio farbling-style noise, WebGL spoof, hardware caps, font
+  probing defeat, sensors lockdown, WebRTC guard; Brave "Standard"
+  alignment + Strict tier), verified side-by-side against Chrome.
+
+Work Log:
+- privacy/src/fingerprint.rs rewritten: FingerprintConfig (Balanced default
+  = Brave Standard alignment; Strict adds navigator UA/platform + screen +
+  timezone-UTC), 64-bit session seed from /dev/urandom, FNV-1a per-site
+  seed derivation (same hash mirrored in JS), and defense_script() — a
+  self-contained ES5-compatible patch bundle installed once via the
+  UserContentManager so EVERY document (main frame + iframes) is covered
+  before any page script runs.
+- Surfaces covered: Canvas2D getImageData/toDataURL/toBlob noise (noisy
+  offscreen copy on export), AudioBuffer.getChannelData wrapped in a
+  Proxy whose index reads carry per-site noise (writes pass through —
+  write-after-read FP pattern defeated; one-shot mutation is NOT enough,
+  proven by probe), AnalyserNode float reads noised, WebGL vendor/
+  renderer spoof + readPixels noise, measureText deterministic jitter
+  (font enumeration via widths fails), hardwareConcurrency/deviceMemory/
+  maxTouchPoints/webdriver/languages/plugins (PDF pair) spoofed,
+  getBattery stub + connection 4g/wifi + enumerateDevices [] + gamepads/
+  USB/BT/Serial/MIDI locked, WebRTC stub returning no srflx candidates
+  (Servo 0.6 has no RTCPeerConnection — guard is future-proofing),
+  Strict-only: screen geometry/colorDepth/devicePixelRatio + Intl
+  DateTimeFormat timeZone=UTC + getTimezoneOffset 0.
+- Debugging journey (documented for future sessions): (1) generated JS
+  had a regex escape bug (`\\/` terminates the literal early — Servo
+  showed a silent "Error at :169:92" console message; node --check on the
+  dumped script caught it); (2) getContext wrapped the prototype per-call
+  → nested noise wrappers → in-session UNSTABLE canvas hash; fixed with a
+  prototype-level one-shot guard; (3) audio noise at call time was
+  overwritten by the page's later writes → Proxy-wrap fix; (4) fixture
+  snapshot ordering made working hooks LOOK dead (fp_stats read before
+  the audio probe ran) — moved to end of probe.
+- Verification (fixtures/privacy/fingerprint-fixture.html):
+  * in-session stability: canvas_hash_1 == canvas_hash_2
+  * cross-session randomization: two separate processes → different
+    canvas hashes (1003f9063386ce vs eae586001496a) while stable within
+    each — session linkability broken, page self-consistency kept
+  * audio sum shifts .918923 → .918922 with hook (stats.audio=1,
+    audioCalled=true); measureText jitter active (measure:5); all
+    navigator caps spoofed (cores 2→8, memory 4→8, webdriver true→false,
+    plugins 0→3)
+  * Chrome 126 side-by-side PNG:
+    screenshots/v2-servo/phase4/area2_2_fingerprint_side_by_side.png
+    — Chrome leaks the real surface (real canvas fingerprint, webdriver:
+    true from Playwright, real core count 2, font-width differences
+    164.61 vs 156.00 across "fonts"); brows12 shows the defense surface.
+- Quality: fmt clean, clippy zero warnings, 31 privacy tests green
+  (4 new fingerprint tests: seed determinism, hook presence, Strict
+  gating, Off = no script).
+
+Stage Summary:
+- 2.2 complete: Balanced (default) matches/exceeds Brave Standard;
+  Strict tier ready; per-session-per-site noise semantics verified
+  end-to-end in the real engine.
+- Honest notes: WebGL surfaces are inert on Servo 0.6 (no WebGL context
+  yet — hooks installed and will activate when it lands); audio noise is
+  ±1e-7 (inaudible); Proxy wrap adds overhead to getChannelData reads
+  (acceptable: Servo media stack is stubbed today).

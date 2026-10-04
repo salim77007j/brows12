@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>brows12 Area 2.2 fingerprint probe</title>
+<style>
+  body { font-family: monospace; margin: 16px; background: #fff; }
+  .v { color: #060; font-weight: bold; }
+</style>
+</head>
+<body>
+<h3>brows12 fingerprint probe</h3>
+<pre id="out">collecting…</pre>
+<script>
+function sha256hex(str) {
+  // simple 53-bit rolling hash for comparison purposes (not crypto)
+  var h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+  for (var i = 0; i < str.length; i++) {
+    var ch = str.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16);
+}
+
+function probe() {
+  var lines = [];
+  var fp = window.__brows12fp;
+  lines.push('defense_script: ' + (fp ? 'INSTALLED' : 'MISSING'));
+
+  // canvas fingerprint x2 (must be identical within session)
+  var c = document.createElement('canvas');
+  c.width = 220; c.height = 40;
+  var ctx = c.getContext('2d');
+  ctx.textBaseline = 'top';
+  ctx.font = '16px "Arial"';
+  ctx.fillStyle = '#f60';
+  ctx.fillRect(0, 0, 100, 25);
+  ctx.fillStyle = '#0af';
+  ctx.fillText('fingerprint,fp', 2, 12);
+  var h1 = sha256hex(c.toDataURL());
+  var h2 = sha256hex(c.toDataURL());
+  lines.push('canvas_hash_1: ' + h1);
+  lines.push('canvas_hash_2: ' + h2 + (h1 === h2 ? '  (stable)' : '  (UNSTABLE!)'));
+
+  // audio
+  try {
+    var AC = window.AudioContext || window.webkitAudioContext;
+    var actx = new AC();
+    var buf = actx.createBuffer(1, 512, actx.sampleRate);
+    lines.push('audioBufOwn: ' + Object.prototype.hasOwnProperty.call(buf, 'getChannelData'));
+    lines.push('protoIsAudioBufferProto: ' + (Object.getPrototypeOf(buf) === AudioBuffer.prototype));
+    lines.push('globalProtoHasHook: ' + (String(AudioBuffer.prototype.getChannelData).indexOf('brows12') !== -1 || String(AudioBuffer.prototype.getChannelData).indexOf('audioCalled') !== -1));
+    var d = buf.getChannelData(0);
+    for (var i = 0; i < d.length; i++) d[i] = Math.sin(i * 0.05);
+    var sum1 = 0;
+    for (var i = 0; i < d.length; i++) sum1 += Math.abs(d[i]);
+    lines.push('audio_entropy_sum: ' + sum1.toFixed(6));
+  } catch (e) { lines.push('audio: unavailable (' + e.name + ')'); }
+
+  // webgl vendor/renderer
+  try {
+    var gc = document.createElement('canvas');
+    var gl = gc.getContext('webgl') || gc.getContext('experimental-webgl');
+    if (gl) {
+      var ext = gl.getExtension('WEBGL_debug_renderer_info');
+      var vendor = ext ? gl.getParameter(ext.UNMASKED_VENDOR_WEBGL) : gl.getParameter(gl.VENDOR);
+      var renderer = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
+      lines.push('webgl_vendor: ' + vendor);
+      lines.push('webgl_renderer: ' + renderer);
+    } else { lines.push('webgl: no context'); }
+  } catch (e) { lines.push('webgl: error ' + e.name); }
+
+  // navigator
+  var n = navigator;
+  lines.push('navigator.userAgent: ' + n.userAgent);
+  lines.push('navigator.platform: ' + n.platform);
+  lines.push('navigator.languages: ' + JSON.stringify(n.languages));
+  lines.push('navigator.hardwareConcurrency: ' + n.hardwareConcurrency);
+  lines.push('navigator.deviceMemory: ' + n.deviceMemory);
+  lines.push('navigator.maxTouchPoints: ' + n.maxTouchPoints);
+  lines.push('navigator.webdriver: ' + n.webdriver);
+  lines.push('navigator.plugins.length: ' + n.plugins.length);
+
+  // fonts via measureText probing (same glyph, "different fonts" → same width?)
+  try {
+    var mc = document.createElement('canvas').getContext('2d');
+    var widths = [];
+    var fonts = ['12px Arial', '12px "Helvetica Neue"', '12px "Segoe UI"', '12px Verdana', '12px "Comic Sans MS"'];
+    for (var i = 0; i < fonts.length; i++) {
+      mc.font = fonts[i];
+      widths.push(mc.measureText('mmmwmwmwmmmmmmwmm').width.toFixed(4));
+    }
+    lines.push('font_probe_widths: ' + widths.join(','));
+  } catch (e) { lines.push('font_probe: error'); }
+
+  // battery / network / media devices
+  if (navigator.getBattery) {
+    navigator.getBattery().then(function (b) {
+      lines.push('battery: level=' + b.level + ' charging=' + b.charging);
+    });
+  } else { lines.push('battery: getBattery absent'); }
+  var conn = navigator.connection || {};
+  lines.push('connection: ' + JSON.stringify({effectiveType: conn.effectiveType, downlink: conn.downlink, rtt: conn.rtt, type: conn.type}));
+  if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+    navigator.mediaDevices.enumerateDevices().then(function (ds) {
+      lines.push('mediaDevices: ' + ds.length + ' devices');
+    });
+  } else { lines.push('mediaDevices: absent'); }
+
+  // webrtc
+  lines.push('RTCPeerConnection: ' + (window.RTCPeerConnection ? 'present' : 'absent'));
+
+  // screen + timezone (Strict surfaces)
+  lines.push('screen: ' + screen.width + 'x' + screen.height + ' colorDepth=' + screen.colorDepth);
+  lines.push('devicePixelRatio: ' + window.devicePixelRatio);
+  lines.push('timezone: ' + Intl.DateTimeFormat().resolvedOptions().timeZone + ' offset=' + (new Date().getTimezoneOffset() / 60));
+
+  if (fp) lines.push('fp_stats: ' + JSON.stringify(fp.stats));
+  if (window.__brows12diag) lines.push('diag: ' + JSON.stringify(window.__brows12diag));
+  document.getElementById('out').textContent = lines.join('\n');
+  document.title = 'fp-probe-ready';
+}
+window.addEventListener('load', function () { setTimeout(probe, 100); });
+</script>
+</body>
+</html>
