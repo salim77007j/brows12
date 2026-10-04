@@ -15,6 +15,8 @@ use servo::{
 };
 use url::Url;
 
+use brows12_privacy::blocker::RequestKind;
+
 use crate::privacy::{destination_to_kind, PrivacyHost};
 
 #[derive(Default)]
@@ -166,6 +168,12 @@ impl WebViewDelegate for HostDelegate {
     }
 
     fn request_navigation(&self, _webview: WebView, navigation: NavigationRequest) {
+        // Phase 4 Area 2.4: HTTPS-Only is enforced in `load_web_resource`:
+        // plain-HTTP documents are answered with a meta-refresh upgrade
+        // page (a real subsequent navigation renders reliably, unlike
+        // deny+reload or intercepted document redirects) and plain-HTTP
+        // subresources with a 301 to their https:// URL.
+
         // Phase 3.9: a new document starts from a fresh page-weight count.
         self.state.page_requests.store(0, Ordering::Relaxed);
         // Install cosmetic filters + scriptlets (+$csp meta) for the
@@ -280,7 +288,62 @@ impl WebViewDelegate for HostDelegate {
             self.privacy.record_csp(&url_str, &directives);
         }
 
+        // Phase 4 Area 2.4: HTTPS-Only. Exempt hosts never reach here
+        // (upgrade() returns the URL unchanged).
+        if request.url.scheme() == "http" {
+            if let Some(upgraded) = self.privacy.upgrader.upgrade(&url_str) {
+                if upgraded != url_str {
+                    if matches!(kind, RequestKind::Document | RequestKind::Subdocument) {
+                        // Documents: serve a meta-refresh upgrade page.
+                        // Servo does not reliably render after deny+reload
+                        // or an intercepted document redirect, but a
+                        // meta-refresh issues a REAL navigation that
+                        // renders normally.
+                        let body = upgrade_page_html(&upgraded);
+                        let mut headers = HeaderMap::new();
+                        headers.insert(
+                            header::CONTENT_TYPE,
+                            "text/html; charset=utf-8".parse().unwrap(),
+                        );
+                        let response = WebResourceResponse::new(request.url.clone())
+                            .status_code(StatusCode::OK)
+                            .status_message(b"OK".to_vec())
+                            .headers(headers);
+                        let mut intercepted = load.intercept(response);
+                        intercepted.send_body_data(body.into_bytes());
+                        intercepted.finish();
+                    } else {
+                        // Subresources: 301 to the https:// version (the
+                        // re-request re-enters this hook with https).
+                        if let Ok(target) = url::Url::parse(&upgraded) {
+                            let mut headers = HeaderMap::new();
+                            headers.insert(header::LOCATION, upgraded.parse().unwrap());
+                            let response = WebResourceResponse::new(target)
+                                .status_code(StatusCode::MOVED_PERMANENTLY)
+                                .status_message(b"Moved Permanently".to_vec())
+                                .headers(headers);
+                            load.intercept(response).finish();
+                            return;
+                        }
+                    }
+                    return;
+                }
+            }
+        }
+
         // Not blocked: let Servo load normally.
         drop(load);
     }
+}
+
+/// The upgrade page served for plain-HTTP document navigations.
+fn upgrade_page_html(target: &str) -> String {
+    let escaped = target.replace('&', "&amp;").replace('"', "&quot;");
+    format!(
+        "<!DOCTYPE html><html><head><meta charset=\"utf-8\">\
+<meta http-equiv=\"refresh\" content=\"0;url={escaped}\">\
+<title>Upgrading connection</title></head>\
+<body style=\"font-family:sans-serif;padding:2em;color:#444\">\
+Upgrading to a secure connection…</body></html>"
+    )
 }

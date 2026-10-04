@@ -89,6 +89,14 @@ pub struct PrivacySummary {
     pub rules_loaded: usize,
     /// `$csp` recording log (capped).
     pub csp_log: Vec<String>,
+    /// http:// navigations + subresources upgraded to https://.
+    pub https_upgrades: u64,
+    /// HSTS (preload + cache) enforcement hits.
+    pub hsts_hits: u64,
+    /// Pop-ups blocked (window.open / pop-unders).
+    pub popups_blocked: u64,
+    /// Interstitial redirect chains cut off.
+    pub redirect_chains_blocked: u64,
 }
 
 /// Entry point for `brows render --engine servo`.
@@ -147,6 +155,10 @@ pub fn run_headless(config: HeadlessConfig) -> HeadlessReport {
             scriptlets_injected: 0,
             rules_loaded: 0,
             csp_log: vec![],
+            https_upgrades: 0,
+            hsts_hits: 0,
+            popups_blocked: 0,
+            redirect_chains_blocked: 0,
         },
         load_complete_ms: None,
         total_ms: started.elapsed().as_millis(),
@@ -252,6 +264,12 @@ fn finish(
                 .load(std::sync::atomic::Ordering::Relaxed),
             rules_loaded: privacy.blocker.rules_loaded,
             csp_log,
+            https_upgrades: privacy.upgrader.upgrade_count(),
+            hsts_hits: privacy.upgrader.hsts_hit_count(),
+            popups_blocked: privacy.popups_blocked.load(std::sync::atomic::Ordering::Relaxed),
+            redirect_chains_blocked: privacy
+                .redirect_chains_blocked
+                .load(std::sync::atomic::Ordering::Relaxed),
         },
         load_complete_ms: state
             .complete_at

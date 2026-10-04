@@ -20,6 +20,7 @@ use std::sync::{Arc, Mutex};
 
 use brows12_privacy::blocker::{BlockReason, RequestKind, Verdict};
 use brows12_privacy::fingerprint::{FingerprintConfig, SpoofLevel};
+use brows12_privacy::upgrade::HttpsUpgrader;
 use brows12_privacy::PrivacyBlocker;
 use content_security_policy::Destination;
 use embedder_traits::user_contents::UserStyleSheet;
@@ -58,6 +59,8 @@ pub struct PrivacyHost {
     pub redirect_chains_blocked: AtomicU64,
     /// Pop-up / redirect events for the report (capped).
     pub popup_log: Mutex<Vec<String>>,
+    /// HTTPS-Only upgrader + HSTS state (Phase 4 Area 2.4).
+    pub upgrader: HttpsUpgrader,
     ucm: Mutex<Option<Rc<UserContentManager>>>,
     cosmetic_stylesheet: Mutex<Option<Rc<UserStyleSheet>>>,
     scriptlet_script: Mutex<Option<Rc<servo::user_contents::UserScript>>>,
@@ -86,6 +89,7 @@ impl PrivacyHost {
             popups_blocked: AtomicU64::new(0),
             redirect_chains_blocked: AtomicU64::new(0),
             popup_log: Mutex::new(Vec::new()),
+            upgrader: HttpsUpgrader::new(),
             ucm: Mutex::new(None),
             cosmetic_stylesheet: Mutex::new(None),
             scriptlet_script: Mutex::new(None),

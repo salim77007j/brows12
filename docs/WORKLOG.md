@@ -659,3 +659,55 @@ Stage Summary:
   (deferred; cosmetic filtering already removes common overlay selectors,
   and frame-ancestors/XFO behavior is verified in 2.7); popup allowlist
   awaits the UI.
+
+---
+Task ID: phase4-area2-2.4
+Agent: Super Z (main)
+Task: Phase 4 Focus Area 2, sub-item 2.4 — HTTPS-Only upgrade + HSTS.
+
+Work Log:
+- privacy/src/upgrade.rs rewritten: the old set_mode() was a silent no-op
+  (`let _ = mode;`) — mode is now an AtomicU8 and runtime-switchable;
+  default mode is HttpsOnly per the mission brief; Upgradable and Off
+  available. Exemptions: IP literals (local fixtures), localhost, .onion,
+  .test, and a user-managed per-site exception set (registrable-domain
+  semantics cover subdomains). HSTS cache hardened (max-age 0 removes),
+  embedded 48-domain HSTS preload slice (top-traffic domains shipping
+  includeSubDomains per the Chromium preload list, curated 2026-10) with
+  parent-domain matching; upgrade + hsts_hit counters.
+- Servo integration path (three designs tried, two rejected on evidence):
+  1) deny(http nav) + webview.load(https) — RACES the denied navigation:
+     final URL updates but the document never renders (blank + no title);
+  2) deny + deferred location.replace via the pending_js queue — same
+     blank outcome (any deny-poisoned initial navigation breaks render);
+  3) SHIPPED: intercept the plain-HTTP DOCUMENT request and serve a
+     meta-refresh upgrade page (real subsequent navigation renders
+     normally); plain-HTTP SUBRESOURCES get a 301 (verified working:
+     the re-request re-enters the hook with https).
+- Verified:
+  * http://example.com/ → final_url https://example.com/, title
+    "Example Domain", upgrades=1 (meta-refresh path);
+  * http://127.0.0.1:8901 fixture stays http (IP exemption) — all local
+    fixture servers keep working;
+  * direct-https control loads fine, isolating the failure modes above;
+  * neverssl.com noted: its https endpoint fails in Servo 0.6 TLS
+    regardless of upgrade path (pre-existing engine limitation, not a
+    regression);
+  * unit tests: 35 green (mode switch, exemptions, exception subdomains,
+    HSTS expiry/removal, preload matching incl. subdomains);
+  * Chrome side-by-side PNG:
+    screenshots/v2-servo/phase4/area2_4_https_side_by_side.png
+    (headless Chrome stays on http://example.com; brows12 upgrades).
+- PrivacySummary extended: https_upgrades, hsts_hits, popups_blocked,
+  redirect_chains_blocked (2.3 counters were missing from the report).
+
+Stage Summary:
+- 2.4 complete: HTTPS-Only default with working document + subresource
+  upgrade paths, HSTS preload slice + runtime cache, per-site exceptions.
+- Honest notes: intercepted document REDIRECTS (301) don't render in
+  Servo 0.6 — the meta-refresh page is the reliable embedder-side
+  mechanism (engine-level upgrade-insecure-requests would be an upstream
+  improvement); response headers are not visible to the embedder, so
+  runtime HSTS learning from Strict-Transport-Security headers needs an
+  upstream hook (preload + cache API shipped; recording wired for future
+  engine integration).
