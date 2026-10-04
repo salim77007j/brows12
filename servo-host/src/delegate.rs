@@ -54,6 +54,51 @@ pub struct HostState {
     /// idle timers/animations; the budget governor hibernates it on the
     /// heavy-tab schedule instead of the light one. 0 = never active.
     pub last_activity_ms: AtomicU64,
+    /// Phase 4.4.2: form-state snapshot (JSON array, `SERIALIZE_FORMS_JS`)
+    /// captured when the tab goes to the background. Read at hibernation
+    /// time so a discarded tab can restore its form inputs on reload.
+    pub form_snapshot: Mutex<Option<String>>,
+}
+
+/// uBO-style form-state capture, run when a tab goes to the background:
+/// one JSON array entry per input/textarea/select, by document order.
+/// Stored in `HostState::form_snapshot` by the evaluation callback.
+pub const SERIALIZE_FORMS_JS: &str = r#"
+(function(){
+  var els = document.querySelectorAll('input,textarea,select');
+  var out = [];
+  for (var i = 0; i < els.length; i++) {
+    var e = els[i];
+    if (e.type === 'checkbox' || e.type === 'radio') { out.push([e.type, e.checked ? 1 : 0]); }
+    else if (e.tagName === 'SELECT') { out.push(['select', e.selectedIndex]); }
+    else { out.push([e.type || 'text', e.value]); }
+  }
+  return JSON.stringify(out);
+})()
+"#;
+
+/// Build the form-restore snippet for a captured JSON snapshot.
+/// `window.scrollTo` and the browser clamp the scroll target to the
+/// document, so a stale estimate can never overscroll.
+pub fn restore_state_js(scroll_y: f32, form_json: Option<&str>) -> String {
+    let forms = match form_json {
+        Some(json) if !json.is_empty() => format!(
+            "var d = {json};
+             var els = document.querySelectorAll('input,textarea,select');
+             for (var i = 0; i < d.length && i < els.length; i++) {{
+               var e = els[i], v = d[i]; if (!v) continue;
+               if (v[0] === 'checkbox' || v[0] === 'radio') {{ e.checked = !!v[1]; }}
+               else if (v[0] === 'select') {{ e.selectedIndex = v[1] | 0; }}
+               else {{ e.value = v[1]; }}
+             }}"
+        ),
+        _ => String::new(),
+    };
+    format!(
+        "(function(){{ window.scrollTo(0, {scroll_y}); {forms} }})()",
+        scroll_y = scroll_y.max(0.0),
+        forms = forms
+    )
 }
 
 fn unix_now_ms() -> u64 {

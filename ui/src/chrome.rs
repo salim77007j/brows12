@@ -238,6 +238,19 @@ pub fn draw_chrome(
             1.6,
             INK_DIM,
         );
+        // Phase 4.4.2: memory-discard marker — a small red dot on the
+        // tab's lower-left corner tells the user this tab was discarded
+        // by the governor (not closed); it reloads on activation.
+        if t.discarded && t.suspended {
+            let (cx, cy, r) = (tx + 9.0, ty + th - 6.0, 2.6);
+            // tiny-skia's from_circle already returns Option<Path>.
+            if let Some(path) = PathBuilder::from_circle(cx, cy, r) {
+                let mut p = Paint::default();
+                p.set_color(col(ERROR_RED));
+                p.anti_alias = true;
+                px.fill_path(&path, &p, FillRule::Winding, Transform::identity(), None);
+            }
+        }
     }
 
     // "+" new-tab button.

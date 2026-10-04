@@ -1001,3 +1001,36 @@ Stage Summary:
 - 4.1 complete: predictive hibernation live in the governor — the tab
   the user is least likely to return to is suspended first, verified
   end-to-end. Tests: 7 unit + e2e green; clippy/fmt pending final pass.
+
+---
+Task ID: phase4-area4-4.2
+Agent: Super Z (main)
+Task: Phase 4 Focus Area 4, sub-item 4.2 — memory-aware tab discarding
+with state preservation + user notification.
+
+Work Log:
+- Discard semantics: hibernate(index, discarded) — governor-driven
+  reclaims (RSS + PSI + budget ladder) set discarded=true and emit
+  `tab_discarded index= scroll_est= forms= url=`; user-command
+  hibernation stays a plain hibernate. Strip shows a red dot marker on
+  discarded tabs (chrome.rs, tiny-skia from_circle).
+- Scroll preservation: shell tracks a per-tab vertical scroll estimate
+  from forwarded wheel deltas (forward_wheel, clamped >= 0; window
+  scrollTo clamps the top end on restore). Reset on new navigations.
+- Form preservation: switch_to captures the outgoing tab's form state
+  via SERIALIZE_FORMS_JS (delegate.rs) into HostState.form_snapshot —
+  the last live moment before a discard (engine has no synchronous DOM
+  access at hibernation time). hibernate() harvests it into
+  UiTab.form_state; restore() queues restore_state_js(scroll, forms)
+  once the reload completes (`state_restore` event).
+- History preservation was already inherent (session history lives in
+  UiTab, untouched by hibernation).
+- E2E (phase4_area4.py --only 4.2): tall fixture + timer-filled input;
+  scroll 3x800, switch away, governor discards, switch back. All 5
+  checks PASS: discarded scroll_est=2400 forms=1; state_restore
+  scroll_est=2400 forms=1. 4.1 regression re-run: PASS ([3,2,0]).
+
+Stage Summary:
+- 4.2 complete: pressure discards are value-ranked (4.1 ordering),
+  scroll + form state + history survive the discard, and the user is
+  notified via strip marker + tab_discarded events.

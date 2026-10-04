@@ -219,6 +219,87 @@ def verify_41(out):
         srv.terminate()
 
 
+# ---------------------------------------------------------------- 4.2 --
+TALL_HTML = """<!doctype html><html><head><title>A4 discard fixture</title></head>
+<body style="height:3000px">
+<h1>discard preservation fixture</h1>
+<input id="f1" placeholder="type here">
+<script>
+// Simulates user input a moment after load (automation cannot focus
+// page widgets from the shell FIFO).
+setTimeout(function () {
+  document.getElementById('f1').value = 'preserved-text-42';
+}, 1500);
+</script>
+</body></html>"""
+
+
+def verify_42(out):
+    site = pathlib.Path("/tmp/a4_site2")
+    site.mkdir(parents=True, exist_ok=True)
+    (site / "tall.html").write_text(TALL_HTML)
+    srv = subprocess.Popen(
+        [sys.executable, "-m", "http.server", "8138", "--directory", str(site)],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    assert wait_http("http://127.0.0.1:8138/tall.html"), "http server"
+    try:
+        env = {
+            "BROWS12_MEM_BUDGET_MB": "64",
+            "BROWS12_GOVERNOR_INTERVAL_MS": "1500",
+            "BROWS12_GOVERNOR_WARMUP_MS": "18000",
+            "BROWS12_TAB_SUSPEND_SECS": "3",
+            "BROWS12_HEAVY_SUSPEND_SECS": "2",
+        }
+        run = UiRun(env, "42")
+        try:
+            run.wait_for(lambda e: e.startswith("start "), 60, "start")
+            # tab1: tall page; wait for load + the simulated user input.
+            open_tab(run, "http://127.0.0.1:8138/tall.html", "tall.html")
+            time.sleep(2.5)
+            # Scroll down 3x800 px (wheel-forward; estimate tracked).
+            for _ in range(3):
+                run.cmd("<SCROLL> 800")
+                time.sleep(0.3)
+            # Leave the tab (form snapshot fires on switch-away), let the
+            # governor discard it, then come back.
+            run.cmd("<SWITCH> 0")
+            time.sleep(1.0)
+            discarded = run.wait_for(
+                lambda e: e.startswith("tab_discarded index=1 "),
+                60, "tab_discarded")
+            hib = run.wait_for(
+                lambda e: e.startswith("hibernate tab=") and "index=1" in e,
+                30, "hibernate index=1")
+            time.sleep(2.0)  # settle before restoring
+            run.cmd("<SWITCH> 1")
+            state_restore = run.wait_for(
+                lambda e: e.startswith("state_restore index=1"),
+                120, "state_restore index=1")
+            checks = {
+                "governor discarded the background tab": bool(discarded),
+                "discard preserved the scroll estimate":
+                    "scroll_est=2400" in discarded,
+                "discard preserved a form snapshot": "forms=1" in discarded,
+                "restore re-applied scroll+form state":
+                    "scroll_est=2400" in state_restore and "forms=1" in state_restore,
+                "hibernate followed the discard": bool(hib),
+            }
+            out["area4_2"] = {
+                "tab_discarded": discarded,
+                "state_restore": state_restore,
+                "checks": checks,
+            }
+            for k, ok in checks.items():
+                print(("PASS " if ok else "FAIL ") + k)
+            print("discarded:", discarded)
+            print("state_restore:", state_restore)
+            return all(checks.values())
+        finally:
+            run.close()
+    finally:
+        srv.terminate()
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", default="all",
@@ -236,6 +317,8 @@ def main():
     ok = True
     if args.only in ("all", "4.1"):
         ok &= verify_41(out)
+    if args.only in ("all", "4.2"):
+        ok &= verify_42(out)
     pathlib.Path(args.out).write_text(json.dumps(out, indent=2))
     print(f"artifact: {args.out}")
     sys.exit(0 if ok else 1)

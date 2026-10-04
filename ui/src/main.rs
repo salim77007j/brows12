@@ -519,6 +519,24 @@ impl Gui {
             ));
             self.snapshot_gen += 1;
             changed = true;
+            // Phase 4.4.2: the reloaded document is complete — re-apply
+            // the preserved scroll position and form state now.
+            if t.pending_state_restore {
+                t.pending_state_restore = false;
+                let js = servo_host::delegate::restore_state_js(
+                    t.scroll_est,
+                    t.form_state.as_deref(),
+                );
+                if let Some(rt) = self.runtimes.get(&id) {
+                    rt.state.pending_js.lock().unwrap().push(js);
+                }
+                model::emit(format!(
+                    "state_restore index={} scroll_est={} forms={}",
+                    self.active,
+                    t.scroll_est,
+                    t.form_state.is_some() as u8
+                ));
+            }
         } else if complete {
             // Redirects after load: keep the omnibox honest.
             if recordable {
@@ -630,6 +648,23 @@ impl Gui {
             self.restore(index);
         }
         let previous_active = self.active_id();
+        // Phase 4.4.2: capture the outgoing tab's form state before it
+        // goes to the background — the snapshot is what a later discard
+        // preserves (the engine has no synchronous DOM access at
+        // hibernation time, so capture happens at the last live moment).
+        if let Some(prev) = previous_active {
+            if let Some(rt) = self.runtimes.get(&prev) {
+                let state = rt.state.clone();
+                rt.webview.evaluate_javascript(
+                    servo_host::delegate::SERIALIZE_FORMS_JS,
+                    move |result| {
+                        if let Ok(servo::JSValue::String(json)) = result {
+                            *state.form_snapshot.lock().unwrap() = Some(json);
+                        }
+                    },
+                );
+            }
+        }
         self.active = index;
         self.tabs[index].last_active = Instant::now();
         // Phase 4.4.1: activation recording for predictive hibernation.
@@ -665,7 +700,13 @@ impl Gui {
     /// WebView (Drop sends CloseWebView; the constellation tears down the
     /// document pipeline and frees its memory). Shell metadata survives so
     /// the tab strip keeps title/URL and activation reloads the page.
-    fn hibernate(&mut self, index: usize) {
+    ///
+    /// Phase 4.4.2 — `discarded` marks governor-driven hibernations
+    /// (memory-aware discard): the strip shows a discard marker and a
+    /// `tab_discarded` event notifies the (future) UI + automation. The
+    /// tab's scroll estimate and background-captured form snapshot are
+    /// preserved in the shell metadata and re-applied on restore.
+    fn hibernate(&mut self, index: usize, discarded: bool) {
         if index >= self.tabs.len() || index == self.active {
             return;
         }
@@ -678,11 +719,24 @@ impl Gui {
             let weight = rt.state.page_requests();
             rt.webview.set_throttled(true);
             rt.webview.hide();
+            // Phase 4.4.2: harvest the form snapshot captured when the
+            // tab went to the background, then drop the pipeline.
+            let form = rt.state.form_snapshot.lock().unwrap().clone();
+            self.tabs[index].form_state = form;
             // rt (WebView + offscreen ctx) dropped here.
             model::emit(format!("hibernate_weight tab={id} page_requests={weight}"));
         }
         self.tabs[index].suspended = true;
         self.tabs[index].status = Status::Idle;
+        self.tabs[index].discarded = discarded;
+        if discarded {
+            model::emit(format!(
+                "tab_discarded index={index} scroll_est={} forms={} url={}",
+                self.tabs[index].scroll_est,
+                self.tabs[index].form_state.is_some() as u8,
+                model::ev_escape(&self.tabs[index].url()),
+            ));
+        }
         // Phase 4.3.2: return the dropped pipeline's freed arena pages to
         // the OS on EVERY hibernation (the governor loop used to be the
         // only trim site — command-driven hibernation left hundreds of MB
@@ -732,10 +786,15 @@ impl Gui {
         );
         self.tabs[index].suspended = false;
         self.tabs[index].status = Status::Loading;
+        // Phase 4.4.2: re-apply the preserved scroll position (and form
+        // state) once the reload completes.
+        self.tabs[index].pending_state_restore =
+            self.tabs[index].scroll_est > 0.0 || self.tabs[index].form_state.is_some();
         model::emit(format!(
-            "restore tab={} index={index} url={}",
+            "restore tab={} index={index} url={} pending_state={}",
             id,
             model::ev_escape(&url),
+            self.tabs[index].pending_state_restore as u8,
         ));
         self.dirty = true;
     }
@@ -954,7 +1013,7 @@ impl Gui {
             {
                 break;
             }
-            self.hibernate(i);
+            self.hibernate(i, true);
             self.governor_hibernated += 1;
             reclaimed += 1;
             // RSS lags the free (allocator retention); sample after a
@@ -1021,7 +1080,7 @@ impl Gui {
                     model::emit(format!("tab_trim index={i}"));
                 }
                 Degradation::Hibernate => {
-                    self.hibernate(i);
+                    self.hibernate(i, true);
                     self.governor_hibernated += 1;
                     model::emit(format!(
                         "tab_budget_hibernate index={i} hibernated_total={}",
@@ -1071,7 +1130,14 @@ impl Gui {
             let t = &mut self.tabs[self.active];
             t.status = Status::Loading;
             t.omni_edit = None;
+            // Phase 4.4.2: a NEW navigation invalidates the preserved
+            // scroll/form state (back/forward reloads of an old entry
+            // keep record=false and their state is re-estimated).
             if record {
+                t.scroll_est = 0.0;
+                t.form_state = None;
+                t.pending_state_restore = false;
+                t.discarded = false;
                 t.history.truncate(t.hindex + 1);
                 t.history.push(normalized.clone());
                 t.hindex = t.history.len() - 1;
@@ -1159,10 +1225,16 @@ impl Gui {
 
     fn forward_wheel(&mut self, dx: f64, dy: f64, mode: WheelMode) {
         let (x, y) = self.viewport_point();
+        // Phase 4.4.2: track the active tab's vertical scroll estimate
+        // (wheel delta sign: negative dy scrolls DOWN). Clamped at 0;
+        // `window.scrollTo` clamps the top end on restore.
+        if let Some(t) = self.tabs.get_mut(self.active) {
+            t.scroll_est = (t.scroll_est - dy as f32).max(0.0);
+        }
         if let Some(id) = self.active_id() {
             if let Some(rt) = self.runtimes.get(&id) {
                 rt.webview.notify_input_event(InputEvent::Wheel(WheelEvent::new(
-                    WheelDelta { x: dx, y: dy, z: 0.0, mode },
+                    WheelDelta { x: x as f64, y: dy, z: 0.0, mode },
                     DevicePoint::new(x, y).into(),
                 )));
             }
@@ -1267,7 +1339,7 @@ impl Gui {
             InjectCmd::Reload => self.reload(),
             InjectCmd::NewTab => self.new_tab(),
             InjectCmd::Switch(i) => self.switch_to(i),
-            InjectCmd::Hibernate(i) => self.hibernate(i),
+            InjectCmd::Hibernate(i) => self.hibernate(i, false),
             InjectCmd::Restore(i) => self.restore(i),
             InjectCmd::Scroll(dy) => self.scroll(dy),
             InjectCmd::Sleep(_) => {}

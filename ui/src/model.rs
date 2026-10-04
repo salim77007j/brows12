@@ -47,6 +47,20 @@ pub struct UiTab {
     /// Phase 4.4.1: how many times this tab became the active tab —
     /// predictive-hibernation signal (often-used tabs come back).
     pub activations: u32,
+    /// Phase 4.4.2: the tab was DISCARDED by the memory governor (not
+    /// by the user). Drives the strip's discard marker + the
+    /// `tab_discarded` notification.
+    pub discarded: bool,
+    /// Phase 4.4.2: shell-tracked vertical scroll estimate (CSS px,
+    /// from forwarded wheel deltas). Preserved across hibernation and
+    /// re-applied with `window.scrollTo` after the reload completes.
+    pub scroll_est: f32,
+    /// Phase 4.4.2: form-state JSON captured when the tab went to the
+    /// background (`SERIALIZE_FORMS_JS`); re-applied on restore.
+    pub form_state: Option<String>,
+    /// Phase 4.4.2: queue the scroll+form restore once the reloaded
+    /// document completes.
+    pub pending_state_restore: bool,
 }
 
 impl UiTab {
@@ -61,6 +75,10 @@ impl UiTab {
             suspended: false,
             last_active: std::time::Instant::now(),
             activations: 0,
+            discarded: false,
+            scroll_est: 0.0,
+            form_state: None,
+            pending_state_restore: false,
         }
     }
 

@@ -1,0 +1,13 @@
+{
+  "area4_2": {
+    "tab_discarded": "tab_discarded index=1 scroll_est=2400 forms=1 url=http://127.0.0.1:8138/tall.html",
+    "state_restore": "state_restore index=1 scroll_est=2400 forms=1",
+    "checks": {
+      "governor discarded the background tab": true,
+      "discard preserved the scroll estimate": true,
+      "discard preserved a form snapshot": true,
+      "restore re-applied scroll+form state": true,
+      "hibernate followed the discard": true
+    }
+  }
+}
