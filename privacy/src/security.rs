@@ -558,6 +558,7 @@ mod tests {
     fn frame_decisions_match_spec() {
         let mut sec = SiteSecurity {
             csp: None,
+            csp_raw: None,
             frame_ancestors: vec![],
             xfo: Some("DENY".into()),
             hsts: None,

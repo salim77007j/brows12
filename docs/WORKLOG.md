@@ -1205,3 +1205,25 @@ Stage Summary:
 - FOCUS AREA 4 COMPLETE. Phase 4 (all four areas) complete. Report at
   docs/PHASE4_AREA4_REPORT.md; artifacts under
   docs/perf-artifacts/phase4/area4/. Awaiting "continue" for Phase 5.
+
+---
+Task ID: phase5-baseline
+Agent: Super Z (main)
+Task: Phase 5.1 — environment restore + full regression baseline.
+
+Work Log:
+- Container had been reset: reinstalled Rust 1.99 (minimal profile), fresh
+  clone of origin/main (a030a0a), user-local Mesa EGL stack rebuilt from
+  Debian debs into ~/.local/gl (libegl1/libegl-mesa0/libgl1-mesa-dri/gbm/glx).
+- Memory-lean build recipe for this 3.9 GB container: CARGO_BUILD_JOBS=1 +
+  CARGO_PROFILE_DEV_CODEGEN_UNITS=16 (servo-script OOM-killed at defaults).
+- cargo build --workspace OK; smoke capture of example.com passed (602 ms,
+  complete, privacy engine 143,204 rules / 275 ms).
+- Fixed latent test-only break: SiteSecurity test initializer missing the
+  csp_raw field added during Area 2.7 (privacy/src/security.rs:559).
+- cargo test --workspace: 108 passed / 0 failed (privacy 46, storage 19,
+  servo-host 43).
+
+Stage Summary:
+- Phase 5.1 done: full workspace builds and 108/108 tests green on
+  commit a030a0a + this fix. Ready for 5.2 (30+ site verification).
