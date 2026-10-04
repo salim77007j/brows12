@@ -133,6 +133,8 @@ pub enum InjectCmd {
     GroupsDump,
     /// Phase 4.4.5: search open tabs (title/url/snippet).
     TabSearch(String),
+    /// Phase 4.4.6: toggle pin on a tab (by strip index).
+    Pin(usize),
     /// Pace the automation script (handled on the reader thread, in order).
     Sleep(u64),
     /// Exit the event loop cleanly (acknowledged with an `quit` event).

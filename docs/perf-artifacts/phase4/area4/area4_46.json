@@ -1,0 +1,13 @@
+{
+  "area4_6": {
+    "checks": {
+      "pin toggle event": true,
+      "pinned tab never hibernated": true,
+      "unpinned background tab hibernated": true,
+      "session file records pinned": true,
+      "session file records hibernated tabs intact": true,
+      "session restored (3 tabs)": true,
+      "restored pinned tab stays live": true
+    }
+  }
+}

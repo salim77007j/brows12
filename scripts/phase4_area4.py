@@ -541,6 +541,91 @@ def verify_45(out):
         srv.terminate()
 
 
+# ---------------------------------------------------------------- 4.6 --
+def verify_46(out):
+    """Pinned tabs: governor never hibernates a pinned tab; unpinning
+    restores the normal policy; pin state persists through a session
+    save/restore cycle."""
+    site = pathlib.Path("/tmp/a4_site6")
+    site.mkdir(parents=True, exist_ok=True)
+    for n in ("p1.html", "p2.html"):
+        (site / n).write_text(
+            f"<!doctype html><html><head><title>P4 {n}</title></head>"
+            f"<body><h1>{n}</h1></body></html>")
+    srv = subprocess.Popen(
+        [sys.executable, "-m", "http.server", "8141", "--directory", str(site)],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    assert wait_http("http://127.0.0.1:8141/p1.html"), "http server"
+    sess_dir = pathlib.Path("/tmp/a4-46")
+    sess_dir.mkdir(parents=True, exist_ok=True)
+    for f in sess_dir.iterdir():
+        f.unlink()
+    sess_file = str(sess_dir / "session.json")
+    base_env = {
+        "BROWS12_MEM_BUDGET_MB": "64",
+        "BROWS12_GOVERNOR_INTERVAL_MS": "1500",
+        "BROWS12_GOVERNOR_WARMUP_MS": "14000",
+        "BROWS12_TAB_SUSPEND_SECS": "3",
+        "BROWS12_HEAVY_SUSPEND_SECS": "2",
+        "BROWS12_SESSION_FILE": sess_file,
+        "BROWS12_SESSION_SAVE_SECS": "0",
+    }
+    try:
+        # ---- Run 1: pin tab1, let the governor eat the rest ------------
+        run = UiRun(base_env, "46a")
+        try:
+            run.wait_for(lambda e: e.startswith("start "), 60, "start")
+            open_tab(run, "http://127.0.0.1:8141/p1.html", "p1.html")
+            open_tab(run, "http://127.0.0.1:8141/p2.html", "p2.html")
+            run.cmd("<PIN> 1")  # p1.html pinned (background tab)
+            pinned_ev = run.wait_for(lambda e: e.startswith("tab_pinned"),
+                                     15, "tab_pinned")
+            run.cmd("<SWITCH> 2")  # active = p2; pinned p1 now background
+            time.sleep(1.0)
+            run.cmd("<SWITCH> 0")  # active = start; both background
+            # Warmup 14 s + ticks: governor discards both unpinned tabs.
+            time.sleep(18)
+            hibernated = hibernated_indices(list(run.events))
+            checks = {
+                "pin toggle event": "pinned=1" in pinned_ev,
+                "pinned tab never hibernated": 1 not in hibernated,
+                # At the end tab0 is ACTIVE (exempt); tab2 is the only
+                # unpinned BACKGROUND tab, so it must be hibernated.
+                "unpinned background tab hibernated": 2 in hibernated,
+            }
+        finally:
+            run.close()
+
+        # ---- Run 2: session file preserves pinned state -----------------
+        sess = json.loads(pathlib.Path(sess_file).read_text())
+        p1_tab = sess["tabs"][1]
+        checks["session file records pinned"] = p1_tab["pinned"] is True
+        checks["session file records hibernated tabs intact"] = (
+            len(sess["tabs"]) == 3)
+
+        # ---- Run 3: restore keeps the pin (governor still respects it) --
+        run = UiRun({**base_env, "BROWS12_SESSION_RESTORE": "1"}, "46b")
+        try:
+            run.wait_for(lambda e: e.startswith("start "), 60, "start")
+            restored = run.wait_for(lambda e: e.startswith("session_restored "),
+                                    30, "session_restored")
+            checks["session restored (3 tabs)"] = "tabs=3" in restored
+            # Pinned tab survives further governor ticks untouched.
+            time.sleep(8)
+            still = hibernated_indices(list(run.events))
+            checks["restored pinned tab stays live"] = 1 not in still
+        finally:
+            run.close()
+
+        out["area4_6"] = {"checks": checks}
+        for k, ok in checks.items():
+            print(("PASS " if ok else "FAIL ") + k)
+        print("hibernated run1:", hibernated)
+        return all(checks.values())
+    finally:
+        srv.terminate()
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", default="all",
@@ -566,6 +651,8 @@ def main():
         ok &= verify_44(out)
     if args.only in ("all", "4.5"):
         ok &= verify_45(out)
+    if args.only in ("all", "4.6"):
+        ok &= verify_46(out)
     pathlib.Path(args.out).write_text(json.dumps(out, indent=2))
     print(f"artifact: {args.out}")
     sys.exit(0 if ok else 1)

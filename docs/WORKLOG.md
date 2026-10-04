@@ -1125,3 +1125,29 @@ Work Log:
 Stage Summary:
 - 4.5 complete: fast tab search over title/URL/content snippet,
   unit-tested + verified end-to-end via the automation FIFO.
+
+---
+Task ID: phase4-area4-4.6
+Agent: Super Z (main)
+Task: Phase 4 Focus Area 4, sub-item 4.6 — pinned tabs.
+
+Work Log:
+- UiTab.pinned (schema field landed with 4.4); <PIN> i FIFO toggle +
+  `tab_pinned index= pinned=` event; strip marker = 3px blue accent
+  bar on the tab's left edge.
+- Governor exemptions: reclaim_background_tabs, enforce_per_tab_
+  budgets and over_budget_background_tabs all skip pinned tabs —
+  pinned never hibernate, never trim, never escalate the JS-heap tier
+  policy.
+- Session: save_session records pinned (field existed since 4.4);
+  restore_session rehydrates tab.pinned. Startup auto-restore covered
+  by the existing session path; pinned tabs come back exactly as
+  left (active tab live, others suspended metadata).
+- E2E (phase4_area4.py --only 4.6, 3 runs): pin tab1 under a 64 MB
+  budget — governor hibernates the unpinned background tab only, the
+  pinned tab survives every tick; session JSON records pinned:true;
+  after restore the pinned tab stays live. All 6 checks PASS.
+
+Stage Summary:
+- 4.6 complete: pinned tabs are exempt from every memory policy,
+  visible in the strip, and persist across sessions.

@@ -258,6 +258,11 @@ pub fn draw_chrome(
                 px.fill_path(&path, &p, FillRule::Winding, Transform::identity(), None);
             }
         }
+        // Phase 4.4.6: pinned marker — a small accent bar on the tab's
+        // left edge (pinned tabs never hibernate and persist sessions).
+        if t.pinned {
+            fill(px, tx, ty + 6.0, 3.0, th - 12.0, [0x2b, 0x6c, 0xb0, 0xff], 1.5);
+        }
     }
 
     // "+" new-tab button.

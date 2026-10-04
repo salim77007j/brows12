@@ -315,6 +315,8 @@ impl ApplicationHandler<HostWakerEvent> for App {
                             Some(InjectCmd::GroupsDump)
                         } else if let Some(rest) = line.strip_prefix("<TABSEARCH> ") {
                             Some(InjectCmd::TabSearch(rest.to_string()))
+                        } else if let Some(rest) = line.strip_prefix("<PIN> ") {
+                            rest.parse::<usize>().ok().map(InjectCmd::Pin)
                         } else if let Some(rest) = line.strip_prefix("<SLEEP> ") {
                             rest.parse::<u64>().ok().map(InjectCmd::Sleep)
                         } else {
@@ -804,6 +806,7 @@ impl Gui {
             tab.title = st.title.clone();
             tab.scroll_est = st.scroll_est;
             tab.form_state = st.form_state.clone();
+            tab.pinned = st.pinned;
             tab.activations = 1;
             if let Some(gid) = st.group {
                 self.groups.add_tab(id, gid);
@@ -1184,6 +1187,10 @@ impl Gui {
                 if Some(id) == active_id || t.suspended {
                     return false;
                 }
+                // Phase 4.4.6: pinned tabs never count as over-budget.
+                if t.pinned {
+                    return false;
+                }
                 let Some(rt) = self.runtimes.get(&id) else { return false };
                 let est = budget::tab_estimate_kb(rt.state.page_requests(), &self.budget);
                 let b = budget::tab_budget_kb(total_kb, false, &weights, *i, &self.budget);
@@ -1252,6 +1259,10 @@ impl Gui {
             .filter(|(_, t)| {
                 let Some(id) = t.id else { return false };
                 if Some(id) == active_id || t.suspended {
+                    return false;
+                }
+                // Phase 4.4.6: pinned tabs NEVER hibernate.
+                if t.pinned {
                     return false;
                 }
                 let Some(rt) = self.runtimes.get(&id) else { return false };
@@ -1328,6 +1339,10 @@ impl Gui {
         for (i, t) in self.tabs.iter().enumerate() {
             let Some(id) = t.id else { continue };
             if Some(id) == active_id || t.suspended {
+                continue;
+            }
+            // Phase 4.4.6: pinned tabs are exempt from the ladder.
+            if t.pinned {
                 continue;
             }
             let Some(rt) = self.runtimes.get(&id) else { continue };
@@ -1693,6 +1708,17 @@ impl Gui {
                         ));
                     }
                 }
+            }
+            InjectCmd::Pin(i) => {
+                if let Some(t) = self.tabs.get_mut(i) {
+                    t.pinned = !t.pinned;
+                    model::emit(format!(
+                        "tab_pinned index={i} pinned={} url={}",
+                        t.pinned as u8,
+                        model::ev_escape(&t.url())
+                    ));
+                }
+                self.dirty = true;
             }
             InjectCmd::Sleep(_) => {}
             InjectCmd::Quit => {
