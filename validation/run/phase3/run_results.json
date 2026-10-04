@@ -1,27 +1,26 @@
 {
-  "css_writing_modes": {
+  "css_columns": {
     "chrome_report": [
       "RESULT: ALL PASS (7/7)",
-      "PASS  vertical-rl",
-      "PASS  vertical-lr",
-      "PASS  text-orientation upright",
-      "PASS  vertical box is tall+narrow",
-      "PASS  direction rtl",
-      "PASS  margin-inline-start == 40px",
-      "PASS  border-inline-start color red"
+      "PASS  columns: 3",
+      "PASS  column-gap 24px",
+      "PASS  column-rule 2px",
+      "PASS  column-span all",
+      "PASS  break-inside avoid",
+      "PASS  column-fill auto",
+      "PASS  span-all heading spans container"
     ],
     "brows12_rendered": true
   },
-  "css_filters_clip": {
+  "grid_subgrid": {
     "chrome_report": [
-      "RESULT: ALL PASS (7/7)",
-      "PASS  filter blur",
-      "PASS  filter list (grayscale brightness)",
-      "PASS  filter drop-shadow",
-      "PASS  backdrop-filter blur",
-      "PASS  clip-path circle",
-      "PASS  clip-path polygon",
-      "PASS  clip-path inset round"
+      "RESULT: ALL PASS (6/6)",
+      "PASS  subgrid child aligns to parent column 1",
+      "PASS  subgrid columns == parent columns (S1 width == A1 width)",
+      "PASS  sub item S2 starts at parent column 2",
+      "PASS  subgrid rows == parent rows (S1 height == A1 height)",
+      "PASS  S3 lands in parent row 2 (taller track)",
+      "PASS  computed grid-template-columns: subgrid"
     ],
     "brows12_rendered": true
   }

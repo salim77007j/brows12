@@ -35,6 +35,16 @@ pub fn compat_preferences() -> Preferences {
         // Linear, Vercel) rely on it. Parsed value is emitted as a WebRender
         // BackdropFilter display item by the patched layout crate.
         layout_css_backdrop_filter_enabled: true,
+        // Vertical writing modes (Phase 4 Area 1.3): servo 0.6.0 ships the
+        // writing-mode work behind this opt-in pref; Japanese/Chinese
+        // vertical typography (vertical-rl/lr, text-orientation) is gated
+        // on it.
+        layout_writing_mode_enabled: true,
+        // Multi-column (Phase 4 Area 1.6): exposes column-* in computed
+        // style and lets multicol containers establish formatting contexts.
+        // NOTE: layout 0.6.0 still lacks column fragmentation — content
+        // flows single-column; documented in PHASE4_AREA1_REPORT.md.
+        layout_columns_enabled: true,
         ..Preferences::default()
     }
 }
