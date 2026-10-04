@@ -1248,3 +1248,21 @@ Work Log:
 Stage Summary:
 - 31/32 real sites verified with side-by-side composites under
   screenshots/v2-servo/phase5/ + metrics in validation/run/phase5/.
+
+---
+Task ID: phase5-ram-debug-repro
+Agent: Super Z (main)
+Task: Phase 5.3a — reproduce Area 3 RAM comparison in debug profile.
+
+Work Log:
+- Re-ran scripts/area3_compare.py fresh (docs/perf-artifacts/phase5/
+  area5_ram.json): 8 measurable pages, brows12 lighter on raw RSS on 7/8
+  (1.42–2.01×), 2× met on 1/8 (hackernews 2.01×), cnn 0.74× (heavier),
+  bbc-news load failure (brows12 null) — all consistent with the Area 3
+  report's numbers within run-to-run noise.
+- Confirms reproducibility; next lever per the Area 3 report: release/LTO
+  build of the embedder stack, then re-measure.
+
+Stage Summary:
+- Debug-profile baseline reproduced. Release build started as the named
+  Phase 5 lever.
