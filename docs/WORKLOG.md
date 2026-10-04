@@ -908,3 +908,57 @@ Stage Summary:
 - 2.8 complete: privacy dashboard data layer aggregated across Areas
   2.1-2.7 and exposed via report JSON + API functions; cookie decisions
   typed end-to-end from the storage decision layer.
+
+---
+Task ID: phase4-area3
+Agent: Super Z (main)
+Task: Phase 4 Focus Area 3 — aggressive RAM optimization (3.1-3.7).
+
+Work Log:
+- Env rebuilt (fresh container): rustup 1.99, cmake via uv, llvm-19 +
+  libclang user-space stacks (~/.local/llvm, ~/.local/clang), Mesa GL
+  stack to ~/.local/gl (incl. libglapi, dri/swrast, libxkbcommon-x11,
+  libxcb-xkb),mozjs_sys via PREBUILT archive (GitHub release
+  mozjs-sys-v153.3.0-0; source build impossible on 10 GB disk — debug
+  libjs_static.a alone is 2.2 GB). Build env recipe: ~/.local/build-env.sh
+  (CARGO_BUILD_JOBS=1, LIBCLANG_PATH, BINDGEN_EXTRA_CLANG_ARGS).
+- 3.1 budget.rs: per-tab weight estimates (tab_base + per-request),
+  availability-adaptive total budget (min(nominal, baseline + avail*0.25)),
+  active-tab share multiplier, TrimCaches->Hibernate ladder. Wired into
+  ui governor_tick with aligned per-tab weights; trimmed tabs re-shown on
+  activation. 5 unit tests.
+- 3.4 JsHeapTier Normal/Tight/Small/Minimal (256/192/128/96 MB) applied
+  via Servo::set_preference("js_mem_max") — snapshot-per-runtime caveat
+  documented; idle-timer detection via HostState.last_activity_ms
+  (notify_new_frame_ready + load_web_resource touch); background tabs
+  active <5 s get the heavy suspend schedule. Live: tier=Small fired at
+  rss_ratio 1.81/3.48 under Critical.
+- 3.6 psi.rs: /proc/pressure/memory + cgroup v2 reader, full/some avg10
+  +avg60 thresholds, cooldown; governor acts on worse-of(RSS, PSI).
+  5 unit tests. (Live PSI stayed Nominal on this box — expected.)
+- 3.2 area3_verify.py: 2 heavy tabs hibernated by command — pipeline +
+  image caches returned; hibernate() malloc_trim fix: 35.5 -> 122.7 MB
+  returned (3.5x). Lazy decode/downsample/dedupe = upstream (image cache
+  in unpatched servo crate).
+- 3.5 residual quantified: after full WebView drop of both heavy tabs,
+  425 MB stays vs never-opened baseline (GL/WR caches + allocator
+  retention) — Phase 3 texture-cache gap now has numbers; upstream issue
+  to file.
+- 3.3 font memory: cross-tab sharing inherent (process-global FontStore +
+  WR keys); per-display-list retirement verified (layout ->
+  remove_unused_font_resources); subsetting/expiry/accounting = upstream
+  gaps (docs/upstream/area3-font-memory.md); create_memory_report crash
+  blocks font accounting.
+- 3.7 area3_compare.py (Sampler: peak + peak-time PSS/USS, /proc ground
+  truth): 5 local heavy pages + 4 real sites. RESULT (honest): 2x target
+  met 1/8 (hackernews 2.03x). RSS: brows12 lighter on 7/8 (1.43-2.03x),
+  heavier on cnn (0.75x, debug SpiderMonkey + heavy JS). PSS: parity to
+  ~25% heavier on locals (228-335 vs 195-270). Causes: debug build,
+  no image downsample/lazy decode, texture residue. bbc-news: brows12
+  load fails (separate investigation, noted).
+
+Stage Summary:
+- Area 3 shipped: budgets+ladder, JS tiers, PSI response, idle-timer
+  detection, hibernate trim fix, texture-residual quantified, honest
+  comparison table. 19 unit tests green; artifacts in
+  docs/perf-artifacts/phase4/area3/; upstream gap docs in docs/upstream/.
