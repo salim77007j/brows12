@@ -1227,3 +1227,24 @@ Work Log:
 Stage Summary:
 - Phase 5.1 done: full workspace builds and 108/108 tests green on
   commit a030a0a + this fix. Ready for 5.2 (30+ site verification).
+
+---
+Task ID: phase5-sites
+Agent: Super Z (main)
+Task: Phase 5.2 — 30+ real-world site verification vs Chromium.
+
+Work Log:
+- scripts/phase5_sites.py: resumable batch capture (Chrome via Playwright,
+  brows12 via headless brows-servo), side-by-side composites, summary.json.
+- 32 diverse sites attempted; 31 captured + rendered (lobste.rs unreachable
+  from this network — replaced dead neverssl.com with sqlite.org, py docs).
+- MDN: full render (5,485 frames, correct title) but load-complete flag not
+  reached in the 45 s window (long-tail resources). WHATWG spec: complete at
+  44 s (multi-MB DOM — honest perf datapoint).
+- Fixed CJK tofu: user-local Noto Sans CJK (~/.local/share/fonts) —
+  re-captured wikipedia; 日本語/中文 now match Chrome.
+- Load times (brows12): example 293 ms … github 3.5 s … whatwg 44 s.
+
+Stage Summary:
+- 31/32 real sites verified with side-by-side composites under
+  screenshots/v2-servo/phase5/ + metrics in validation/run/phase5/.
