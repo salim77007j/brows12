@@ -870,3 +870,41 @@ Stage Summary:
   pass-through) — upstream issue; inline-script CSP (nonce/hash) is JS-
   level; multiple CSP headers read first-only (ureq limitation);
   cross-origin isolation (COOP/COEP) recorded, not enforced.
+
+---
+Task ID: phase4-area2-2.8
+Agent: Super Z (main)
+Task: Phase 4 Focus Area 2, sub-item 2.8 — privacy dashboard (data
+  layer only; stats exposed for future UI rendering).
+
+Work Log:
+- servo-host/src/dashboard.rs (new): PrivacyDashboard — one
+  serializable snapshot aggregating every Area 2 surface: ads/trackers
+  blocked + capped blocked_sample + rules_loaded (2.1), $redirect /
+  $removeparam / $csp / scriptlet / cosmetic counters (2.1),
+  fingerprint_pages_protected (2.2), popups + redirect chains (2.3),
+  https_upgrades + hsts_hits (2.4), doh_queries + cname_cloaks (2.5),
+  cookie decision section (2.6), security-guard probes / frames / CSP /
+  mixed-content / COOP-COEP-CORP + decision logs (2.7). Shipped as
+  report JSON (`privacy.dashboard`) AND a callable API:
+  dashboard_snapshot(privacy) + dashboard_json(privacy) for the future
+  UI layer (rendering intentionally out of scope per mission).
+- Cookie decision accounting: brows12-storage set_from_header_with_policy
+  now returns CookieDecision {Passthrough, PartitionedOptIn,
+  ForcePartitioned, RejectedThirdParty, InvalidHostPrefix} (source-
+  compatible: previous callers ignored the implicit ()); CookieDecisionSink
+  on PrivacyHost converts decisions into dashboard counters. Engine-side
+  jar wiring stays documented upstream work (2.6 gap), so counters are
+  zero in browser runs until that lands.
+- HeadlessReport.privacy.dashboard filled in finish(); unit tests: 9
+  servo-host (snapshot reflects live counters, sink accounting, JSON
+  validity) + 19 storage green; clippy/fmt clean.
+- E2E re-run (phase4_area2_7.py): all 2.7 checks still pass AND the
+  JSON carries the 29-field dashboard (security_probes=2,
+  frames_blocked=1, csp_blocked=1, hsts_learned=1, rules_loaded=143204);
+  real-site check (example.com) complete with zero false positives.
+
+Stage Summary:
+- 2.8 complete: privacy dashboard data layer aggregated across Areas
+  2.1-2.7 and exposed via report JSON + API functions; cookie decisions
+  typed end-to-end from the storage decision layer.

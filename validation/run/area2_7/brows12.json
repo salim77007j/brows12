@@ -5,7 +5,7 @@
   "title": "Area 2.7 security guard",
   "width": 1280,
   "height": 800,
-  "frames": 183,
+  "frames": 172,
   "complete": true,
   "crashed": false,
   "crash_reason": null,
@@ -27,6 +27,46 @@
     "redirect_chains_blocked": 0,
     "cname_cloaks": 0,
     "doh_queries": 0,
+    "dashboard": {
+      "ads_blocked": 0,
+      "trackers_blocked": 0,
+      "blocked_sample": [],
+      "rules_loaded": 143204,
+      "redirects_served": 0,
+      "params_stripped": 0,
+      "csp_injections": 0,
+      "scriptlets_injected": 0,
+      "cosmetic_pages_filtered": 0,
+      "fingerprint_pages_protected": 1,
+      "popups_blocked": 0,
+      "redirect_chains_blocked": 0,
+      "https_upgrades": 0,
+      "hsts_hits": 0,
+      "hsts_learned": 1,
+      "doh_queries": 0,
+      "cname_cloaks": 0,
+      "cookies": {
+        "partitioned_opt_in": 0,
+        "force_partitioned": 0,
+        "rejected": 0,
+        "invalid_host_prefix": 0
+      },
+      "security_probes": 2,
+      "frames_blocked": 1,
+      "csp_blocked": 1,
+      "mixed_content_blocked": 0,
+      "coop_observed": 0,
+      "coep_observed": 0,
+      "corp_observed": 0,
+      "frame_log": [
+        "http://127.0.0.3:8953/frame :: frame denied by site policy"
+      ],
+      "csp_block_log": [
+        "http://127.0.0.2:8952/evil.js :: CSP violation"
+      ],
+      "popup_log": [],
+      "cloak_log": []
+    },
     "security_probes": 2,
     "frames_blocked": 1,
     "csp_blocked": 1,
@@ -42,8 +82,8 @@
       "http://127.0.0.2:8952/evil.js :: CSP violation"
     ]
   },
-  "load_complete_ms": 302,
-  "total_ms": 2070,
+  "load_complete_ms": 272,
+  "total_ms": 1669,
   "png": "/home/z/my-project/brows12-servo/validation/run/area2_7/brows12.png",
   "error": null
 }

@@ -14,7 +14,7 @@ pub mod idb;
 pub mod kv;
 pub mod webstorage;
 
-pub use cookies::{Cookie, CookieJar, SameSite};
+pub use cookies::{Cookie, CookieDecision, CookieJar, SameSite, ThirdPartyCookieMode};
 pub use idb::{IdbDatabase, IdbKey};
 pub use kv::{KeyValueStore, MemoryStore};
 pub use webstorage::WebStorage;

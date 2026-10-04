@@ -5,6 +5,7 @@
 //! harness. See docs/SERVO_INTEGRATION_PLAN.md for decisions D1-D7.
 
 pub mod capture;
+pub mod dashboard;
 pub mod delegate;
 pub mod headless;
 pub mod memory;
@@ -14,6 +15,10 @@ pub mod prefs;
 pub mod privacy;
 pub mod waker;
 
+pub use dashboard::{
+    dashboard_json, snapshot as dashboard_snapshot, CookieDecisionSink, CookieSection,
+    PrivacyDashboard,
+};
 pub use headless::{run_headless, HeadlessConfig, HeadlessReport};
 
 /// Install a process-level rustls CryptoProvider exactly once.

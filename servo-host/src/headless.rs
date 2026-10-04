@@ -101,6 +101,8 @@ pub struct PrivacySummary {
     pub cname_cloaks: u64,
     /// DoH queries made by the browser itself.
     pub doh_queries: u64,
+    /// Aggregated privacy dashboard (Area 2.8 data layer).
+    pub dashboard: crate::dashboard::PrivacyDashboard,
     /// Area 2.7 security guard: header probes performed.
     pub security_probes: u64,
     /// Frames denied by XFO / frame-ancestors.
@@ -183,6 +185,37 @@ pub fn run_headless(config: HeadlessConfig) -> HeadlessReport {
             redirect_chains_blocked: 0,
             cname_cloaks: 0,
             doh_queries: 0,
+            dashboard: crate::dashboard::PrivacyDashboard {
+                ads_blocked: 0,
+                trackers_blocked: 0,
+                blocked_sample: vec![],
+                rules_loaded: 0,
+                redirects_served: 0,
+                params_stripped: 0,
+                csp_injections: 0,
+                scriptlets_injected: 0,
+                cosmetic_pages_filtered: 0,
+                fingerprint_pages_protected: 0,
+                popups_blocked: 0,
+                redirect_chains_blocked: 0,
+                https_upgrades: 0,
+                hsts_hits: 0,
+                hsts_learned: 0,
+                doh_queries: 0,
+                cname_cloaks: 0,
+                cookies: Default::default(),
+                security_probes: 0,
+                frames_blocked: 0,
+                csp_blocked: 0,
+                mixed_content_blocked: 0,
+                coop_observed: 0,
+                coep_observed: 0,
+                corp_observed: 0,
+                frame_log: vec![],
+                csp_block_log: vec![],
+                popup_log: vec![],
+                cloak_log: vec![],
+            },
             security_probes: 0,
             frames_blocked: 0,
             csp_blocked: 0,
@@ -306,6 +339,37 @@ fn finish(
                 .load(std::sync::atomic::Ordering::Relaxed),
             cname_cloaks: privacy.cname_cloaks.load(std::sync::atomic::Ordering::Relaxed),
             doh_queries: privacy.doh.query_count(),
+            dashboard: crate::dashboard::PrivacyDashboard {
+                ads_blocked: 0,
+                trackers_blocked: 0,
+                blocked_sample: vec![],
+                rules_loaded: 0,
+                redirects_served: 0,
+                params_stripped: 0,
+                csp_injections: 0,
+                scriptlets_injected: 0,
+                cosmetic_pages_filtered: 0,
+                fingerprint_pages_protected: 0,
+                popups_blocked: 0,
+                redirect_chains_blocked: 0,
+                https_upgrades: 0,
+                hsts_hits: 0,
+                hsts_learned: 0,
+                doh_queries: 0,
+                cname_cloaks: 0,
+                cookies: Default::default(),
+                security_probes: 0,
+                frames_blocked: 0,
+                csp_blocked: 0,
+                mixed_content_blocked: 0,
+                coop_observed: 0,
+                coep_observed: 0,
+                corp_observed: 0,
+                frame_log: vec![],
+                csp_block_log: vec![],
+                popup_log: vec![],
+                cloak_log: vec![],
+            },
             security_probes: 0,
             frames_blocked: 0,
             csp_blocked: 0,
@@ -338,6 +402,8 @@ fn finish(
     report.privacy.corp_observed = security.corp_observed;
     report.privacy.frame_log = security.frame_log;
     report.privacy.csp_block_log = security.csp_block_log;
+    // Phase 4 Area 2.8: aggregated privacy dashboard.
+    report.privacy.dashboard = crate::dashboard::snapshot(privacy);
     if let Some(json_path) = &config.json {
         if let Ok(text) = serde_json::to_string_pretty(&report) {
             let _ =

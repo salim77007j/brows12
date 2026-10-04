@@ -62,6 +62,25 @@ pub struct CookieJar {
     cookies: Vec<Cookie>,
 }
 
+/// Outcome of one policy-evaluated Set-Cookie (Phase 4 Area 2.8 feeds
+/// the privacy dashboard's cookie section from these decisions).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CookieDecision {
+    /// Stored as-is (first-party, or third-party with a permissive mode).
+    #[default]
+    Passthrough,
+    /// Third-party cookie carrying `Partitioned` — stored under its key
+    /// (CHIPS opt-in semantics).
+    PartitionedOptIn,
+    /// Third-party cookie force-partitioned under the top-level site
+    /// (Total Cookie Protection).
+    ForcePartitioned,
+    /// Third-party Set-Cookie dropped (Reject mode).
+    RejectedThirdParty,
+    /// `__Host-` prefix rules violated — dropped (any mode).
+    InvalidHostPrefix,
+}
+
 impl CookieJar {
     pub fn new() -> Self {
         Self::default()
@@ -138,12 +157,12 @@ impl CookieJar {
         header: &str,
         top_level_site: &str,
         mode: ThirdPartyCookieMode,
-    ) {
+    ) -> CookieDecision {
         let Some(mut pc) = parse_set_cookie(header) else {
-            return;
+            return CookieDecision::Passthrough;
         };
         let Some(host) = url.host_str() else {
-            return;
+            return CookieDecision::Passthrough;
         };
         let host = host.to_ascii_lowercase();
 
@@ -151,7 +170,7 @@ impl CookieJar {
         if pc.name.starts_with("__Host-") {
             let ok = pc.secure && pc.domain_attr.is_none() && pc.path_attr.as_deref() == Some("/");
             if !ok {
-                return;
+                return CookieDecision::InvalidHostPrefix;
             }
         }
 
@@ -159,15 +178,23 @@ impl CookieJar {
         let own_site = registrable_domain(&host);
         let third_party = !top_site.is_empty() && top_site != own_site;
 
+        let mut force_partitioned = false;
         match mode {
-            ThirdPartyCookieMode::Reject if third_party => return,
+            ThirdPartyCookieMode::Reject if third_party => {
+                return CookieDecision::RejectedThirdParty;
+            }
             ThirdPartyCookieMode::PartitionAll if third_party && pc.partition_key.is_none() => {
                 // Force-partition under the top-level site (Total Cookie
                 // Protection). Partitioned-with-key cookies keep their key.
                 pc.partitioned = true;
+                force_partitioned = true;
             }
             _ => {}
         }
+
+        // CHIPS opt-in: a third-party cookie that declared `Partitioned`
+        // keeps that partition key under every mode.
+        let opt_in = third_party && pc.partition_key.is_some();
 
         self.set_from_header(url, header, top_level_site);
         // set_from_header recomputed partition_key from pc.partitioned via
@@ -180,6 +207,13 @@ impl CookieJar {
                     c.partition_key = key.clone();
                 }
             }
+        }
+        if force_partitioned {
+            CookieDecision::ForcePartitioned
+        } else if opt_in {
+            CookieDecision::PartitionedOptIn
+        } else {
+            CookieDecision::Passthrough
         }
     }
 

@@ -78,6 +78,9 @@ pub struct PrivacyHost {
     /// domain (capped log).
     pub cname_cloaks: AtomicU64,
     pub cloak_log: Mutex<Vec<String>>,
+    /// Cookie decision accounting for the 2.8 dashboard (fed wherever
+    /// the 2.6 decision layer evaluates a Set-Cookie).
+    pub cookie_sink: crate::dashboard::CookieDecisionSink,
     ucm: Mutex<Option<Rc<UserContentManager>>>,
     cosmetic_stylesheet: Mutex<Option<Rc<UserStyleSheet>>>,
     scriptlet_script: Mutex<Option<Rc<servo::user_contents::UserScript>>>,
@@ -113,6 +116,7 @@ impl PrivacyHost {
             policy: PolicyEngine { block_cname_cloaking: true, ..Default::default() },
             cname_cloaks: AtomicU64::new(0),
             cloak_log: Mutex::new(Vec::new()),
+            cookie_sink: crate::dashboard::CookieDecisionSink::default(),
             ucm: Mutex::new(None),
             cosmetic_stylesheet: Mutex::new(None),
             scriptlet_script: Mutex::new(None),
