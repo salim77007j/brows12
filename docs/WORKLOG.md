@@ -429,3 +429,41 @@ Stage Summary:
 - Next: Phase 4 (privacy hooks UX, tab management innovations, UI
   extensions, upstream PRs), then Phase 5 (30+ site suite, benchmarks,
   SERVO_FINAL_REPORT.md, tag v2.0.0).
+
+## Phase 4 — Focus Area 1 (remaining bugs + upstream PRs)
+
+- 2026-10-04: Environment rebuilt (fresh container): rustup 1.99, cmake via
+  uv, user-local Mesa stack (~/.local/gl) restored for EGL. Repo re-cloned to
+  /home/z/my-project/brows12-servo at v1.0.0-rc1 (d1f58f7).
+- Vendored-patch architecture: [patch.crates-io] → patched/{servo-layout,
+  servo-canvas,stylo,servo-config,stylo-static-prefs,servo-script-bindings}.
+  Each Area-1 fix is one patch set, portable to the servo monorepo.
+- 1.4 canvas shadows: draw_surface_with_shadow implemented (3-pass box blur,
+  σ=blur/2, padded temp target); text/path shadow options wired. VERIFIED
+  13/13 pixel-equivalent (canvas2d_compare.png). Commit e37837d + 914b157.
+- 1.1 clip-path polygon: polygon → CPU-rasterized BGRA8 alpha mask (2×2 SS,
+  winding/parity) → WR ImageMaskClip via generate_image_key_blocking +
+  add_image; cross-frame mask cache (≤128). VERIFIED 7/7 both engines
+  (css_filters_clip_compare.png) + apple.com/linear.app real sites.
+  Commits 5af38ca + 2c89986 + compile fixes.
+- 1.2 backdrop-filter: dedicated pref layout.css.backdrop-filter.enabled
+  (stylo + servo-config + stylo_static_prefs); script-bindings codegen
+  mapping extended (hyphenated pref names panic the guard — identifier
+  mapping required); layout emits push_backdrop_filter before fragment
+  painting; establishes stacking context + flat transform-style. VERIFIED
+  7/7 + real sites. Commits d49973f/184c808/6e04d44.
+- 1.3 writing modes: enabled layout.writing-mode.enabled (servo 0.6.0 ships
+  vertical layout behind it); text-orientation un-gated onto the same pref.
+  7/7 (was 3/7). Honest gap: text-orientation:upright paints sideways.
+  Commit 6e04d44.
+- 1.5 subgrid: unchanged — stylo_taffy wrapper TODO (taffy 0.14 has no
+  subgrid); documented, upstream path.
+- 1.6 multicol: layout.columns.enabled on → 4/7 computed-style checks (was
+  none); fragmentation still absent (documented).
+- 1.7 upstream: fork salim77007j/servo; issues servo#48610 (polygon),
+  #48611 (canvas shadows), #48612 (backdrop-filter), #48613 (texture-cache
+  purge) with analysis + repro + reference-impl links.
+  SystemFontService memory-report crash NOT reproducible on 0.6.0 (closed;
+  headless report round-trip timeout is a brows12-harness artifact).
+- Report: docs/PHASE4_AREA1_REPORT.md. Verdicts: 1.1 Yes, 1.2 Yes, 1.3
+  Mostly→Yes, 1.4 Yes, 1.5 No(documented), 1.6 Mostly, 1.7 done.
