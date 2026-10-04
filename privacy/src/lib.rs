@@ -10,6 +10,7 @@
 //! * [`policy`] — cookie policy, WebRTC leak policy, CNAME cloaking guard.
 
 pub mod blocker;
+pub mod doh;
 pub mod fingerprint;
 pub mod policy;
 pub mod removeparam;
@@ -17,6 +18,7 @@ pub mod scriptlet_resources;
 pub mod upgrade;
 
 pub use blocker::{BlockReason, PrivacyBlocker};
+pub use doh::{DohClient, DohProvider};
 pub use fingerprint::{FingerprintConfig, NavigatorSpoof, SpoofLevel};
 pub use policy::{CnameVerdict, CookiePolicy, PolicyEngine, WebRtcPolicy};
 pub use upgrade::HttpsUpgrader;

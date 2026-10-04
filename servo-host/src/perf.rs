@@ -157,6 +157,7 @@ pub struct PerfConfigSer {
 
 /// Entry point for `brows-perf`.
 pub fn run_perf(config: PerfConfig) -> PerfReport {
+    crate::init_crypto_provider();
     let started = Instant::now();
     let rss_start_kb = crate::metrics::rss_kb().unwrap_or(0);
 

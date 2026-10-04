@@ -46,6 +46,7 @@ use model::{InjectCmd, Status, UiTab, START_HTML, VIEWPORT_H, VIEWPORT_W};
 use text::UiText;
 
 fn main() {
+    servo_host::init_crypto_provider();
     let started = Instant::now();
     let event_loop = EventLoop::with_user_event()
         .build()

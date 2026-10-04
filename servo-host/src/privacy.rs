@@ -19,7 +19,9 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use brows12_privacy::blocker::{BlockReason, RequestKind, Verdict};
+use brows12_privacy::doh::DohClient;
 use brows12_privacy::fingerprint::{FingerprintConfig, SpoofLevel};
+use brows12_privacy::policy::{CnameVerdict, PolicyEngine};
 use brows12_privacy::upgrade::HttpsUpgrader;
 use brows12_privacy::PrivacyBlocker;
 use content_security_policy::Destination;
@@ -61,6 +63,15 @@ pub struct PrivacyHost {
     pub popup_log: Mutex<Vec<String>>,
     /// HTTPS-Only upgrader + HSTS state (Phase 4 Area 2.4).
     pub upgrader: HttpsUpgrader,
+    /// Encrypted-DNS client (Phase 4 Area 2.5): every brows12-side
+    /// resolution goes over DoH; feeds CNAME-cloaking detection.
+    pub doh: DohClient,
+    /// Runtime privacy policies (cookie partitioning, CNAME cloaking, …).
+    pub policy: PolicyEngine,
+    /// Hosts whose CNAME chain resolved into a different registrable
+    /// domain (capped log).
+    pub cname_cloaks: AtomicU64,
+    pub cloak_log: Mutex<Vec<String>>,
     ucm: Mutex<Option<Rc<UserContentManager>>>,
     cosmetic_stylesheet: Mutex<Option<Rc<UserStyleSheet>>>,
     scriptlet_script: Mutex<Option<Rc<servo::user_contents::UserScript>>>,
@@ -90,6 +101,10 @@ impl PrivacyHost {
             redirect_chains_blocked: AtomicU64::new(0),
             popup_log: Mutex::new(Vec::new()),
             upgrader: HttpsUpgrader::new(),
+            doh: DohClient::new(),
+            policy: PolicyEngine { block_cname_cloaking: true, ..Default::default() },
+            cname_cloaks: AtomicU64::new(0),
+            cloak_log: Mutex::new(Vec::new()),
             ucm: Mutex::new(None),
             cosmetic_stylesheet: Mutex::new(None),
             scriptlet_script: Mutex::new(None),
@@ -234,6 +249,28 @@ impl PrivacyHost {
         let mut log = self.popup_log.lock().unwrap();
         if log.len() < 128 {
             log.push(format!("popup blocked from {source_url}"));
+        }
+    }
+
+    /// CNAME-cloaking detection for a document host: resolve via DoH and
+    /// classify the chain. Fails open (DoH unavailable => Clean).
+    pub fn check_cname_cloaking(&self, url: &str) {
+        let Ok(parsed) = url::Url::parse(url) else { return };
+        let Some(host) = parsed.host_str().map(|h| h.to_string()) else { return };
+        if !parsed.scheme().starts_with("http") {
+            return;
+        }
+        let Some(answer) = self.doh.resolve(&host) else { return };
+        if answer.cnames.is_empty() {
+            return;
+        }
+        let verdict = self.policy.classify_cname(&host, &answer.cnames);
+        if let CnameVerdict::Cloaked { alias_target, target_site } = verdict {
+            self.cname_cloaks.fetch_add(1, Ordering::Relaxed);
+            let mut log = self.cloak_log.lock().unwrap();
+            if log.len() < 64 {
+                log.push(format!("{host} -> {alias_target} (site {target_site})"));
+            }
         }
     }
 

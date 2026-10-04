@@ -243,6 +243,13 @@ impl WebViewDelegate for HostDelegate {
         // weight, blocked or not (blocked ones still cost a cache slot).
         self.state.page_requests.fetch_add(1, Ordering::Relaxed);
 
+        // Phase 4 Area 2.5: CNAME-cloaking classification of document
+        // hosts over DoH (cached 5 min; fails open). Runs here because the
+        // initial navigation does not pass through request_navigation.
+        if matches!(kind, RequestKind::Document) {
+            self.privacy.check_cname_cloaking(&url_str);
+        }
+
         let verdict = self.privacy.verdict(&url_str, &source, kind);
 
         if let Some(reason) = verdict.block {

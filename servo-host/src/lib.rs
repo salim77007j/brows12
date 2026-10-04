@@ -15,6 +15,21 @@ pub mod privacy;
 pub mod waker;
 
 pub use headless::{run_headless, HeadlessConfig, HeadlessReport};
+
+/// Install a process-level rustls CryptoProvider exactly once.
+///
+/// ureq (DoH client) and Servo's net stack both use rustls 0.23; with more
+/// than one provider feature in the graph rustls refuses to auto-pick one
+/// and panics on first TLS use. Installing explicitly (aws-lc-rs, already
+/// in the tree for Servo) fixes both.
+pub fn init_crypto_provider() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        let _ = rustls::crypto::CryptoProvider::install_default(
+            rustls::crypto::aws_lc_rs::default_provider(),
+        );
+    });
+}
 pub use memory::{pressure, GovernorConfig, Pressure, SuspendedTab};
 pub use metrics::{snapshot, CpuMeter, MetricsSnapshot};
 pub use prefs::{brows12_preferences, compat_preferences};

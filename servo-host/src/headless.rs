@@ -97,10 +97,15 @@ pub struct PrivacySummary {
     pub popups_blocked: u64,
     /// Interstitial redirect chains cut off.
     pub redirect_chains_blocked: u64,
+    /// CNAME-cloaked hosts detected via DoH.
+    pub cname_cloaks: u64,
+    /// DoH queries made by the browser itself.
+    pub doh_queries: u64,
 }
 
 /// Entry point for `brows render --engine servo`.
 pub fn run_headless(config: HeadlessConfig) -> HeadlessReport {
+    crate::init_crypto_provider();
     let started = Instant::now();
 
     // Software (no-X) path first: works where surfman can create an
@@ -159,6 +164,8 @@ pub fn run_headless(config: HeadlessConfig) -> HeadlessReport {
             hsts_hits: 0,
             popups_blocked: 0,
             redirect_chains_blocked: 0,
+            cname_cloaks: 0,
+            doh_queries: 0,
         },
         load_complete_ms: None,
         total_ms: started.elapsed().as_millis(),
@@ -270,6 +277,8 @@ fn finish(
             redirect_chains_blocked: privacy
                 .redirect_chains_blocked
                 .load(std::sync::atomic::Ordering::Relaxed),
+            cname_cloaks: privacy.cname_cloaks.load(std::sync::atomic::Ordering::Relaxed),
+            doh_queries: privacy.doh.query_count(),
         },
         load_complete_ms: state
             .complete_at

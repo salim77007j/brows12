@@ -711,3 +711,45 @@ Stage Summary:
   runtime HSTS learning from Strict-Transport-Security headers needs an
   upstream hook (preload + cache API shipped; recording wired for future
   engine integration).
+
+---
+Task ID: phase4-area2-2.5
+Agent: Super Z (main)
+Task: Phase 4 Focus Area 2, sub-item 2.5 — DNS-over-HTTPS with
+  privacy-first providers + CNAME-cloaking detection.
+
+Work Log:
+- privacy/src/doh.rs: RFC 8484 wire-format DoH client (POST
+  application/dns-message) with Cloudflare (default), Quad9, Mullvad and
+  runtime-custom endpoints; minimal DNS query builder + response parser
+  (A/AAAA + CNAME chain incl. compressed-name pointers), 5-min cache,
+  3 s timeout, fail-open on provider failure; IP/localhost/.test hosts
+  short-circuit (no network). Live integration test (ignored by default
+  for CI) resolves example.com over Cloudflare with a cache hit.
+- Dependency interaction bug found and fixed: adding ureq pulled a second
+  rustls crypto-provider feature into the graph, and Servo's net stack
+  then panicked on first TLS use ("Could not automatically determine the
+  process-level CryptoProvider"). servo-host::init_crypto_provider()
+  installs aws-lc-rs exactly once, called from run_headless, run_perf and
+  the ui main.
+- CNAME-cloaking detection wired: every Document request's host is
+  resolved via DoH (cached) and the CNAME chain is classified by the
+  PolicyEngine (registrable-domain comparison); cloaked hosts are
+  counted + logged. Runs in load_web_resource because the initial
+  navigation does not pass through request_navigation (learned in 2.3).
+- PrivacySummary gains cname_cloaks + doh_queries.
+- Verification: live DoH test green; E2E example.com load completes with
+  doh_queries=1 (page unaffected); local fixture run unchanged (9
+  blocked, 2 redirects, 2 stripped, 0 DoH — IP host short-circuit);
+  38 unit tests green; fmt + clippy clean.
+- Honest notes: Servo's own resolver stays getaddrinfo (no embedder hook
+  in 0.6) — DoH covers brows12-side lookups; upstream issue filed as
+  follow-up. DoT (RFC 7858) deferred: DoH provides the same encryption
+  over the HTTPS path already in use. Live demonstration of an actually
+  cloaked host is inherently transient; the classifier is unit-tested
+  with synthetic chains.
+
+Stage Summary:
+- 2.5 complete: encrypted brows12-side DNS with three providers + custom,
+  CNAME-cloaking classification feeding the cookie policy (2.6) and the
+  dashboard (2.8); provider switch is runtime-configurable.
