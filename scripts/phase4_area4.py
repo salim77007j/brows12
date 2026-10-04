@@ -300,6 +300,70 @@ def verify_42(out):
         srv.terminate()
 
 
+# ---------------------------------------------------------------- 4.3 --
+def verify_43(out):
+    """Tab groups data layer: create, membership, JSON dump, collapse,
+    delete-ungroups. Driven end-to-end through the FIFO; the strip
+    renders the group color bar (visually verifiable in the artifact)."""
+    run = UiRun({"BROWS12_GOVERNOR": "0"}, "43")
+    try:
+        run.wait_for(lambda e: e.startswith("start "), 60, "start")
+        run.cmd("<NEWTAB>"); time.sleep(0.5)
+        run.cmd("<NEWTAB>"); time.sleep(0.5)
+        # 3 tabs: 0 start, 1 start, 2 start
+        run.cmd("<GROUP_NEW> research|purple")
+        created = run.wait_for(lambda e: e.startswith("group_created "),
+                               15, "group_created")
+        gid = int(created.split("id=")[1].split()[0])
+        run.cmd(f"<GROUP_ADD> {gid}|0")
+        run.wait_for(lambda e: e.startswith("group_add") and "ok=true" in e,
+                     15, "group_add 0")
+        run.cmd(f"<GROUP_ADD> {gid}|2")
+        run.wait_for(lambda e: e.startswith(f"group_add group={gid} tab=2 ok=true"),
+                     15, "group_add 2")
+        run.cmd("<GROUPS>")
+        dump = run.wait_for(lambda e: e.startswith("groups_json "), 15, "groups_json")
+        # Space-free JSON payload (ev_escape turns spaces into _).
+        js = dump.split("groups_json ", 1)[1].strip()
+        data = json.loads(js)
+        g = data["groups"][0]
+        # Marker AFTER the first dump so the second-dump scan below only
+        # sees events emitted from here on.
+        mark = len(run.events)
+        run.cmd(f"<GROUP_TOGGLE> {gid}")
+        tog = run.wait_for(lambda e: e.startswith("group_toggle"), 15, "group_toggle")
+        run.cmd(f"<GROUP_DEL> {gid}")
+        dele = run.wait_for(lambda e: e.startswith("group_deleted"), 15, "group_deleted")
+        run.cmd("<GROUPS>")
+        # Only look at events AFTER the first dump (wait_for scans all).
+        dump2 = None
+        end = time.time() + 15
+        while time.time() < end and dump2 is None:
+            new = [e for e in run.events[mark:] if e.startswith("groups_json ")]
+            if len(new) >= 1:
+                dump2 = new[-1]
+            time.sleep(0.1)
+        assert dump2, "second groups_json"
+        js2 = dump2.split("groups_json ", 1)[1].strip()
+        data2 = json.loads(js2)
+        checks = {
+            "group created with name+color":
+                g["name"] == "research" and g["color"] == "purple",
+            "membership: strip tabs 0 and 2 (shell ids 1 and 3)":
+                sorted(g["tabs"]) == [1, 3],
+            "collapse toggles": "collapsed=1" in tog,
+            "delete reports ok": "ok=true" in dele,
+            "delete ungrouped members": data2["groups"] == [],
+        }
+        out["area4_3"] = {"group": g, "checks": checks}
+        for k, ok in checks.items():
+            print(("PASS " if ok else "FAIL ") + k)
+        print("group:", g)
+        return all(checks.values())
+    finally:
+        run.close()
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", default="all",
@@ -319,6 +383,8 @@ def main():
         ok &= verify_41(out)
     if args.only in ("all", "4.2"):
         ok &= verify_42(out)
+    if args.only in ("all", "4.3"):
+        ok &= verify_43(out)
     pathlib.Path(args.out).write_text(json.dumps(out, indent=2))
     print(f"artifact: {args.out}")
     sys.exit(0 if ok else 1)

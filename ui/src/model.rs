@@ -114,6 +114,19 @@ pub enum InjectCmd {
     Hibernate(usize),
     /// Restore a hibernated tab by index (rebuild + reload).
     Restore(usize),
+    // ---- Phase 4.4.3: tab groups (data layer) ----
+    /// Create a group: "name|color" (name may be empty → color name).
+    GroupNew(String, String),
+    /// Delete a group by id (members are ungrouped, not closed).
+    GroupDel(u32),
+    /// Add tab (by strip index) to group: "group|tab".
+    GroupAdd(u32, usize),
+    /// Remove a tab (by strip index) from its group.
+    GroupRemove(usize),
+    /// Toggle a group's collapsed state.
+    GroupToggle(u32),
+    /// Dump the group store as a `groups_json` event.
+    GroupsDump,
     /// Pace the automation script (handled on the reader thread, in order).
     Sleep(u64),
     /// Exit the event loop cleanly (acknowledged with an `quit` event).

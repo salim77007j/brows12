@@ -1034,3 +1034,32 @@ Stage Summary:
 - 4.2 complete: pressure discards are value-ranked (4.1 ordering),
   scroll + form state + history survive the discard, and the user is
   notified via strip marker + tab_discarded events.
+
+---
+Task ID: phase4-area4-4.3
+Agent: Super Z (main)
+Task: Phase 4 Focus Area 4, sub-item 4.3 — tab groups (data layer).
+
+Work Log:
+- servo-host/src/tabgroups.rs (new): GroupColor (8 named colors, rgb +
+  name mapping), TabGroup {id, name, color, collapsed},
+  TabGroupStore (create/delete/rename/recolor/toggle_collapsed/
+  add_tab/remove_tab/tab_closed/group_of/tabs_in/color_for + a
+  space-free to_json that survives the event channel escaping).
+  Membership keyed by shell tab id; closing a tab drops membership;
+  deleting a group ungroups members. 4 unit tests.
+- Shell wiring: Gui.groups; FIFO commands <GROUP_NEW name|color>,
+  <GROUP_DEL>, <GROUP_ADD g|tab>, <GROUP_REMOVE>, <GROUP_TOGGLE>,
+  <GROUPS> (JSON dump); events group_created/group_deleted/group_add/
+  group_remove/group_toggle/groups_json; strip renders a 3px group
+  color bar at each grouped tab's top edge (draw_chrome group_colors).
+- E2E (phase4_area4.py --only 4.3): create "research|purple", add
+  strip tabs 0+2 (shell ids 1+3), JSON dump asserts name/color/
+  membership, toggle collapsed=1, delete ok=true, second dump shows
+  empty groups. All 5 checks PASS.
+
+Stage Summary:
+- 4.3 complete: full tab-group data layer, unit-tested, exposed via
+  API + FIFO, visually anchored by the strip color bar. Collapse
+  state is stored for the future UI (strip keeps drawing all tabs —
+  data-layer scope per mission).

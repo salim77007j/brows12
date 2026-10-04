@@ -186,7 +186,8 @@ fn measure(raster: &mut UiText, s: &str, size: f32) -> f32 {
     raster.measure(s, size)
 }
 
-/// Draw the whole chrome onto `px`.
+/// Draw the whole chrome onto `px`. `group_colors` is aligned with
+/// `tabs`: the group color bar drawn at each tab's top edge (4.4.3).
 pub fn draw_chrome(
     px: &mut Pixmap,
     raster: &mut UiText,
@@ -194,6 +195,7 @@ pub fn draw_chrome(
     active: usize,
     hover: Hit,
     caret_on: bool,
+    group_colors: &[Option<[u8; 3]>],
 ) {
     let w = px.width() as f32;
 
@@ -206,6 +208,11 @@ pub fn draw_chrome(
         let (tx, ty, tw, th) = tab_rect(i as u32);
         let is_active = i == active;
         fill(px, tx, ty, tw, th, if is_active { TAB_ACTIVE } else { TAB_INACTIVE }, 6.0);
+        // Phase 4.4.3: group color bar along the tab's top edge.
+        if let Some(Some(rgb)) = group_colors.get(i) {
+            let gcol = [rgb[0], rgb[1], rgb[2], 0xff];
+            fill(px, tx + 4.0, ty, tw - 8.0, 3.0, gcol, 1.5);
+        }
         let title = if t.title.is_empty() { t.url() } else { t.title.clone() };
         let title: String = title.chars().take(24).collect();
         let ink = if is_active {

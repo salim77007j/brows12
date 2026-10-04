@@ -96,6 +96,9 @@ struct Gui {
     tabs: Vec<UiTab>,
     runtimes: HashMap<u64, TabRuntime>,
     next_tab_id: u64,
+    /// Phase 4.4.3: tab groups data layer (name/color/collapsed +
+    /// membership); exposed via FIFO commands and the strip color bar.
+    groups: servo_host::tabgroups::TabGroupStore,
     active: usize,
     text: UiText,
     cursor: (f32, f32),
@@ -208,6 +211,7 @@ impl ApplicationHandler<HostWakerEvent> for App {
             tabs: Vec::new(),
             runtimes: HashMap::new(),
             next_tab_id: 1,
+            groups: servo_host::tabgroups::TabGroupStore::new(),
             active: 0,
             text: UiText::new(),
             cursor: (0.0, 0.0),
@@ -267,6 +271,31 @@ impl ApplicationHandler<HostWakerEvent> for App {
                             rest.parse::<usize>().ok().map(InjectCmd::Restore)
                         } else if let Some(rest) = line.strip_prefix("<SCROLL> ") {
                             rest.parse::<f32>().ok().map(InjectCmd::Scroll)
+                        } else if let Some(rest) = line.strip_prefix("<GROUP_NEW> ") {
+                            let mut it = rest.splitn(2, '|');
+                            match (it.next(), it.next()) {
+                                (Some(n), Some(c)) => {
+                                    Some(InjectCmd::GroupNew(n.to_string(), c.to_string()))
+                                }
+                                _ => None,
+                            }
+                        } else if let Some(rest) = line.strip_prefix("<GROUP_DEL> ") {
+                            rest.parse::<u32>().ok().map(InjectCmd::GroupDel)
+                        } else if let Some(rest) = line.strip_prefix("<GROUP_ADD> ") {
+                            let mut it = rest.splitn(2, '|');
+                            match (it.next(), it.next()) {
+                                (Some(g), Some(t)) => match (g.parse::<u32>(), t.parse::<usize>()) {
+                                    (Ok(g), Ok(t)) => Some(InjectCmd::GroupAdd(g, t)),
+                                    _ => None,
+                                },
+                                _ => None,
+                            }
+                        } else if let Some(rest) = line.strip_prefix("<GROUP_REMOVE> ") {
+                            rest.parse::<usize>().ok().map(InjectCmd::GroupRemove)
+                        } else if let Some(rest) = line.strip_prefix("<GROUP_TOGGLE> ") {
+                            rest.parse::<u32>().ok().map(InjectCmd::GroupToggle)
+                        } else if line == "<GROUPS>" {
+                            Some(InjectCmd::GroupsDump)
                         } else if let Some(rest) = line.strip_prefix("<SLEEP> ") {
                             rest.parse::<u64>().ok().map(InjectCmd::Sleep)
                         } else {
@@ -1096,6 +1125,8 @@ impl Gui {
         if index < self.tabs.len() {
             let id = self.tabs.remove(index).id;
             if let Some(id) = id {
+                // Phase 4.4.3: membership dies with the tab.
+                self.groups.tab_closed(id);
                 if let Some(rt) = self.runtimes.remove(&id) {
                     rt.webview.hide();
                 }
@@ -1342,6 +1373,53 @@ impl Gui {
             InjectCmd::Hibernate(i) => self.hibernate(i, false),
             InjectCmd::Restore(i) => self.restore(i),
             InjectCmd::Scroll(dy) => self.scroll(dy),
+            InjectCmd::GroupNew(name, color) => {
+                let parsed = servo_host::tabgroups::GroupColor::from_name(&color)
+                    .unwrap_or(servo_host::tabgroups::GroupColor::Grey);
+                let id = self.groups.create(&name, parsed);
+                let g = self.groups.get(id).unwrap();
+                model::emit(format!(
+                    "group_created id={} name={} color={}",
+                    id,
+                    model::ev_escape(&g.name),
+                    g.color.name()
+                ));
+                self.dirty = true;
+            }
+            InjectCmd::GroupDel(id) => {
+                let gone = self.groups.delete(id);
+                model::emit(format!("group_deleted id={id} ok={gone}"));
+                self.dirty = true;
+            }
+            InjectCmd::GroupAdd(gid, idx) => {
+                let ok = match self.tabs.get(idx).and_then(|t| t.id) {
+                    Some(tid) => self.groups.add_tab(tid, gid),
+                    None => false,
+                };
+                model::emit(format!("group_add group={gid} tab={idx} ok={ok}"));
+                self.dirty = true;
+            }
+            InjectCmd::GroupRemove(idx) => {
+                if let Some(tid) = self.tabs.get(idx).and_then(|t| t.id) {
+                    self.groups.remove_tab(tid);
+                }
+                model::emit(format!("group_remove tab={idx}"));
+                self.dirty = true;
+            }
+            InjectCmd::GroupToggle(gid) => {
+                let now = self.groups.toggle_collapsed(gid);
+                model::emit(format!(
+                    "group_toggle id={gid} collapsed={}",
+                    now.map(|b| b as u8).unwrap_or(2)
+                ));
+                self.dirty = true;
+            }
+            InjectCmd::GroupsDump => {
+                model::emit(format!(
+                    "groups_json {}",
+                    model::ev_escape(&self.groups.to_json())
+                ));
+            }
             InjectCmd::Sleep(_) => {}
             InjectCmd::Quit => {
                 model::emit("quit");
@@ -1378,7 +1456,25 @@ impl Gui {
         let hover = self.hover;
         let active = self.active;
         let caret_on = self.caret_on;
-        chrome::draw_chrome(&mut px, &mut self.text, &self.tabs, active, hover, caret_on);
+        // Phase 4.4.3: per-tab group color for the strip's color bar.
+        let group_colors: Vec<Option<[u8; 3]>> = self
+            .tabs
+            .iter()
+            .map(|t| {
+                t.id
+                    .and_then(|id| self.groups.color_for(id))
+                    .map(|c| c.rgb())
+            })
+            .collect();
+        chrome::draw_chrome(
+            &mut px,
+            &mut self.text,
+            &self.tabs,
+            active,
+            hover,
+            caret_on,
+            &group_colors,
+        );
 
         // Paint + read back the active tab's webview, then blit below chrome.
         let mut captured: Option<image::RgbaImage> = None;
