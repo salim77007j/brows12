@@ -19,5 +19,78 @@
       "tab3 hibernated before tab2 (frequency ordering)": true,
       "governor reclaimed under pressure": true
     }
+  },
+  "area4_2": {
+    "tab_discarded": "tab_discarded index=1 scroll_est=2400 forms=1 url=http://127.0.0.1:8138/tall.html",
+    "state_restore": "state_restore index=1 scroll_est=2400 forms=1",
+    "checks": {
+      "governor discarded the background tab": true,
+      "discard preserved the scroll estimate": true,
+      "discard preserved a form snapshot": true,
+      "restore re-applied scroll+form state": true,
+      "hibernate followed the discard": true
+    }
+  },
+  "area4_3": {
+    "group": {
+      "id": 1,
+      "name": "research",
+      "color": "purple",
+      "collapsed": false,
+      "tabs": [
+        1,
+        3
+      ]
+    },
+    "checks": {
+      "group created with name+color": true,
+      "membership: strip tabs 0 and 2 (shell ids 1 and 3)": true,
+      "collapse toggles": true,
+      "delete reports ok": true,
+      "delete ungrouped members": true
+    }
+  },
+  "area4_4": {
+    "checks": {
+      "quit saved the session": true,
+      "restore: 3 tabs, 1 group, active=1": true,
+      "restore: active tab (a.html) came back live": true,
+      "restore: suspended tab rehydrated to b.html": true,
+      "restore: group survived with members": true,
+      "restore: specific session file": true
+    }
+  },
+  "area4_5": {
+    "results_all": "tabsearch_results query=guide count=1",
+    "hits_all": [
+      "tabsearch_hit rank=0 index=2 score=3.00 title=Beta_Cooking_Guide url=http://127.0.0.1:8140/beta.html snippet=beta_sourdough_recipes_|_Beta_Cooking_Guide"
+    ],
+    "results_desc": "tabsearch_results query=sourdough count=1",
+    "checks": {
+      "AND query hits one tab": true,
+      "snippet-only query hits (meta description)": true,
+      "multi-token AND query": true,
+      "no match returns count=0": true
+    }
+  },
+  "area4_6": {
+    "checks": {
+      "pin toggle event": true,
+      "pinned tab never hibernated": true,
+      "unpinned background tab hibernated": true,
+      "session file records pinned": true,
+      "session file records hibernated tabs intact": true,
+      "session restored (3 tabs)": true,
+      "restored pinned tab stays live": true
+    }
+  },
+  "area4_7": {
+    "checks": {
+      "idle tabs suspended at nominal pressure": true,
+      "active tab not suspended": true,
+      "never mode keeps idle tabs alive": true,
+      "exempt-URL tab survives idle suspension": true,
+      "non-exempt background tab suspended": true
+    }
   }
 }

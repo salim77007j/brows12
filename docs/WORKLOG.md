@@ -1181,3 +1181,27 @@ Work Log:
 Stage Summary:
 - 4.7 complete + Focus Area 4 implementation done: configurable idle
   suspension with full exemption matrix; one upstream gap documented.
+
+---
+Task ID: phase4-area4-report
+Agent: Super Z (main)
+Task: Phase 4 Focus Area 4 — final report + regression sweep.
+
+Work Log:
+- Full regression: cargo test -p servo-host 43/43 PASS; consolidated
+  e2e (phase4_area4.py --only all) 26/26 checks PASS across 4.1-4.7;
+  cargo fmt pass committed (a8fa5e1). clippy unavailable in this
+  container (component missing) — documented in the report.
+- docs/PHASE4_AREA4_REPORT.md written: per-sub-item status, method
+  note (shell behavior → event-stream invariants + unit tests instead
+  of Chrome side-by-side, which headless Chromium cannot provide),
+  test table, new FIFO/env API surface, honest limitations, and one
+  new upstream gap (media-session playbackState writes never notify
+  the embedder; minimal repro included).
+- All 7 sub-items committed and pushed individually:
+  92b4d38, baeef5b, 569c106, 384f2b1, 08aca2f, a50267a, 2d31427.
+
+Stage Summary:
+- FOCUS AREA 4 COMPLETE. Phase 4 (all four areas) complete. Report at
+  docs/PHASE4_AREA4_REPORT.md; artifacts under
+  docs/perf-artifacts/phase4/area4/. Awaiting "continue" for Phase 5.
