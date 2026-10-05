@@ -1301,3 +1301,19 @@ Stage Summary:
 - Benchmarks complete: RAM table (release), startup 132 ms, idle 0.00%,
   114.5 MB/tab vs Chrome 126.4. Honest: 2× met on 1/8; cnn regresses;
   build flag bought 2–6%.
+
+---
+Task ID: phase5-final-report
+Agent: Super Z (main)
+Task: Phase 5.4 — write docs/SERVO_FINAL_REPORT.md (capstone).
+
+Work Log:
+- Wrote docs/SERVO_FINAL_REPORT.md: executive verdicts (31/32 sites,
+  7/8 pages lighter / 2x on 1/8, idle 0.00%, startup 132 ms vs Chrome
+  98 ms, 114.5 vs 126.4 MB/tab), per-phase status table, Phase 5 site +
+  benchmark results, honest limitations (2x gap architecture, cnn
+  regression, bbc flaky sample, MDN long-tail, LTO-off in this env,
+  upstream gap index), conclusion.
+
+Stage Summary:
+- Final report committed; next: tag v2.0.0 + push.
