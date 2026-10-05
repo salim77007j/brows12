@@ -1328,3 +1328,25 @@ Work Log:
 
 Stage Summary:
 - PHASE 5 COMPLETE. All phases (1-5) done; v2.0.0 released.
+
+---
+Task ID: v2.1-phase0
+Agent: Super Z (main)
+Task: v2.1.0 Phase 0 — audit, baseline re-validation, docs/V2_1_PLAN.md.
+
+Work Log:
+- Container had been reset again: restored Rust 1.99, Mesa EGL + xkb
+  stack, Noto CJK fonts; fresh clone verified at v2.0.0 (799ddfb).
+- Release build rebuilt (5 chunks, opt3/CGU16/LTO-off recipe).
+- Baseline: cargo test --release --workspace = 108/108 PASS; site suite
+  status 31/32 (composites committed; raw PNGs recaptured on demand);
+  spot re-run example/wikipedia/github vs Chromium all pass.
+- Wrote docs/V2_1_PLAN.md: 8 evidence-backed gaps (CNN 0.74x, MDN
+  completion criterion, 114.5 MB/tab, 2x on 1/8, bbc sample flaky, LTO
+  off locally, no permanents, 4 upstream gaps), phased fix/innovation
+  plan (tiered image decode via proven patched/ mechanism, js_mem_max
+  runtime re-apply, background display-list drop, texture-cache purge),
+  rejected-ideas ledger, verification + release protocol.
+
+Stage Summary:
+- Phase 0 complete. Plan pushed BEFORE implementation, as required.
