@@ -26,6 +26,7 @@ import urllib.request
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 GL_ENV = {
     **os.environ,
+    "DISPLAY": os.environ.get("BROWS12_X11_DISPLAY", ":99"),
     "LD_LIBRARY_PATH": os.path.expanduser(
         "~/.local/gl/usr/lib/x86_64-linux-gnu"),
     "__EGL_VENDOR_LIBRARY_FILENAMES": os.path.expanduser(
@@ -184,7 +185,8 @@ def measure_brows12(url, settle_ms, timeout_ms):
     out = pathlib.Path("/tmp/a3-b12.json")
     if out.exists():
         out.unlink()
-    cmd = [str(ROOT / "target/debug/brows-perf"), "--url", url,
+    bin = os.environ.get("BROWS12_PERF_BIN", str(ROOT / "target/release/brows-perf"))
+    cmd = [str(bin), "--url", url,
            "--width", "1280", "--height", "800",
            "--settle-ms", str(settle_ms), "--timeout-ms", str(timeout_ms),
            "--json", str(out)]

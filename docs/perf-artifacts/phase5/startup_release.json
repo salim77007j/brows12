@@ -1,0 +1,36 @@
+{
+ "runs": [
+  {
+   "servo_build_ms": 3,
+   "first_present_ms": 164,
+   "wall_to_present_ms": 181.4
+  },
+  {
+   "servo_build_ms": 3,
+   "first_present_ms": 138,
+   "wall_to_present_ms": 161.7
+  },
+  {
+   "servo_build_ms": 3,
+   "first_present_ms": 132,
+   "wall_to_present_ms": 157.5
+  },
+  {
+   "servo_build_ms": 3,
+   "first_present_ms": 119,
+   "wall_to_present_ms": 141.4
+  },
+  {
+   "servo_build_ms": 5,
+   "first_present_ms": 109,
+   "wall_to_present_ms": 121.3
+  }
+ ],
+ "summary": {
+  "reps": 5,
+  "first_present_ms_median": 132,
+  "first_present_ms_min": 109,
+  "first_present_ms_max": 164,
+  "servo_build_ms_median": 3
+ }
+}

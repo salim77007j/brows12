@@ -1266,3 +1266,38 @@ Work Log:
 Stage Summary:
 - Debug-profile baseline reproduced. Release build started as the named
   Phase 5 lever.
+
+---
+Task ID: phase5-bench
+Agent: Super Z (main)
+Task: Phase 5.3 — release build + performance benchmarks vs Chrome.
+
+Work Log:
+- Release build completed on 3.9 GB box (opt3, CGU16, LTO off after the
+  thin-LTO link of brows12-ui exceeded every tool-call window; dual-profile
+  artifacts pushed disk to 100% twice — target/debug removed, debug
+  binaries were superseded).
+- area3_compare re-run on release binaries
+  (docs/perf-artifacts/phase5/area5_ram_release.json): brows12 lighter on
+  7/8 pages (1.52–2.07×), 2× met on hackernews (2.07×); cnn still 0.74×
+  (heavy JS + debug... now release — architectural, documented); local
+  pages 1.52–1.86×.
+- Release vs debug peaks: 2–6% lighter (deps were already opt-level=1 in
+  dev profile — the build flag was a smaller lever than Area 3 estimated).
+- area3_compare patched: brows-perf binary via BROWS12_PERF_BIN (default
+  release), DISPLAY added to GL_ENV.
+- Startup (release brows12-ui, 5 reps): median 132 ms first-present
+  (min 109) — improves Phase 2's 195 ms debug number.
+- Idle: 0.00% CPU over 30 s with 10 tabs (Chrome reference 0.05%).
+- 10-tab example.com: 114.5 MB/tab vs Chrome 126.4 MB/tab (9% lighter);
+  Chrome cold start 98 ms vs brows12 132 ms.
+- bbc.com/news now loads COMPLETE on release (Area 3 open finding
+  resolved); memory sample under the perf harness remains flaky (load
+  borderline within the 90–150 s window).
+- Restored missing container libs: libxkbcommon-x11/libxcb-xkb (UI launch
+  was panicking after the reset).
+
+Stage Summary:
+- Benchmarks complete: RAM table (release), startup 132 ms, idle 0.00%,
+  114.5 MB/tab vs Chrome 126.4. Honest: 2× met on 1/8; cnn regresses;
+  build flag bought 2–6%.

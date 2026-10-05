@@ -1,0 +1,173 @@
+{
+  "protocol": "one fresh engine per page; 1280x800; brows12 = brows-perf headless (software GL, debug build \u2014 same convention as Phase 2/3); Chrome = Playwright Chromium; RSS/PSS/USS sampled at settle, peak = VmHWM tree sum vs 250 ms polled maximum",
+  "budget_target": "brows12 peak <= 0.5 x chrome peak per page",
+  "pages": [
+    {
+      "page": "local-10img-500dom",
+      "note": "local heavy: 10 imgs (~10 MB decoded) + 500 DOM nodes",
+      "brows12": {
+        "rss_kb": 214284,
+        "pss_kb": 220877,
+        "uss_kb": 219856,
+        "peak_kb": 214284,
+        "observed_peak_kb": 214284
+      },
+      "chrome": {
+        "rss_kb": 391576,
+        "pss_kb": 193931,
+        "uss_kb": 106568,
+        "peak_kb": 398912,
+        "observed_peak_kb": 393952
+      },
+      "peak_ratio_chrome_over_b12": 1.86
+    },
+    {
+      "page": "local-20img-800dom",
+      "note": "local heavy: 20 imgs (~20 MB decoded) + 800 DOM nodes",
+      "brows12": {
+        "rss_kb": 239348,
+        "pss_kb": 245198,
+        "uss_kb": 243516,
+        "peak_kb": 239348,
+        "observed_peak_kb": 239348
+      },
+      "chrome": {
+        "rss_kb": 415940,
+        "pss_kb": 218138,
+        "uss_kb": 131376,
+        "peak_kb": 422756,
+        "observed_peak_kb": 417860
+      },
+      "peak_ratio_chrome_over_b12": 1.77
+    },
+    {
+      "page": "local-30img-800dom",
+      "note": "local heavy: 30 imgs (~30 MB decoded) + 800 DOM nodes",
+      "brows12": {
+        "rss_kb": 263872,
+        "pss_kb": 267515,
+        "uss_kb": 265844,
+        "peak_kb": 263872,
+        "observed_peak_kb": 263872
+      },
+      "chrome": {
+        "rss_kb": 435760,
+        "pss_kb": 238505,
+        "uss_kb": 152292,
+        "peak_kb": 446208,
+        "observed_peak_kb": 441676
+      },
+      "peak_ratio_chrome_over_b12": 1.69
+    },
+    {
+      "page": "local-40img-1200dom",
+      "note": "local heavy: 40 imgs (~40 MB decoded) + 1200 DOM nodes",
+      "brows12": {
+        "rss_kb": 298384,
+        "pss_kb": 302022,
+        "uss_kb": 300336,
+        "peak_kb": 298384,
+        "observed_peak_kb": 298384
+      },
+      "chrome": {
+        "rss_kb": 456996,
+        "pss_kb": 255818,
+        "uss_kb": 169544,
+        "peak_kb": 466352,
+        "observed_peak_kb": 462208
+      },
+      "peak_ratio_chrome_over_b12": 1.56
+    },
+    {
+      "page": "local-50img-1500dom",
+      "note": "local heavy: 50 imgs (~50 MB decoded) + 1500 DOM nodes",
+      "brows12": {
+        "rss_kb": 323212,
+        "pss_kb": 325684,
+        "uss_kb": 324032,
+        "peak_kb": 323212,
+        "observed_peak_kb": 323212
+      },
+      "chrome": {
+        "rss_kb": 476780,
+        "pss_kb": 277785,
+        "uss_kb": 190428,
+        "peak_kb": 491616,
+        "observed_peak_kb": 484036
+      },
+      "peak_ratio_chrome_over_b12": 1.52
+    },
+    {
+      "page": "github-servo",
+      "note": "real site",
+      "brows12": {
+        "rss_kb": 357856,
+        "pss_kb": 360226,
+        "uss_kb": 357984,
+        "peak_kb": 359236,
+        "observed_peak_kb": 357856
+      },
+      "chrome": {
+        "rss_kb": 518596,
+        "pss_kb": 298646,
+        "uss_kb": 200432,
+        "peak_kb": 551792,
+        "observed_peak_kb": 545560
+      },
+      "peak_ratio_chrome_over_b12": 1.54
+    },
+    {
+      "page": "hackernews",
+      "note": "real site",
+      "brows12": {
+        "rss_kb": 185492,
+        "pss_kb": 187225,
+        "uss_kb": 185172,
+        "peak_kb": 185492,
+        "observed_peak_kb": 185492
+      },
+      "chrome": {
+        "rss_kb": 383108,
+        "pss_kb": 180294,
+        "uss_kb": 92060,
+        "peak_kb": 384844,
+        "observed_peak_kb": 383304
+      },
+      "peak_ratio_chrome_over_b12": 2.07
+    },
+    {
+      "page": "bbc-news",
+      "note": "real site",
+      "brows12": null,
+      "chrome": {
+        "rss_kb": 597116,
+        "pss_kb": 371355,
+        "uss_kb": 271372,
+        "peak_kb": 609940,
+        "observed_peak_kb": 603908
+      },
+      "peak_ratio_chrome_over_b12": null
+    },
+    {
+      "page": "cnn",
+      "note": "real site",
+      "brows12": {
+        "rss_kb": 486940,
+        "pss_kb": 490609,
+        "uss_kb": 488480,
+        "peak_kb": 492840,
+        "observed_peak_kb": 486940
+      },
+      "chrome": {
+        "rss_kb": 362240,
+        "pss_kb": 167766,
+        "uss_kb": 83268,
+        "peak_kb": 362240,
+        "observed_peak_kb": 362240
+      },
+      "peak_ratio_chrome_over_b12": 0.74
+    }
+  ],
+  "pages_meeting_2x": 1,
+  "pages_total": 8
+}
