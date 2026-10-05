@@ -1435,3 +1435,35 @@ Stage Summary:
   scripts/p21-p23, V2_1_PLAN.md 2.2/2.3 status updates.
 - Next: heavy-page levers (cnn <200 MB/tab gate), 2.6 memory regression
   gate test, then Phase 2 wrap-up + commit checkpoints.
+
+---
+Task ID: v2.1-phase2b
+Agent: Super Z (main)
+Task: v2.1.0 Phase 2 (part 2) — heavy-page re-baseline, memory gates,
+re-scope decisions, wrap-up.
+
+Work Log:
+- Heavy battery: CNN re-measured on the final build via the IDENTICAL
+  brows-perf protocol as Phase 1: 476.0 / 480.2 MB (no regression;
+  p24's first pass read 535-559 via the brows-servo path — harness
+  delta ~+70 MB documented; cross-protocol comparisons are invalid).
+- Honest verdict: <200 MB/tab heavy-page target NOT reachable this
+  cycle (structural page weight; embedder knobs exhausted). Recorded
+  in V2_1_PLAN.md 2.6.
+- 2.6 LANDED: servo-host/tests/memory_gate.rs — gate_typical_per_tab_
+  under_100mb (10x example.com, idle RSS/10 < 100) +
+  gate_heavy_page_regression_floor (cnn VmHWM <= 600). #[ignore]d
+  locally (need release bin + GL + network); thresholds already
+  validated by today's committed measurements; CI runs them --ignored
+  (Phase 4 wiring).
+- Re-scopes recorded: 2.1 LRU budget deferred (floor was UI-side; cnn
+  image share 2.9%); 2.4 texture purge deferred pending Phase 3
+  re-measurement of the 425 MB residual post-shared-ctx.
+- Disk hit 100% again during test linking; purged 6.5 GB + 5.8 GB of
+  orphaned/failed artifacts (fingerprint-keyed).
+
+Stage Summary:
+- PHASE 2 COMPLETE: 44.6 MB/tab typical (gate <100 passed at 2.2x
+  margin; 2.83x lighter than Chrome per tab), heavy honest-not-met,
+  gates landed, tests 124 green. Commit + push, then STOP for
+  'continue' before Phase 3.

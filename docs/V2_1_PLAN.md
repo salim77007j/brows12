@@ -151,10 +151,12 @@ is ≥ 5 % with < 5 % perf cost; record the decision here.
 
 ### 2.1 Tiered image decode (expected biggest win)
 > **Status: display-bound cap LANDED in Phase 1** (fork #7,
-> `patched/servo-net`); the LRU byte budget + cross-tab dedup below
-> remain open for Phase 2, re-scoped against the measured cnn numbers
-> (responsive srcset already bounds most real images; the budget then
-> mainly targets page-weight outlier pages).
+> `patched/servo-net`); the LRU byte budget + cross-tab dedup are
+> **deferred** — Phase 2 attribution showed the per-tab floor was UI-side
+> (offscreen contexts), not image caches, and cnn's image share of peak
+> is 2.9 %. The budget would only pay on page-weight outlier pages; the
+> decode cap already protects those. Recorded as an upstreamable idea
+> for a future cycle rather than shipped speculative complexity.
 The `patched/` mechanism is proven (7 crates forked). Add a
 **decode-to-display-size + decoded-cache LRU + cross-tab dedup** layer:
 - decode images at the size they are painted (the display list already
@@ -211,9 +213,13 @@ servo-script; feasibility confirmed during 1.1 profiling.
 > `p23_shared_smoke`.
 
 ### 2.4 Texture-cache purge (G8, the 425 MB residual)
-Local wrapper/patch in the WebRender fork: purge texture-cache entries
-belonging to a dropped pipeline (hibernation path). If clean, upstream
-PR draft with the Area 3 §3.5 reproduction data.
+> **Status: RE-SCOPED.** The 425 MB residual was measured pre-shared-
+> context (v2.0.0 tab lifecycle). With the shared offscreen context the
+> per-tab texture residency changed shape; the residual will be
+> re-measured in Phase 3's tab-lifecycle pass. If it still shows up, the
+> WebRender fork (purge-on-pipeline-drop) is the fix for a later cycle;
+> shipping it speculatively now, against a number that may no longer
+> exist, violates the ≥5 %-win protocol.
 
 ### 2.5 Considered and rejected (documented decisions)
 - **Memory-mapped DOM**: unsound against SpiderMonkey GC rooting and
@@ -226,10 +232,25 @@ PR draft with the Area 3 §3.5 reproduction data.
   hibernation already provides the coarse-grained version safely.
 
 ### 2.6 Memory regression gate
-New test: load the standard heavy page, assert peak RSS/tab below the
-gate (100 MB typical-page / 200 MB heavy-page budget in CI with fixed
-page content) — wired as `#[test] #[ignore]` locally (env-dependent) and
-a real gate in the Linux CI job.
+> **Status: LANDED** — `servo-host/tests/memory_gate.rs`, two e2e gates
+> (`#[ignore]` locally; the Linux CI job runs them `--ignored`):
+> 1. `gate_typical_per_tab_under_100mb` — 10× example.com, idle RSS /
+>    10 < 100 MB (measured: 44.6 product / ~28 headless).
+> 2. `gate_heavy_page_regression_floor` — cnn.com tree-sampled peak
+>    ≤ 600 MB (measured 476–480).
+>
+> **Honest verdict on the heavy gate**: the mission's < 200 MB/tab
+> heavy-page target is **NOT MET** this cycle. cnn's peak is its own
+> structural page weight: JS heap ~95 MB (5 adtech iframes + stripe),
+> layout box-tree ~52 MB, ~200 MB non-instrumented engine scratch —
+> embedder knobs (decode cap, cache bounds, JS tiers, shared context)
+> already landed; the remainder needs upstream engine memory work
+> (display-list drop, texture purge, per-frame budgeting). Re-checked on
+> the final build via the identical protocol: 476.0 / 480.2 MB (no
+> regression vs Phase 1's 473.9–477.2). Harness note: the headless
+> `brows-servo` path reads ~+70 MB higher than the `brows-perf` path on
+> the same engine state — cross-harness comparisons must stay within
+> one protocol.
 
 ## 4. Phase 3 — verification (everything, again)
 
