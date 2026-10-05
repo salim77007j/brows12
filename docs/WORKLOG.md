@@ -1317,3 +1317,14 @@ Work Log:
 
 Stage Summary:
 - Final report committed; next: tag v2.0.0 + push.
+
+---
+Task ID: phase5-tag
+Agent: Super Z (main)
+Task: Phase 5.5 — tag v2.0.0.
+
+Work Log:
+- Tagged v2.0.0 on 7a0dbde and pushed. Phase 5 complete.
+
+Stage Summary:
+- PHASE 5 COMPLETE. All phases (1-5) done; v2.0.0 released.
