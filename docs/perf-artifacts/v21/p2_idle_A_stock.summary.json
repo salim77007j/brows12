@@ -1,0 +1,179 @@
+{
+  "tag": "A_stock",
+  "tabs": 10,
+  "url": "https://example.com/",
+  "extra_env": [],
+  "binary": "/home/z/my-project/brows12-servo/target/release/brows-perf",
+  "process_exited": true,
+  "perf": {
+    "engine": "servo 0.6.0 (stylo 0.21, webrender 0.70, spidermonkey 153, brows12 v2)",
+    "config": {
+      "tabs": 10,
+      "width": 1280,
+      "height": 800,
+      "suspend": false,
+      "idle_secs": 8,
+      "scroll_secs": 0,
+      "engine_report": true
+    },
+    "startup": {
+      "servo_build_ms": 43,
+      "first_frame_ms": 229,
+      "first_load_complete_ms": 256
+    },
+    "tabs": [
+      {
+        "url": "https://example.com/",
+        "complete": true,
+        "load_complete_ms": 256,
+        "all_resources_complete": true,
+        "complete_criterion": "engine-load-event",
+        "rss_after_kb": 181660
+      },
+      {
+        "url": "https://example.com/",
+        "complete": true,
+        "load_complete_ms": 1560,
+        "all_resources_complete": true,
+        "complete_criterion": "engine-load-event",
+        "rss_after_kb": 191892
+      },
+      {
+        "url": "https://example.com/",
+        "complete": true,
+        "load_complete_ms": 2862,
+        "all_resources_complete": true,
+        "complete_criterion": "engine-load-event",
+        "rss_after_kb": 203468
+      },
+      {
+        "url": "https://example.com/",
+        "complete": true,
+        "load_complete_ms": 4168,
+        "all_resources_complete": true,
+        "complete_criterion": "engine-load-event",
+        "rss_after_kb": 217148
+      },
+      {
+        "url": "https://example.com/",
+        "complete": true,
+        "load_complete_ms": 5476,
+        "all_resources_complete": true,
+        "complete_criterion": "engine-load-event",
+        "rss_after_kb": 229812
+      },
+      {
+        "url": "https://example.com/",
+        "complete": true,
+        "load_complete_ms": 6783,
+        "all_resources_complete": true,
+        "complete_criterion": "engine-load-event",
+        "rss_after_kb": 239732
+      },
+      {
+        "url": "https://example.com/",
+        "complete": true,
+        "load_complete_ms": 8088,
+        "all_resources_complete": true,
+        "complete_criterion": "engine-load-event",
+        "rss_after_kb": 250620
+      },
+      {
+        "url": "https://example.com/",
+        "complete": true,
+        "load_complete_ms": 9395,
+        "all_resources_complete": true,
+        "complete_criterion": "engine-load-event",
+        "rss_after_kb": 261088
+      },
+      {
+        "url": "https://example.com/",
+        "complete": true,
+        "load_complete_ms": 10698,
+        "all_resources_complete": true,
+        "complete_criterion": "engine-load-event",
+        "rss_after_kb": 271936
+      },
+      {
+        "url": "https://example.com/",
+        "complete": true,
+        "load_complete_ms": 12002,
+        "all_resources_complete": true,
+        "complete_criterion": "engine-load-event",
+        "rss_after_kb": 286448
+      }
+    ],
+    "memory_report": {
+      "explicit_total_bytes": 88156754,
+      "by_pid": [
+        [
+          29005,
+          88156754
+        ]
+      ],
+      "top_paths": [
+        [
+          "url(https://example.com/)/js/malloc-heap",
+          38626848
+        ],
+        [
+          "url(https://example.com/)/js/gc-heap/decommitted",
+          34201600
+        ],
+        [
+          "url(https://example.com/)/js/gc-heap/used",
+          5595680
+        ],
+        [
+          "url(https://example.com/)/js/non-heap",
+          2859520
+        ],
+        [
+          "hsts-preload-list",
+          1953776
+        ],
+        [
+          "url(https://example.com/)/js/gc-heap/unused",
+          1400560
+        ],
+        [
+          "url(https://example.com/)/js/gc-heap/admin",
+          745200
+        ],
+        [
+          "public-suffix-list",
+          676608
+        ],
+        [
+          "webrender/display-list",
+          475616
+        ],
+        [
+          "url(https://example.com/)/layout-thread/box-tree",
+          272704
+        ],
+        [
+          "url(https://example.com/)/js/dom/element-nodes",
+          207168
+        ],
+        [
+          "url(https://example.com/)/layout-thread/font-context",
+          203764
+        ]
+      ]
+    },
+    "suspension": null,
+    "idle": {
+      "window_secs": 8.001026251,
+      "cpu_percent": 0.0,
+      "rss_kb": 287028
+    },
+    "scroll": null,
+    "rss_start_kb": 13248,
+    "rss_final_kb": 287028,
+    "peak_rss_kb": 287028
+  },
+  "rss_end_kb": 287028,
+  "hwm_peak_kb": 287028,
+  "rss_idle_avg_kb": 287028
+}

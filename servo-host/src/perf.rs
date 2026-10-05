@@ -19,6 +19,7 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::mpsc::channel;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
@@ -398,30 +399,11 @@ pub fn run_perf(config: PerfConfig) -> PerfReport {
     }
 }
 
-/// Ask the constellation for its malloc-size-of report and wait (while
-/// spinning the loop) for the callback to fire.
-fn request_engine_memory_report(servo: &Servo, waker: &CondvarWaker) -> Option<EngineMemoryReport> {
-    let (tx, rx) = channel::<Vec<MemoryReport>>();
-    let cb = GenericCallback::<MemoryReportResult>::new(
-        move |result: Result<MemoryReportResult, ipc_channel::IpcError>| {
-            if let Ok(report) = result {
-                let _ = tx.send(report.results);
-            }
-        },
-    )
-    .expect("memory report callback");
-    servo.create_memory_report(cb);
-    let mut reports: Option<Vec<MemoryReport>> = None;
-    let deadline = Instant::now() + Duration::from_secs(10);
-    while reports.is_none() && Instant::now() < deadline {
-        servo.spin_event_loop();
-        if let Ok(r) = rx.try_recv() {
-            reports = Some(r);
-            break;
-        }
-        waker.wait_timeout(8);
-    }
-    let all = reports?;
+/// Map raw per-process MemoryReports into the aggregate embedder view
+/// (explicit totals by pid + top paths). Shared by the blocking harness
+/// path (`request_engine_memory_report`) and the async UI path
+/// (`request_engine_memory_report_async`).
+pub fn map_memory_reports(all: Vec<MemoryReport>) -> EngineMemoryReport {
     let mut by_pid: HashMap<u32, u64> = HashMap::new();
     let mut top: HashMap<String, u64> = HashMap::new();
     let mut total = 0u64;
@@ -448,5 +430,52 @@ fn request_engine_memory_report(servo: &Servo, waker: &CondvarWaker) -> Option<E
     top_paths.truncate(12);
     let mut by_pid: Vec<(u32, u64)> = by_pid.into_iter().collect();
     by_pid.sort_by_key(|(_, v)| std::cmp::Reverse(*v));
-    Some(EngineMemoryReport { explicit_total_bytes: total, by_pid, top_paths })
+    EngineMemoryReport { explicit_total_bytes: total, by_pid, top_paths }
+}
+
+/// v2.1 Phase 2 — one-shot engine memory report for the UI main thread,
+/// which cannot block on a condvar like the harness does. Issues the
+/// request and stores the mapped report into `sink` from the callback;
+/// the caller spins the event loop and polls the sink.
+pub fn request_engine_memory_report_async(
+    servo: &Servo,
+    sink: Arc<Mutex<Option<EngineMemoryReport>>>,
+) {
+    let cb = GenericCallback::<MemoryReportResult>::new(move |result| {
+        if let Ok(report) = result {
+            let mapped = map_memory_reports(report.results);
+            if let Ok(mut slot) = sink.lock() {
+                *slot = Some(mapped);
+            }
+        }
+    })
+    .expect("memory report callback");
+    servo.create_memory_report(cb);
+}
+
+/// Ask the constellation for its malloc-size-of report and wait (while
+/// spinning the loop) for the callback to fire.
+fn request_engine_memory_report(servo: &Servo, waker: &CondvarWaker) -> Option<EngineMemoryReport> {
+    let (tx, rx) = channel::<Vec<MemoryReport>>();
+    let cb = GenericCallback::<MemoryReportResult>::new(
+        move |result: Result<MemoryReportResult, ipc_channel::IpcError>| {
+            if let Ok(report) = result {
+                let _ = tx.send(report.results);
+            }
+        },
+    )
+    .expect("memory report callback");
+    servo.create_memory_report(cb);
+    let mut reports: Option<Vec<MemoryReport>> = None;
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while reports.is_none() && Instant::now() < deadline {
+        servo.spin_event_loop();
+        if let Ok(r) = rx.try_recv() {
+            reports = Some(r);
+            break;
+        }
+        waker.wait_timeout(8);
+    }
+    let all = reports?;
+    Some(map_memory_reports(all))
 }

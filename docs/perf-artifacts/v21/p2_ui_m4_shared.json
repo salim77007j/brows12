@@ -1,0 +1,99 @@
+{
+  "tag": "m4_shared",
+  "binary": "/home/z/my-project/brows12-servo/target/release/brows12-ui",
+  "tabs": 4,
+  "url": "https://example.com",
+  "loaded_events": 8,
+  "idle_cpu_percent": 0.0,
+  "window_secs": 6.0,
+  "rss_after_load_kb": 357504,
+  "rss_end_kb": 357584,
+  "rss_per_tab_kb": 89396.0,
+  "memreport": null,
+  "smaps_top": [
+    {
+      "mapping": "[heap/anon]",
+      "rss_mb": 177.2
+    },
+    {
+      "mapping": "/home/z/my-project/brows12-servo/target/release/brows12-ui",
+      "rss_mb": 76.7
+    },
+    {
+      "mapping": "/usr/lib/x86_64-linux-gnu/libLLVM.so.19.1",
+      "rss_mb": 52.9
+    },
+    {
+      "mapping": "/home/z/.local/share/fonts/NotoSansCJK-Regular.ttc",
+      "rss_mb": 17.6
+    },
+    {
+      "mapping": "/usr/lib/x86_64-linux-gnu/libgallium-25.0.7-2+deb13u1.so",
+      "rss_mb": 10.9
+    },
+    {
+      "mapping": "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+      "rss_mb": 4.0
+    },
+    {
+      "mapping": "/dev/shm/softbuffer-x11-tKhtDh9",
+      "rss_mb": 3.9
+    },
+    {
+      "mapping": "/usr/share/fonts/truetype/freefont/FreeSerif.ttf",
+      "rss_mb": 3.0
+    },
+    {
+      "mapping": "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+      "rss_mb": 1.9
+    },
+    {
+      "mapping": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "rss_mb": 1.7
+    },
+    {
+      "mapping": "/usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.33",
+      "rss_mb": 1.4
+    },
+    {
+      "mapping": "/usr/lib/x86_64-linux-gnu/libz3.so.4",
+      "rss_mb": 1.0
+    },
+    {
+      "mapping": "/usr/lib/x86_64-linux-gnu/libX11.so.6.4.0",
+      "rss_mb": 0.8
+    },
+    {
+      "mapping": "/usr/lib/x86_64-linux-gnu/libfreetype.so.6.20.2",
+      "rss_mb": 0.7
+    }
+  ],
+  "events_tail": [
+    "nav tab=1 url=https://example.com/",
+    "loaded tab=2 url=brows12://start title=",
+    "omni text=https://example.com",
+    "return input=https://example.com",
+    "loaded tab=2 url=https://example.com title=",
+    "nav tab=2 url=https://example.com/",
+    "loaded tab=3 url=brows12://start title=",
+    "omni text=https://example.com",
+    "return input=https://example.com",
+    "loaded tab=3 url=https://example.com title=",
+    "nav tab=3 url=https://example.com/",
+    "loaded tab=4 url=brows12://start title=",
+    "omni text=https://example.com",
+    "return input=https://example.com",
+    "loaded tab=4 url=https://example.com title=",
+    "nav tab=4 url=https://example.com/",
+    "js_heap_tier tier=Tight mem_max_mb=192 rss_ratio=0.91 psi_hot=false over_budget_tabs=0",
+    "predict_order why=rss level=Elevated candidates=[]",
+    "predict_order why=rss level=Elevated candidates=[]",
+    "predict_order why=rss level=Elevated candidates=[]",
+    "predict_order why=rss level=Elevated candidates=[]",
+    "predict_order why=rss level=Elevated candidates=[]",
+    "predict_order why=rss level=Elevated candidates=[]",
+    "predict_order why=rss level=Elevated candidates=[]",
+    "predict_order why=rss level=Elevated candidates=[]"
+  ],
+  "stderr_tail": "brows12-privacy: filter engine ready (143204 rules, 167 ms, 21 resources, 43 removeparam rules)\nbrows12-ui: MEMREPORT command received\nbrows12-ui: malloc_stats BEGIN\nArena 0:\nsystem bytes     =   90042368\nin use bytes     =   74117216\nArena 1:\nsystem bytes     =    4575232\nin use bytes     =    4569920\nArena 2:\nsystem bytes     =    1703936\nin use bytes     =    1692896\nArena 3:\nsystem bytes     =    2838528\nin use bytes     =    2703088\nArena 4:\nsystem bytes     =     135168\nin use bytes     =      32640\nArena 5:\nsystem bytes     =    2625536\nin use bytes     =     985376\nArena 6:\nsystem bytes     =     212992\nin use bytes     =     209440\nArena 7:\nsystem bytes     =    2834432\nin use bytes     =    2450480\nArena 8:\nsystem bytes     =    4812800\nin use bytes     =    4701472\nArena 9:\nsystem bytes     =    2695168\nin use bytes     =    2318224\nArena 10:\nsystem bytes     =    2863104\nin use bytes     =    2760960\nArena 11:\nsystem bytes     =    6103040\nin use bytes     =    3873968\nArena 12:\nsystem bytes     =    4587520\nin use bytes     =    4504608\nArena 13:\nsystem bytes     =     458752\nin use bytes     =     420640\nArena 14:\nsystem bytes     =     135168\nin use bytes     =      52544\nArena 15:\nsystem bytes     =    1036288\nin use bytes     =    1020128\nTotal (incl. mmap):\nsystem bytes     =  202035200\nin use bytes     =  180788768\nmax mmap regions =         14\nmax mmap bytes   =   74375168\nbrows12-ui: malloc_stats END\nbrows12-ui: MEMREPORT issuing create_memory_report\n"
+}

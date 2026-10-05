@@ -1,0 +1,130 @@
+{
+  "tag": "B_decay",
+  "tabs": 10,
+  "url": "https://example.com/",
+  "extra_env": [
+    [
+      "_RJEM_MALLOC_CONF",
+      "dirty_decay_ms:500,muzzy_decay_ms:500,background_thread:true"
+    ],
+    [
+      "_RJEM_MAX_BACKGROUND_THREADS",
+      "2"
+    ]
+  ],
+  "binary": "/home/z/my-project/brows12-servo/target/release/brows-perf",
+  "process_exited": true,
+  "perf": {
+    "engine": "servo 0.6.0 (stylo 0.21, webrender 0.70, spidermonkey 153, brows12 v2)",
+    "config": {
+      "tabs": 10,
+      "width": 1280,
+      "height": 800,
+      "suspend": false,
+      "idle_secs": 8,
+      "scroll_secs": 0,
+      "engine_report": false
+    },
+    "startup": {
+      "servo_build_ms": 45,
+      "first_frame_ms": 219,
+      "first_load_complete_ms": 286
+    },
+    "tabs": [
+      {
+        "url": "https://example.com/",
+        "complete": true,
+        "load_complete_ms": 286,
+        "all_resources_complete": true,
+        "complete_criterion": "engine-load-event",
+        "rss_after_kb": 181580
+      },
+      {
+        "url": "https://example.com/",
+        "complete": true,
+        "load_complete_ms": 1591,
+        "all_resources_complete": true,
+        "complete_criterion": "engine-load-event",
+        "rss_after_kb": 191448
+      },
+      {
+        "url": "https://example.com/",
+        "complete": true,
+        "load_complete_ms": 2901,
+        "all_resources_complete": true,
+        "complete_criterion": "engine-load-event",
+        "rss_after_kb": 205796
+      },
+      {
+        "url": "https://example.com/",
+        "complete": true,
+        "load_complete_ms": 4205,
+        "all_resources_complete": true,
+        "complete_criterion": "engine-load-event",
+        "rss_after_kb": 216380
+      },
+      {
+        "url": "https://example.com/",
+        "complete": true,
+        "load_complete_ms": 5510,
+        "all_resources_complete": true,
+        "complete_criterion": "engine-load-event",
+        "rss_after_kb": 227344
+      },
+      {
+        "url": "https://example.com/",
+        "complete": true,
+        "load_complete_ms": 6819,
+        "all_resources_complete": true,
+        "complete_criterion": "engine-load-event",
+        "rss_after_kb": 237392
+      },
+      {
+        "url": "https://example.com/",
+        "complete": true,
+        "load_complete_ms": 8121,
+        "all_resources_complete": true,
+        "complete_criterion": "engine-load-event",
+        "rss_after_kb": 248316
+      },
+      {
+        "url": "https://example.com/",
+        "complete": true,
+        "load_complete_ms": 9427,
+        "all_resources_complete": true,
+        "complete_criterion": "engine-load-event",
+        "rss_after_kb": 259712
+      },
+      {
+        "url": "https://example.com/",
+        "complete": true,
+        "load_complete_ms": 10733,
+        "all_resources_complete": true,
+        "complete_criterion": "engine-load-event",
+        "rss_after_kb": 271548
+      },
+      {
+        "url": "https://example.com/",
+        "complete": true,
+        "load_complete_ms": 12038,
+        "all_resources_complete": true,
+        "complete_criterion": "engine-load-event",
+        "rss_after_kb": 283768
+      }
+    ],
+    "memory_report": null,
+    "suspension": null,
+    "idle": {
+      "window_secs": 8.001021299,
+      "cpu_percent": 0.0,
+      "rss_kb": 283768
+    },
+    "scroll": null,
+    "rss_start_kb": 13136,
+    "rss_final_kb": 283768,
+    "peak_rss_kb": 283768
+  },
+  "rss_end_kb": 283768,
+  "hwm_peak_kb": 283768,
+  "rss_idle_avg_kb": 283768
+}

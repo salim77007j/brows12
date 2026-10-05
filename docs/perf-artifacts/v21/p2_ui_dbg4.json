@@ -1,0 +1,31 @@
+{
+  "tag": "dbg4",
+  "binary": "/home/z/my-project/brows12-servo/target/release/brows12-ui",
+  "tabs": 2,
+  "url": "https://example.com",
+  "loaded_events": 4,
+  "idle_cpu_percent": 0.0,
+  "window_secs": 5.0,
+  "rss_after_load_kb": 407480,
+  "rss_end_kb": 407480,
+  "rss_per_tab_kb": 203740.0,
+  "memreport": "memreport rss_kb=407920 live_runtimes=2 suspended=0 engine_report={\"explicit_total_bytes\":34754624,\"by_pid\":[[20539,34754624]],\"top_paths\":[[\"url(about:blank)/layout-thread/font-context\",18446744073709551568],[\"url(https://example.com/)/js/malloc-heap\",7723760],[\"url(https://example.com/)/js/gc-heap/decommitted\",6840320],[\"url(about:blank)/js/gc-heap/decommitted\",6799360],[\"url(about:blank)/js/malloc-heap\",5422448],[\"hsts-preload-list\",1949736],[\"url(about:blank)/js/non-heap\",1122944],[\"url(https://example.com/)/js/gc-heap/used\",1120528],[\"url(about:blank)/js/gc-heap/used\",903536],[\"public-suffix-list\",676608],[\"url(https://example.com/)/js/non-heap\",571904],[\"url(about:blank)/js/gc-heap/unused\",536176]]}",
+  "events_tail": [
+    "start pid=20539 viewport=1280x728",
+    "loaded tab=1 url=brows12://start title=",
+    "omni text=https://example.com",
+    "return input=https://example.com",
+    "loaded tab=1 url=https://example.com title=",
+    "nav tab=1 url=https://example.com/",
+    "loaded tab=2 url=brows12://start title=",
+    "omni text=https://example.com",
+    "return input=https://example.com",
+    "loaded tab=2 url=https://example.com title=",
+    "nav tab=2 url=https://example.com/",
+    "js_heap_tier tier=Small mem_max_mb=128 rss_ratio=1.04 psi_hot=false over_budget_tabs=0",
+    "predict_order why=rss level=Critical candidates=[]",
+    "predict_order why=rss level=Critical candidates=[]",
+    "memreport rss_kb=407920 live_runtimes=2 suspended=0 engine_report={\"explicit_total_bytes\":34754624,\"by_pid\":[[20539,34754624]],\"top_paths\":[[\"url(about:blank)/layout-thread/font-context\",18446744073709551568],[\"url(https://example.com/)/js/malloc-heap\",7723760],[\"url(https://example.com/)/js/gc-heap/decommitted\",6840320],[\"url(about:blank)/js/gc-heap/decommitted\",6799360],[\"url(about:blank)/js/malloc-heap\",5422448],[\"hsts-preload-list\",1949736],[\"url(about:blank)/js/non-heap\",1122944],[\"url(https://example.com/)/js/gc-heap/used\",1120528],[\"url(about:blank)/js/gc-heap/used\",903536],[\"public-suffix-list\",676608],[\"url(https://example.com/)/js/non-heap\",571904],[\"url(about:blank)/js/gc-heap/unused\",536176]]}"
+  ],
+  "stderr_tail": "brows12-privacy: filter engine ready (143204 rules, 127 ms, 21 resources, 43 removeparam rules)\nbrows12-ui: MEMREPORT command received\nbrows12-ui: MEMREPORT issuing create_memory_report\nbrows12-ui: MEMREPORT sink still empty\nbrows12-ui: MEMREPORT sink still empty\n"
+}

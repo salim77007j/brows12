@@ -129,6 +129,9 @@ struct Gui {
     /// JS-heap tier currently applied to the engine (to avoid re-sending
     /// set_preference every tick).
     js_tier: JsHeapTier,
+    /// v2.1 Phase 2: the one shared offscreen rendering context (see
+    /// `offscreen_ctx`) — None until the first tab is created.
+    shared_ctx: Option<Rc<OffscreenRenderingContext>>,
     /// Wall time of ServoBuilder::build(), for BROWS12_UI_START_METRICS.
     servo_build_ms: u128,
     /// Wall time of the first presented frame (set once).
@@ -240,6 +243,7 @@ impl ApplicationHandler<HostWakerEvent> for App {
             psi: PsiConfig::from_env(),
             next_psi_reclaim_at: Instant::now(),
             js_tier: JsHeapTier::Normal,
+            shared_ctx: None,
             servo_build_ms,
             first_present_ms: None,
             started: self.started,
@@ -322,6 +326,7 @@ impl ApplicationHandler<HostWakerEvent> for App {
                         } else {
                             match line.as_str() {
                                 "<RETURN>" => Some(InjectCmd::Return),
+                                "<MEMREPORT>" => Some(InjectCmd::MemReport),
                                 "<BACK>" => Some(InjectCmd::Back),
                                 "<FORWARD>" => Some(InjectCmd::Forward),
                                 "<RELOAD>" => Some(InjectCmd::Reload),
@@ -560,6 +565,40 @@ impl Gui {
         }
     }
 
+    /// v2.1 Phase 2 — `<MEMREPORT>` diagnostics: issue the engine memory
+    /// report and emit the result as one `memreport` event. Runs
+    /// synchronously with a bounded inline spin (harness-only command;
+    /// blocking the UI loop for ≤5 s is acceptable and keeps the
+    /// automation protocol simple — the governor tick is too slow to
+    /// poll from).
+    fn run_mem_report(&mut self) {
+        let Some(servo) = self.servo.as_ref() else { return };
+        let sink: std::sync::Arc<
+            std::sync::Mutex<Option<servo_host::perf::EngineMemoryReport>>,
+        > = std::sync::Arc::new(std::sync::Mutex::new(None));
+        servo_host::perf::request_engine_memory_report_async(servo, sink.clone());
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline {
+            servo.spin_event_loop();
+            if sink.lock().map(|s| s.is_some()).unwrap_or(true) {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(8));
+        }
+        if let Ok(mut slot) = sink.lock() {
+            if let Some(report) = slot.take() {
+                let rss_kb = servo_host::metrics::rss_kb().unwrap_or(0);
+                let suspended = self.tabs.iter().filter(|t| t.suspended).count();
+                let live = self.runtimes.len();
+                model::emit(format!(
+                    "memreport rss_kb={rss_kb} live_runtimes={live} suspended={suspended} \
+                     engine_report={}",
+                    serde_json::to_string(&report).unwrap_or_else(|_| "{}".into()),
+                ));
+            }
+        };
+    }
+
     fn active_id(&self) -> Option<u64> {
         self.tabs.get(self.active)?.id
     }
@@ -692,14 +731,14 @@ impl Gui {
     // ---- Tab management ---------------------------------------------------
 
     fn new_tab(&mut self) {
-        let (Some(servo), Some(parent)) = (self.servo.as_ref(), self.parent_ctx.as_ref()) else {
+        let ctx = self.offscreen_ctx();
+        let (Some(servo), Some(_)) = (self.servo.as_ref(), self.parent_ctx.as_ref()) else {
             return;
         };
         // Phase 2.3: the previously active tab becomes background — throttle it.
         let previous_active = self.active_id();
         let id = self.next_tab_id;
         self.next_tab_id += 1;
-        let ctx = Rc::new(parent.offscreen_context(PhysicalSize::new(VIEWPORT_W, VIEWPORT_H)));
         let ctx_dyn: Rc<dyn RenderingContext> = ctx.clone();
         let state = Arc::new(HostState::new());
         let delegate = HostDelegate::new(state.clone(), self.privacy.clone());
@@ -830,10 +869,10 @@ impl Gui {
     /// Build one offscreen webview (shared by new_tab, restore and the
     /// session's live tab).
     fn spawn_webview(&mut self, load_url: Url) -> TabRuntime {
-        let (Some(servo), Some(parent)) = (self.servo.as_ref(), self.parent_ctx.as_ref()) else {
+        let ctx = self.offscreen_ctx();
+        let (Some(servo), Some(_)) = (self.servo.as_ref(), self.parent_ctx.as_ref()) else {
             panic!("servo not initialized");
         };
-        let ctx = Rc::new(parent.offscreen_context(PhysicalSize::new(VIEWPORT_W, VIEWPORT_H)));
         let ctx_dyn: Rc<dyn RenderingContext> = ctx.clone();
         let state = Arc::new(HostState::new());
         let delegate = HostDelegate::new(state.clone(), self.privacy.clone());
@@ -845,6 +884,31 @@ impl Gui {
         webview.resize(PhysicalSize::new(VIEWPORT_W, VIEWPORT_H));
         webview.load(load_url);
         TabRuntime { webview, state, ctx, last_painted_frame: 0, trimmed_at: None }
+    }
+
+    /// v2.1 Phase 2 — offscreen context for a new webview. **Shared by
+    /// default**: one offscreen context serves every tab (the headless
+    /// harness's arrangement, proven across the 31/32-site suite).
+    /// Measured on the product shell (4× example.com): per-tab contexts
+    /// carried ~115 MB/tab of live allocator heap (GL/llvmpipe
+    /// per-context bookkeeping invisible to malloc-size-of) — 580 MB →
+    /// 349 MB RSS with the shared context, per-tab marginal 129 → 14 MB.
+    /// `BROWS12_SHARED_CTX=0` restores the per-tab arrangement for A/B.
+    fn offscreen_ctx(&mut self) -> Rc<OffscreenRenderingContext> {
+        let per_tab = std::env::var_os("BROWS12_SHARED_CTX").is_some_and(|v| v == "0");
+        if !per_tab {
+            if let Some(ctx) = self.shared_ctx.as_ref() {
+                return ctx.clone();
+            }
+        }
+        let Some(parent) = self.parent_ctx.as_ref() else {
+            panic!("no parent rendering context");
+        };
+        let ctx = Rc::new(parent.offscreen_context(PhysicalSize::new(VIEWPORT_W, VIEWPORT_H)));
+        if !per_tab {
+            self.shared_ctx = Some(ctx.clone());
+        }
+        ctx
     }
 
     /// Snapshot the strip into a Session and write it atomically.
@@ -1023,7 +1087,8 @@ impl Gui {
         if !self.tabs[index].suspended {
             return;
         }
-        let (Some(servo), Some(parent)) = (self.servo.as_ref(), self.parent_ctx.as_ref()) else {
+        let ctx = self.offscreen_ctx();
+        let (Some(servo), Some(_)) = (self.servo.as_ref(), self.parent_ctx.as_ref()) else {
             return;
         };
         let Some(id) = self.tabs[index].id else { return };
@@ -1033,7 +1098,6 @@ impl Gui {
         } else {
             Url::parse(&url).unwrap_or_else(|_| start_page_url())
         };
-        let ctx = Rc::new(parent.offscreen_context(PhysicalSize::new(VIEWPORT_W, VIEWPORT_H)));
         let ctx_dyn: Rc<dyn RenderingContext> = ctx.clone();
         let state = Arc::new(HostState::new());
         let delegate = HostDelegate::new(state.clone(), self.privacy.clone());
@@ -1744,6 +1808,19 @@ impl Gui {
                 self.dirty = true;
             }
             InjectCmd::Sleep(_) => {}
+            InjectCmd::MemReport => {
+                // v2.1 Phase 2: attribution — glibc's own live-vs-system
+                // split (system − in-use = free-but-resident) to stderr,
+                // then the engine report as a `memreport` event.
+                if std::env::var_os("BROWS12_MALLOC_STATS").is_some() {
+                    eprintln!("brows12-ui: malloc_stats BEGIN");
+                    unsafe {
+                        libc::malloc_stats();
+                    }
+                    eprintln!("brows12-ui: malloc_stats END");
+                }
+                self.run_mem_report();
+            }
             InjectCmd::Quit => {
                 // Phase 4.4.4: persist the session before the loop exits.
                 self.save_session("quit");

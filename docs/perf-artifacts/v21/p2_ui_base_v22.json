@@ -1,0 +1,13 @@
+{
+  "tag": "base_v22",
+  "binary": "/home/z/my-project/brows12-servo/target/release/brows12-ui",
+  "tabs": 10,
+  "url": "https://example.com",
+  "loaded_events": 20,
+  "idle_cpu_percent": 0.0,
+  "window_secs": 20.0,
+  "rss_after_load_kb": 1146000,
+  "rss_end_kb": 1146000,
+  "rss_per_tab_kb": 114600.0,
+  "memreport": null
+}

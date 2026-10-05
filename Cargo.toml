@@ -67,3 +67,6 @@ servo-layout = { path = "patched/servo-layout" }
 servo-canvas = { path = "patched/servo-canvas" }
 servo-script-bindings = { path = "patched/servo-script-bindings" }
 servo-net = { path = "patched/servo-net" }
+# brows12 v2.1 (Phase 2.2): js_mem_max + GC params re-applied to live
+# runtimes on PreferencesUpdated (upstream applies them only at creation).
+servo-script = { path = "patched/servo-script" }

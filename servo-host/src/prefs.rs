@@ -49,6 +49,12 @@ pub fn compat_preferences() -> Preferences {
     }
 }
 
+/// Default SpiderMonkey GC heap ceiling in MB (see the comment in
+/// `brows12_preferences`). Must stay inside the engine's accepted range
+/// `[1, 0x100]` — anything outside silently becomes an unbounded heap
+/// (`JSGC_MAX_BYTES = u32::MAX`).
+pub const JS_MEM_MAX_DEFAULT_MB: i64 = 256;
+
 /// The full brows12 profile: compatibility (above) + the Phase 2 memory
 /// and performance knobs. This is what the shell and the headless
 /// harness run by default.
@@ -63,12 +69,18 @@ pub fn brows12_preferences() -> Preferences {
         // miss just re-reads from disk.
         network_http_cache_size: 1024,
 
-        // ---- JavaScript heap (Phase 2.1) -----------------------------
-        // SpiderMonkey GC heap ceiling for the whole engine. Servo
-        // default: -1 (unlimited). 256 MiB bounds runaway pages; the
-        // per-tab saver is hibernation (the governor), this is the
-        // second line of defense for a single page allocating hard.
-        js_mem_max: 256 * 1024 * 1024,
+        // ---- JavaScript heap (Phase 2.1, v2.1 Phase 2.2) ------------
+        // SpiderMonkey GC heap ceiling in **MB** — the engine's GC-param
+        // snapshot reads this pref as a megabyte value clamped to [1, 256]
+        // (script_runtime.rs `in_range(pref!(js_mem_max), 1, 0x100)`), and
+        // the Phase 2.2 fork re-applies it to live runtimes on every
+        // PreferencesUpdated. The old value here was 256 * 1024 * 1024
+        // (bytes): out of the engine's MB range, it silently disabled the
+        // ceiling entirely (JSGC_MAX_BYTES = u32::MAX). 256 = the ceiling
+        // this pref always documented; the per-tab saver is hibernation
+        // (the governor), this is the second line of defense for a single
+        // page allocating hard.
+        js_mem_max: JS_MEM_MAX_DEFAULT_MB,
 
         // ---- Timers (Phase 2.3: background throttling support) ------
         // Clamp for nested/repeated setTimeout: Servo default is 1000ms.
@@ -135,7 +147,12 @@ mod tests {
         assert!(full.dom_intersection_observer_enabled);
         assert!(full.dom_adoptedstylesheet_enabled);
         assert_eq!(full.network_http_cache_size, 1024);
-        assert_eq!(full.js_mem_max, 256 * 1024 * 1024);
+        // v2.1 Phase 2.2: the ceiling is in MB and must stay inside the
+        // engine's `in_range(.., 1, 0x100)` window — outside it the engine
+        // silently disables the ceiling (JSGC_MAX_BYTES = u32::MAX). The
+        // pre-2.2 value (256 * 1024 * 1024 bytes) did exactly that.
+        assert_eq!(full.js_mem_max, JS_MEM_MAX_DEFAULT_MB);
+        assert!((1..=0x100).contains(&full.js_mem_max));
         // Defaults we consciously keep:
         assert_eq!(full.js_timers_minimum_duration, 1000);
         // Guard against accidental regressions of the Servo defaults we

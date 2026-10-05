@@ -157,12 +157,12 @@ pub fn decide(
     }
 }
 
-/// Phase 4.3.4 — JS-heap tiers. `js_mem_max` is read once per JS
-/// runtime creation (servo-script 0.6.0 snapshot; runtime re-apply is
-/// an upstream gap), so the tier is applied globally and takes effect
-/// for every runtime created afterwards — in practice every tab
-/// restored from hibernation, which is exactly when the governor wants
-/// a smaller heap.
+/// Phase 4.3.4 — JS-heap tiers. `js_mem_max` used to be read once per JS
+/// runtime creation (servo-script 0.6.0 snapshot; runtime re-apply was an
+/// upstream gap). v2.1 Phase 2.2 forks servo-script: the GC parameters are
+/// now re-applied to every live runtime on `PreferencesUpdated`, so a tier
+/// change also shrinks heaps that already exist (with a collection when the
+/// ceiling decreases).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum JsHeapTier {
     /// Default (prefs.rs): 256 MB.

@@ -168,20 +168,47 @@ Candidates to patch: the image cache + `pixels` crates consumed by
 servo-script; feasibility confirmed during 1.1 profiling.
 
 ### 2.2 JS heap tiers — runtime re-apply (upstream candidate)
-> **Status: OPEN — now the top Phase 2 lever** (Phase 1 attribution:
-> cnn JS heap ~95 MB incl. adtech iframes).
-Small upstream-style patch: re-apply `JS_SetGCParameter(js_mem_max)` on
-`PreferencesUpdated` in servo-script (Area 3 §3.4 verified the snapshot
-gap). Effect: backgrounded/hibernate-restored tabs actually shrink their
-heaps under the existing tier ladder instead of only new tabs.
+> **Status: LANDED (fork #8, `patched/servo-script`).** The GC-parameter
+> block from `Runtime::new` is extracted into
+> `reapply_js_gc_parameters(cx)`; `ScriptThread::handle_msg_from_constellation`
+> calls it on every `PreferencesUpdated` (each script thread covers its
+> own live runtimes). When the applied ceiling *decreases* process-wide
+> it also runs `JS_GC` so the shrink takes effect immediately — verified
+> live: the governor's tier change (`Normal → Tight/Small` under
+> multi-tab RSS) now re-applies to existing runtimes and collects.
+> Bonus fix found while landing: the embedder's `js_mem_max` default was
+> 256 * 1024 * 1024 (bytes) but the engine reads the pref as MB clamped
+> to [1,256] — the documented 256 MiB ceiling was silently an unbounded
+> heap (`JSGC_MAX_BYTES = u32::MAX`). Default is now
+> `JS_MEM_MAX_DEFAULT_MB = 256` with a range contract test.
 
 ### 2.3 Background-tab display-list + cache discipline
-> **Status: OPEN — attacks the ~200 MB non-explicit peak + the
-> texture-purge residual.**
-- On hide: drop the WebRender display list + frame resources for
-  background tabs (rebuild on show; embedder-side, no upstream change);
-- periodic `malloc_trim` on the governor tick under Elevated+ PSI
-  (extends the existing hibernate-only trim).
+> **Status: RE-SCOPED after attribution — the per-tab offscreen
+> rendering context was the real per-tab hog, and the shared context
+> (2.3a) closed the <100 MB/tab gate without any display-list surgery.**
+> The display-list drop-on-hide remains an upstream candidate for the
+> heavy-page peak; the periodic `malloc_trim` already exists on the
+> hibernate/reclaim paths.
+>
+> **2.3a (LANDED): shared offscreen rendering context.** Attribution
+> chain (`scripts/p22_ui_memreport.py`, `docs/perf-artifacts/v21/`):
+> product 10× example.com = 1146 MB RSS (114.6 MB/tab, reproduced from
+> v2.0.0's 1145.4); engine explicit accounting only 34.7 MB for 2 tabs;
+> glibc `malloc_stats` proved the rest LIVE (in-use 1395 MB, free-but-
+> resident 28 MB) — retention/decay levers were moot; the marginal is
+> perfectly linear at ~129 MB/tab and UI-only (headless marginal 11.4).
+> The structural difference: the UI gave every tab its own
+> `OffscreenRenderingContext` while the (31/32-site-proven) headless
+> harness shares one. A/B (`BROWS12_SHARED_CTX` gate, 4 tabs): 580 →
+> 349 MB RSS, in-use heap 619 → 274 MB, marginal 129 → 14 MB/tab.
+> **10-tab product, shared by default: 446 MB total = 44.6 MB/tab
+> (was 114.5; Chrome 126.4 → now 2.83× lighter per tab). Idle CPU
+> 0.00%; full interaction smoke PASS (load / switch ×5 / hibernate →
+> restore → reload → form-state restore / memreport).**
+> Diagnostics added en route: `<MEMREPORT>` FIFO command (engine report
+> + RSS + live/suspended counts), `BROWS12_MALLOC_STATS=1` glibc split,
+> smaps rollup in `p22`; scripts `p21_idle_ab`, `p22_ui_memreport`,
+> `p23_shared_smoke`.
 
 ### 2.4 Texture-cache purge (G8, the 425 MB residual)
 Local wrapper/patch in the WebRender fork: purge texture-cache entries

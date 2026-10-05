@@ -135,6 +135,9 @@ pub enum InjectCmd {
     TabSearch(String),
     /// Phase 4.4.6: toggle pin on a tab (by strip index).
     Pin(usize),
+    /// v2.1 Phase 2: dump the engine memory report + shell RSS as a
+    /// `memreport` event (diagnostic for the <100 MB/tab work).
+    MemReport,
     /// Pace the automation script (handled on the reader thread, in order).
     Sleep(u64),
     /// Exit the event loop cleanly (acknowledged with an `quit` event).

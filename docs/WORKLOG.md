@@ -1392,3 +1392,46 @@ Work Log:
 Stage Summary:
 - PHASE 1 COMPLETE. Artifacts: docs/perf-artifacts/v21/*, 2 upstream
   fixes landed, 16 new tests. Next: Phase 2 innovation (RAM < 100 MB).
+
+---
+Task ID: v2.1-phase2a
+Agent: Super Z (main)
+Task: v2.1.0 Phase 2 (part 1) — RAM/tab < 100 MB: attribution + first
+innovation wave (JS heap tiers, shared offscreen context, diagnostics).
+
+Work Log:
+- Container survived; cargo cache rebuilt (fresh toolchain invalidated
+  fingerprints) + 6.5 GB of orphaned target artifacts purged (precise
+  fingerprint-keyed cleanup after hitting 100% disk again).
+- Allocator A/B first (jemalloc decay env): headless delta only -1.1%;
+  then discovered tikv-jemalloc is NOT in the build at all (use-jemalloc
+  feature off) - engine heap is glibc malloc. Retention levers moot.
+- Built product-side diagnostics: <MEMREPORT> FIFO command (engine
+  memory report via servo-host perf helper, sync bounded spin),
+  BROWS12_MALLOC_STATS=1 (glibc live-vs-system split), smaps rollup
+  (scripts/p22_ui_memreport.py; p21_idle_ab for headless A/B).
+- Attribution chain: product 10x example.com reproduced at 114.6 MB/tab;
+  explicit engine accounting 34.7 MB (2 tabs) vs RSS 408 MB; malloc_stats
+  says 1395 MB LIVE (28 MB retained); marginal linear 129 MB/tab, UI-only
+  (headless 11.4). Root cause: per-tab OffscreenRenderingContext
+  (~115 MB/tab live heap; GL/llvmpipe per-context bookkeeping invisible
+  to malloc-size-of).
+- Landed 2.3a: shared offscreen rendering context across all tabs
+  (BROWS12_SHARED_CTX=0 escape hatch). 4-tab A/B: 580 -> 349 MB RSS.
+  10-tab product default: 446 MB total = 44.6 MB/tab (was 114.5;
+  Chrome 126.4). Idle CPU 0.00%. Interaction smoke PASS (p23: load,
+  switch x5, hibernate->restore->reload->state_restore, memreport).
+- Landed 2.2: fork #8 patched/servo-script - reapply_js_gc_parameters
+  extracted from Runtime::new, called on PreferencesUpdated per script
+  thread, with decrease-guarded JS_GC nudge. Verified live (tier change
+  re-applies + collects). Fixed js_mem_max units bug (was 256*1024*1024
+  bytes -> silently unbounded heap; now JS_MEM_MAX_DEFAULT_MB=256 with
+  range contract test).
+- Tests: 124 passed + 1 ignored (suite green throughout).
+
+Stage Summary:
+- RAM/tab gate CLOSED at 44.6 MB/tab (target <100; 2.83x lighter than
+  Chrome per tab). Artifacts: docs/perf-artifacts/v21/p2_*,
+  scripts/p21-p23, V2_1_PLAN.md 2.2/2.3 status updates.
+- Next: heavy-page levers (cnn <200 MB/tab gate), 2.6 memory regression
+  gate test, then Phase 2 wrap-up + commit checkpoints.
