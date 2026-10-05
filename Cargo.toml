@@ -66,3 +66,4 @@ servo-config = { path = "patched/servo-config" }
 servo-layout = { path = "patched/servo-layout" }
 servo-canvas = { path = "patched/servo-canvas" }
 servo-script-bindings = { path = "patched/servo-script-bindings" }
+servo-net = { path = "patched/servo-net" }

@@ -8,6 +8,7 @@ pub mod budget;
 pub mod capture;
 pub mod dashboard;
 pub mod delegate;
+pub mod diag;
 pub mod headless;
 pub mod memory;
 pub mod metrics;

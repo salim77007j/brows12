@@ -5,7 +5,7 @@
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use http::header;
 use http::{HeaderMap, StatusCode};
@@ -55,6 +55,14 @@ pub struct HostState {
     /// idle timers/animations; the budget governor hibernates it on the
     /// heavy-tab schedule instead of the light one. 0 = never active.
     pub last_activity_ms: AtomicU64,
+    /// v2.1 Phase 1.2: unix-millis timestamp of the FIRST observable
+    /// activity of the current document (0 = none yet). Anchors the
+    /// embedder completion criterion's hard cap.
+    pub first_activity_ms: AtomicU64,
+    /// v2.1 Phase 1.2: when the embedder completion criterion first
+    /// fired for the current document (latched by the runner loop via
+    /// `settled_after_completion`). The settle wait counts from here.
+    pub embedder_complete_at: Mutex<Option<Instant>>,
     /// Phase 4.4.2: form-state snapshot (JSON array, `SERIALIZE_FORMS_JS`)
     /// captured when the tab goes to the background. Read at hibernation
     /// time so a discarded tab can restore its form inputs on reload.
@@ -123,6 +131,25 @@ pub fn restore_state_js(scroll_y: f32, form_json: Option<&str>) -> String {
     )
 }
 
+/// v2.1 Phase 1.2: env-tunable quiet period for the embedder completion
+/// criterion (`BROWS12_COMPLETE_QUIET_MS`, default 2000).
+pub fn env_complete_quiet_ms() -> u64 {
+    std::env::var("BROWS12_COMPLETE_QUIET_MS")
+        .ok()
+        .and_then(|v| v.trim().parse().ok())
+        .unwrap_or(2_000)
+}
+
+/// v2.1 Phase 1.2: env-tunable hard cap since first activity for the
+/// embedder completion criterion (`BROWS12_COMPLETE_MAX_WAIT_MS`,
+/// default 15000).
+pub fn env_complete_max_wait_ms() -> u64 {
+    std::env::var("BROWS12_COMPLETE_MAX_WAIT_MS")
+        .ok()
+        .and_then(|v| v.trim().parse().ok())
+        .unwrap_or(15_000)
+}
+
 fn unix_now_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -172,7 +199,84 @@ impl HostState {
 
     /// Phase 4.3.4: record observable page activity (now).
     pub fn touch(&self) {
-        self.last_activity_ms.store(unix_now_ms(), Ordering::Relaxed);
+        let now = unix_now_ms();
+        // v2.1 Phase 1.2: anchor the first activity of this document.
+        let _ = self.first_activity_ms.compare_exchange(
+            0,
+            now,
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+        );
+        self.last_activity_ms.store(now, Ordering::Relaxed);
+    }
+
+    /// v2.1 Phase 1.2: reset the activity anchors for a new document
+    /// (called from the navigation request path).
+    pub fn begin_navigation(&self) {
+        self.first_activity_ms.store(0, Ordering::Relaxed);
+        self.last_activity_ms.store(0, Ordering::Relaxed);
+        *self.embedder_complete_at.lock().unwrap() = None;
+        *self.complete_at.lock().unwrap() = None;
+    }
+
+    /// v2.1 Phase 1.2: runner-loop gate — true once the page is
+    /// embedder-complete (see `completion`) AND has stayed settled for
+    /// `settle_ms` after the criterion first fired. Latches the anchor
+    /// on first observation so the settle window is deterministic.
+    pub fn settled_after_completion(
+        &self,
+        quiet_ms: u64,
+        max_wait_ms: u64,
+        settle_ms: u64,
+    ) -> bool {
+        let (embedder_done, _, _) = self.completion(quiet_ms, max_wait_ms);
+        if !embedder_done {
+            return false;
+        }
+        let mut slot = self.embedder_complete_at.lock().unwrap();
+        let anchored = slot.unwrap_or_else(|| {
+            let now = Instant::now();
+            *slot = Some(now);
+            now
+        });
+        anchored.elapsed() >= Duration::from_millis(settle_ms)
+    }
+
+    /// v2.1 Phase 1.2 — the embedder completion criterion.
+    ///
+    /// `LoadStatus::Complete` fires on the document `load` event, which a
+    /// hung third-party ad iframe blocks indefinitely (measured: MDN
+    /// never completed in a 45 s window while rendering fine). Chrome
+    /// distinguishes `load` from `networkidle`; so do we, plus a hard
+    /// cap so forever-polling pages cannot stall a harness:
+    ///
+    /// - `engine-load-event`: the engine fired `LoadStatus::Complete`
+    ///   (also reported raw as `all_resources_complete`);
+    /// - `quiet-period`: the document has been active (painted or made
+    ///   requests) and nothing observable happened for `quiet_ms`;
+    /// - `first-activity-cap`: `max_wait_ms` passed since the first
+    ///   observable activity (painted pages only — a page that never
+    ///   rendered still waits for the engine/timeout).
+    ///
+    /// Returns `(embedder_complete, raw_engine_complete, criterion)`.
+    pub fn completion(&self, quiet_ms: u64, max_wait_ms: u64) -> (bool, bool, &'static str) {
+        let raw = self.is_complete();
+        if raw {
+            return (true, true, "engine-load-event");
+        }
+        let first = self.first_activity_ms.load(Ordering::Relaxed);
+        if first == 0 {
+            return (false, false, "no-activity-yet");
+        }
+        let now = unix_now_ms();
+        let last = self.last_activity_ms.load(Ordering::Relaxed);
+        if now.saturating_sub(last) >= quiet_ms {
+            return (true, false, "quiet-period");
+        }
+        if now.saturating_sub(first) >= max_wait_ms {
+            return (true, false, "first-activity-cap");
+        }
+        (false, false, "pending")
     }
 
     /// Phase 4.3.4: ms since the last observable page activity. Returns
@@ -283,6 +387,9 @@ impl WebViewDelegate for HostDelegate {
 
         // Phase 3.9: a new document starts from a fresh page-weight count.
         self.state.page_requests.store(0, Ordering::Relaxed);
+        // v2.1 Phase 1.2: fresh activity anchors for the completion
+        // criterion (first-activity cap + quiet period).
+        self.state.begin_navigation();
         // Phase 4.4.7: a new document starts with unknown media state.
         self.state.media_playing.store(false, Ordering::Relaxed);
         // Install cosmetic filters + scriptlets (+$csp meta) for the
@@ -364,6 +471,16 @@ impl WebViewDelegate for HostDelegate {
         // Phase 4.3.4: a resource request is observable activity too
         // (fetch/XHR-driven idle timers poll this way).
         self.state.touch();
+
+        // v2.1 Phase 1.1: staged-load diagnostic deny (measurement only).
+        // Precedes the privacy verdict so privacy counters stay clean;
+        // answers with an empty 200 exactly like the block path so the
+        // page sees a settled resource and the load can still complete.
+        if crate::diag::denied(kind) {
+            let response = WebResourceResponse::new(request.url.clone());
+            load.intercept(response).finish();
+            return;
+        }
 
         // Phase 4 Area 2.5: CNAME-cloaking classification of document
         // hosts over DoH (cached 5 min; fails open). Runs here because the

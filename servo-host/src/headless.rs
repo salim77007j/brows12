@@ -19,7 +19,7 @@ use winit::event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy};
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 
 use crate::capture::capture_webview;
-use crate::delegate::{HostDelegate, HostState};
+use crate::delegate::{HostDelegate, HostState, env_complete_max_wait_ms, env_complete_quiet_ms};
 use crate::waker::{HostWakerEvent, ProxyWaker};
 
 #[derive(Clone, Debug)]
@@ -60,6 +60,10 @@ pub struct HeadlessReport {
     pub height: u32,
     pub frames: u64,
     pub complete: bool,
+    /// v2.1 Phase 1.2: raw engine flag (`LoadStatus::Complete`).
+    pub all_resources_complete: bool,
+    /// v2.1 Phase 1.2: which completion criterion decided `complete`.
+    pub complete_criterion: &'static str,
     pub crashed: bool,
     pub crash_reason: Option<String>,
     pub console_messages: Vec<String>,
@@ -165,6 +169,8 @@ pub fn run_headless(config: HeadlessConfig) -> HeadlessReport {
         height: config.height,
         frames: 0,
         complete: false,
+        all_resources_complete: false,
+        complete_criterion: "no-activity-yet",
         crashed: false,
         crash_reason: None,
         console_messages: vec![],
@@ -268,7 +274,13 @@ fn run_without_window(
         for js in state.drain_pending_js() {
             webview.evaluate_javascript(js, |_| {});
         }
-        if state.is_complete() && settled(&state, config.settle_ms) {
+        if state
+            .settled_after_completion(
+                env_complete_quiet_ms(),
+                env_complete_max_wait_ms(),
+                config.settle_ms,
+            )
+        {
             break;
         }
         if started.elapsed().as_millis() as u64 > config.timeout_ms || state.crash().is_some() {
@@ -278,13 +290,6 @@ fn run_without_window(
     }
 
     finish(&config, &servo, &webview, &context, &state, &privacy, started)
-}
-
-fn settled(state: &Arc<HostState>, settle_ms: u64) -> bool {
-    if let Some(t) = *state.complete_at.lock().unwrap() {
-        return t.elapsed() >= Duration::from_millis(settle_ms);
-    }
-    false
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -314,7 +319,13 @@ fn finish(
         width: config.width,
         height: config.height,
         frames: state.frame_count(),
-        complete: state.is_complete(),
+        complete: state
+            .completion(env_complete_quiet_ms(), env_complete_max_wait_ms())
+            .0,
+        all_resources_complete: state.is_complete(),
+        complete_criterion: state
+            .completion(env_complete_quiet_ms(), env_complete_max_wait_ms())
+            .2,
         crashed: state.crash().is_some(),
         crash_reason: state.crash(),
         console_messages: state.console(),
@@ -489,7 +500,11 @@ impl ApplicationHandler<HostWakerEvent> for HeadlessApp {
                 webview.evaluate_javascript(js, |_| {});
             }
             let done = self.capture_done
-                || (state.is_complete() && settled(state, self.config.settle_ms))
+                || state.settled_after_completion(
+                    env_complete_quiet_ms(),
+                    env_complete_max_wait_ms(),
+                    self.config.settle_ms,
+                )
                 || self.started.elapsed().as_millis() as u64 > self.config.timeout_ms
                 || state.crash().is_some();
             if done && !self.capture_done {

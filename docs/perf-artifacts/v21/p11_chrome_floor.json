@@ -1,0 +1,23 @@
+{
+ "example": {
+  "rss_kb": 371572,
+  "pss_kb": 177783,
+  "uss_kb": 91756,
+  "peak_kb": 372904,
+  "observed_peak_kb": 372904
+ },
+ "hackernews": {
+  "rss_kb": 380732,
+  "pss_kb": 178963,
+  "uss_kb": 91224,
+  "peak_kb": 381604,
+  "observed_peak_kb": 380924
+ },
+ "cnn": {
+  "rss_kb": 357604,
+  "pss_kb": 164622,
+  "uss_kb": 80684,
+  "peak_kb": 357604,
+  "observed_peak_kb": 357604
+ }
+}

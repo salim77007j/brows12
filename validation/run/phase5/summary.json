@@ -6,8 +6,7 @@
     "complete": true,
     "crashed": false,
     "title": "Example Domain",
-    "captured": true,
-    "compare": "screenshots/v2-servo/phase5/rw_example_compare.png"
+    "captured": false
   },
   {
     "site": "https://example.org/",
@@ -16,8 +15,7 @@
     "complete": true,
     "crashed": false,
     "title": "Example Domain",
-    "captured": true,
-    "compare": "screenshots/v2-servo/phase5/rw_example_org_compare.png"
+    "captured": false
   },
   {
     "site": "https://www.iana.org/",
@@ -26,13 +24,12 @@
     "complete": true,
     "crashed": false,
     "title": "Internet Assigned Numbers Authority",
-    "captured": true,
-    "compare": "screenshots/v2-servo/phase5/rw_iana_compare.png"
+    "captured": false
   },
   {
     "site": "https://www.wikipedia.org/",
     "name": "rw_wikipedia",
-    "load_ms": 711,
+    "load_ms": 654,
     "complete": true,
     "crashed": false,
     "title": "Wikipedia",
@@ -46,8 +43,7 @@
     "complete": true,
     "crashed": false,
     "title": "Rust (programming language) - Wikipedia",
-    "captured": true,
-    "compare": "screenshots/v2-servo/phase5/rw_wiki_rust_compare.png"
+    "captured": false
   },
   {
     "site": "https://docs.rs/serde/latest/serde/",
@@ -56,8 +52,7 @@
     "complete": true,
     "crashed": false,
     "title": "serde - Rust",
-    "captured": true,
-    "compare": "screenshots/v2-servo/phase5/rw_docs_rs_compare.png"
+    "captured": false
   },
   {
     "site": "https://developer.mozilla.org/en-US/docs/Web/CSS",
@@ -66,8 +61,7 @@
     "complete": false,
     "crashed": false,
     "title": "CSS: Cascading Style Sheets | MDN",
-    "captured": true,
-    "compare": "screenshots/v2-servo/phase5/rw_mdn_compare.png"
+    "captured": false
   },
   {
     "site": "https://web.dev/",
@@ -76,8 +70,7 @@
     "complete": true,
     "crashed": false,
     "title": "web.dev",
-    "captured": true,
-    "compare": "screenshots/v2-servo/phase5/rw_web_dev_compare.png"
+    "captured": false
   },
   {
     "site": "https://github.com/",
@@ -86,8 +79,7 @@
     "complete": true,
     "crashed": false,
     "title": "GitHub \u00b7 Change is constant. GitHub keeps you ahead. \u00b7 GitHub",
-    "captured": true,
-    "compare": "screenshots/v2-servo/phase5/rw_github_compare.png"
+    "captured": false
   },
   {
     "site": "https://www.rust-lang.org/",
@@ -96,8 +88,7 @@
     "complete": true,
     "crashed": false,
     "title": "Rust Programming Language",
-    "captured": true,
-    "compare": "screenshots/v2-servo/phase5/rw_rust_lang_compare.png"
+    "captured": false
   },
   {
     "site": "https://blog.rust-lang.org/",
@@ -106,8 +97,7 @@
     "complete": true,
     "crashed": false,
     "title": "The Rust Programming Language Blog",
-    "captured": true,
-    "compare": "screenshots/v2-servo/phase5/rw_rust_blog_compare.png"
+    "captured": false
   },
   {
     "site": "https://crates.io/",
@@ -116,8 +106,7 @@
     "complete": true,
     "crashed": false,
     "title": "crates.io: Rust Package Registry",
-    "captured": true,
-    "compare": "screenshots/v2-servo/phase5/rw_crates_io_compare.png"
+    "captured": false
   },
   {
     "site": "https://www.python.org/",
@@ -126,8 +115,7 @@
     "complete": true,
     "crashed": false,
     "title": "Welcome to Python.org",
-    "captured": true,
-    "compare": "screenshots/v2-servo/phase5/rw_python_compare.png"
+    "captured": false
   },
   {
     "site": "https://go.dev/",
@@ -136,8 +124,7 @@
     "complete": true,
     "crashed": false,
     "title": "The Go Programming Language",
-    "captured": true,
-    "compare": "screenshots/v2-servo/phase5/rw_go_dev_compare.png"
+    "captured": false
   },
   {
     "site": "https://kernel.org/",
@@ -146,8 +133,7 @@
     "complete": true,
     "crashed": false,
     "title": "The Linux Kernel Archives",
-    "captured": true,
-    "compare": "screenshots/v2-servo/phase5/rw_kernel_compare.png"
+    "captured": false
   },
   {
     "site": "https://www.gnu.org/",
@@ -161,8 +147,7 @@
     "complete": true,
     "crashed": false,
     "title": "Debian -- The Universal Operating System",
-    "captured": true,
-    "compare": "screenshots/v2-servo/phase5/rw_debian_compare.png"
+    "captured": false
   },
   {
     "site": "https://archlinux.org/",
@@ -171,8 +156,7 @@
     "complete": true,
     "crashed": false,
     "title": "Arch Linux",
-    "captured": true,
-    "compare": "screenshots/v2-servo/phase5/rw_arch_compare.png"
+    "captured": false
   },
   {
     "site": "https://news.ycombinator.com/",
@@ -181,8 +165,7 @@
     "complete": true,
     "crashed": false,
     "title": "Hacker News",
-    "captured": true,
-    "compare": "screenshots/v2-servo/phase5/rw_hacker_news_compare.png"
+    "captured": false
   },
   {
     "site": "https://sqlite.org/",
@@ -191,8 +174,7 @@
     "complete": true,
     "crashed": false,
     "title": "SQLite Home Page",
-    "captured": true,
-    "compare": "screenshots/v2-servo/phase5/rw_sqlite_compare.png"
+    "captured": false
   },
   {
     "site": "https://text.npr.org/",
@@ -201,8 +183,7 @@
     "complete": true,
     "crashed": false,
     "title": "NPR : National Public Radio",
-    "captured": true,
-    "compare": "screenshots/v2-servo/phase5/rw_npr_text_compare.png"
+    "captured": false
   },
   {
     "site": "https://lite.cnn.com/",
@@ -211,8 +192,7 @@
     "complete": true,
     "crashed": false,
     "title": "Breaking News, Latest News and Videos | CNN",
-    "captured": true,
-    "compare": "screenshots/v2-servo/phase5/rw_cnn_lite_compare.png"
+    "captured": false
   },
   {
     "site": "https://habr.com/en/",
@@ -221,8 +201,7 @@
     "complete": true,
     "crashed": false,
     "title": "Publications / My feed / Habr",
-    "captured": true,
-    "compare": "screenshots/v2-servo/phase5/rw_habr_compare.png"
+    "captured": false
   },
   {
     "site": "http://info.cern.ch",
@@ -231,8 +210,7 @@
     "complete": true,
     "crashed": false,
     "title": "http://info.cern.ch",
-    "captured": true,
-    "compare": "screenshots/v2-servo/phase5/rw_cern_compare.png"
+    "captured": false
   },
   {
     "site": "https://www.w3.org/",
@@ -241,8 +219,7 @@
     "complete": true,
     "crashed": false,
     "title": "W3C",
-    "captured": true,
-    "compare": "screenshots/v2-servo/phase5/rw_w3c_compare.png"
+    "captured": false
   },
   {
     "site": "https://html.spec.whatwg.org/",
@@ -251,8 +228,7 @@
     "complete": true,
     "crashed": false,
     "title": "HTML Standard",
-    "captured": true,
-    "compare": "screenshots/v2-servo/phase5/rw_whatwg_compare.png"
+    "captured": false
   },
   {
     "site": "https://http3.is/",
@@ -261,8 +237,7 @@
     "complete": true,
     "crashed": false,
     "title": null,
-    "captured": true,
-    "compare": "screenshots/v2-servo/phase5/rw_http3_is_compare.png"
+    "captured": false
   },
   {
     "site": "https://caniuse.com/",
@@ -271,8 +246,7 @@
     "complete": true,
     "crashed": false,
     "title": "Can I use... Support tables for HTML5, CSS3, etc",
-    "captured": true,
-    "compare": "screenshots/v2-servo/phase5/rw_caniuse_compare.png"
+    "captured": false
   },
   {
     "site": "https://arxiv.org/",
@@ -281,8 +255,7 @@
     "complete": true,
     "crashed": false,
     "title": "arXiv.org e-Print archive",
-    "captured": true,
-    "compare": "screenshots/v2-servo/phase5/rw_arxiv_compare.png"
+    "captured": false
   },
   {
     "site": "https://www.mozilla.org/",
@@ -291,8 +264,7 @@
     "complete": true,
     "crashed": false,
     "title": "Mozilla - Internet for people, not profit (US)",
-    "captured": true,
-    "compare": "screenshots/v2-servo/phase5/rw_mozilla_compare.png"
+    "captured": false
   },
   {
     "site": "https://docs.python.org/3/",
@@ -301,8 +273,7 @@
     "complete": true,
     "crashed": false,
     "title": "3.14.8 Documentation",
-    "captured": true,
-    "compare": "screenshots/v2-servo/phase5/rw_py_docs_compare.png"
+    "captured": false
   },
   {
     "site": "https://v8.dev/",
@@ -311,7 +282,6 @@
     "complete": true,
     "crashed": false,
     "title": "V8 JavaScript engine",
-    "captured": true,
-    "compare": "screenshots/v2-servo/phase5/rw_v8_blog_compare.png"
+    "captured": false
   }
 ]

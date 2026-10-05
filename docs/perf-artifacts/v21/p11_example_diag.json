@@ -1,0 +1,266 @@
+{
+ "url": "https://example.com/",
+ "stages": {
+  "full": {
+   "rss_kb": 184984,
+   "pss_kb": 188044,
+   "uss_kb": 184224,
+   "peak_kb": 184984,
+   "observed_peak_kb": 184984,
+   "perf": {
+    "engine": "servo 0.6.0 (stylo 0.21, webrender 0.70, spidermonkey 153, brows12 v2)",
+    "config": {
+     "tabs": 1,
+     "width": 1280,
+     "height": 800,
+     "suspend": false,
+     "idle_secs": 0,
+     "scroll_secs": 0,
+     "engine_report": false
+    },
+    "startup": {
+     "servo_build_ms": 37,
+     "first_frame_ms": 232,
+     "first_load_complete_ms": 324
+    },
+    "tabs": [
+     {
+      "url": "https://example.com/",
+      "complete": true,
+      "load_complete_ms": 324,
+      "rss_after_kb": 184984
+     }
+    ],
+    "memory_report": null,
+    "suspension": null,
+    "idle": null,
+    "scroll": null,
+    "rss_start_kb": 13100,
+    "rss_final_kb": 184984,
+    "peak_rss_kb": 184984
+   }
+  },
+  "no-images": {
+   "rss_kb": 184484,
+   "pss_kb": 187366,
+   "uss_kb": 183324,
+   "peak_kb": 184484,
+   "observed_peak_kb": 184484,
+   "perf": {
+    "engine": "servo 0.6.0 (stylo 0.21, webrender 0.70, spidermonkey 153, brows12 v2)",
+    "config": {
+     "tabs": 1,
+     "width": 1280,
+     "height": 800,
+     "suspend": false,
+     "idle_secs": 0,
+     "scroll_secs": 0,
+     "engine_report": false
+    },
+    "startup": {
+     "servo_build_ms": 36,
+     "first_frame_ms": 209,
+     "first_load_complete_ms": 236
+    },
+    "tabs": [
+     {
+      "url": "https://example.com/",
+      "complete": true,
+      "load_complete_ms": 236,
+      "rss_after_kb": 184484
+     }
+    ],
+    "memory_report": null,
+    "suspension": null,
+    "idle": null,
+    "scroll": null,
+    "rss_start_kb": 13104,
+    "rss_final_kb": 184484,
+    "peak_rss_kb": 184484
+   }
+  },
+  "no-scripts": {
+   "rss_kb": 182908,
+   "pss_kb": 188807,
+   "uss_kb": 185004,
+   "peak_kb": 182908,
+   "observed_peak_kb": 182908,
+   "perf": {
+    "engine": "servo 0.6.0 (stylo 0.21, webrender 0.70, spidermonkey 153, brows12 v2)",
+    "config": {
+     "tabs": 1,
+     "width": 1280,
+     "height": 800,
+     "suspend": false,
+     "idle_secs": 0,
+     "scroll_secs": 0,
+     "engine_report": false
+    },
+    "startup": {
+     "servo_build_ms": 36,
+     "first_frame_ms": 231,
+     "first_load_complete_ms": 265
+    },
+    "tabs": [
+     {
+      "url": "https://example.com/",
+      "complete": true,
+      "load_complete_ms": 265,
+      "rss_after_kb": 182908
+     }
+    ],
+    "memory_report": null,
+    "suspension": null,
+    "idle": null,
+    "scroll": null,
+    "rss_start_kb": 13108,
+    "rss_final_kb": 182908,
+    "peak_rss_kb": 182908
+   }
+  },
+  "no-stylesheets": {
+   "rss_kb": 184308,
+   "pss_kb": 188693,
+   "uss_kb": 185052,
+   "peak_kb": 184308,
+   "observed_peak_kb": 184308,
+   "perf": {
+    "engine": "servo 0.6.0 (stylo 0.21, webrender 0.70, spidermonkey 153, brows12 v2)",
+    "config": {
+     "tabs": 1,
+     "width": 1280,
+     "height": 800,
+     "suspend": false,
+     "idle_secs": 0,
+     "scroll_secs": 0,
+     "engine_report": false
+    },
+    "startup": {
+     "servo_build_ms": 39,
+     "first_frame_ms": 237,
+     "first_load_complete_ms": 316
+    },
+    "tabs": [
+     {
+      "url": "https://example.com/",
+      "complete": true,
+      "load_complete_ms": 316,
+      "rss_after_kb": 184308
+     }
+    ],
+    "memory_report": null,
+    "suspension": null,
+    "idle": null,
+    "scroll": null,
+    "rss_start_kb": 13124,
+    "rss_final_kb": 184308,
+    "peak_rss_kb": 184308
+   }
+  },
+  "no-frames": {
+   "rss_kb": 185916,
+   "pss_kb": 188235,
+   "uss_kb": 184048,
+   "peak_kb": 185916,
+   "observed_peak_kb": 185916,
+   "perf": {
+    "engine": "servo 0.6.0 (stylo 0.21, webrender 0.70, spidermonkey 153, brows12 v2)",
+    "config": {
+     "tabs": 1,
+     "width": 1280,
+     "height": 800,
+     "suspend": false,
+     "idle_secs": 0,
+     "scroll_secs": 0,
+     "engine_report": false
+    },
+    "startup": {
+     "servo_build_ms": 38,
+     "first_frame_ms": 251,
+     "first_load_complete_ms": 286
+    },
+    "tabs": [
+     {
+      "url": "https://example.com/",
+      "complete": true,
+      "load_complete_ms": 286,
+      "rss_after_kb": 185916
+     }
+    ],
+    "memory_report": null,
+    "suspension": null,
+    "idle": null,
+    "scroll": null,
+    "rss_start_kb": 13180,
+    "rss_final_kb": 185916,
+    "peak_rss_kb": 185916
+   }
+  },
+  "no-both": {
+   "rss_kb": 183004,
+   "pss_kb": 189586,
+   "uss_kb": 185740,
+   "peak_kb": 183004,
+   "observed_peak_kb": 183004,
+   "perf": {
+    "engine": "servo 0.6.0 (stylo 0.21, webrender 0.70, spidermonkey 153, brows12 v2)",
+    "config": {
+     "tabs": 1,
+     "width": 1280,
+     "height": 800,
+     "suspend": false,
+     "idle_secs": 0,
+     "scroll_secs": 0,
+     "engine_report": false
+    },
+    "startup": {
+     "servo_build_ms": 39,
+     "first_frame_ms": 224,
+     "first_load_complete_ms": 292
+    },
+    "tabs": [
+     {
+      "url": "https://example.com/",
+      "complete": true,
+      "load_complete_ms": 292,
+      "rss_after_kb": 183004
+     }
+    ],
+    "memory_report": null,
+    "suspension": null,
+    "idle": null,
+    "scroll": null,
+    "rss_start_kb": 13136,
+    "rss_final_kb": 183004,
+    "peak_rss_kb": 183004
+   }
+  }
+ },
+ "attribution": {
+  "no-images": {
+   "delta_kb": 500,
+   "delta_mb": 0.5,
+   "pct_of_full": 0.3
+  },
+  "no-scripts": {
+   "delta_kb": 2076,
+   "delta_mb": 2.0,
+   "pct_of_full": 1.1
+  },
+  "no-stylesheets": {
+   "delta_kb": 676,
+   "delta_mb": 0.7,
+   "pct_of_full": 0.4
+  },
+  "no-frames": {
+   "delta_kb": -932,
+   "delta_mb": -0.9,
+   "pct_of_full": -0.5
+  },
+  "no-both": {
+   "delta_kb": 1980,
+   "delta_mb": 1.9,
+   "pct_of_full": 1.1
+  }
+ }
+}

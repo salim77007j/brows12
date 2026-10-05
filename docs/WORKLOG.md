@@ -1350,3 +1350,45 @@ Work Log:
 
 Stage Summary:
 - Phase 0 complete. Plan pushed BEFORE implementation, as required.
+
+---
+Task ID: v2.1-phase1
+Agent: Super Z (main)
+Task: v2.1.0 Phase 1 — fix remaining gaps (CNN regression, MDN load,
+other limitations).
+
+Work Log:
+- Environment survived; restored PATH only. Baseline confirmed at
+  v2.0.0 (40df02b plan commit on top).
+- 1.1 CNN: built BROWS12_DIAG_DENY staged-deny into servo-host
+  (servo-host/src/diag.rs, 4 tests). Staged attribution: images 2.9%,
+  scripts 2.0%, stylesheets 5.2%, frames 2.3% — page weight NOT
+  image/JS-driven. Engine memory report (works on 0.6.0): explicit
+  277.9 MB (webrender/images 60.8, box-tree 52.2, JS ~95,
+  memory-cache 24.8) + ~200 MB non-explicit; jemalloc retention means
+  peak must be avoided, not reclaimed. Chrome floor calibration:
+  tree-PSS flat 161-175 MB; regression is cnn-page-specific.
+- Landed fork #7 patched/servo-net: display-bound tiered image decode
+  (2560x1600 default, 0 disables; extreme-cap e2e proves pipeline:
+  textures 62.7->41.0 MB); network_http_cache_size 5000->256
+  (patched/servo-config; cnn memory-cache 24.8 MB -> off top-8).
+  CNN product defaults x3: 473.9/477.2/476.7 MB vs 481-490 before.
+  HONEST: 1.0x not reached; structural remainder (JS heap, box-tree)
+  -> Phase 2 levers re-anchored.
+- 1.2 MDN: root cause = hung third-party iframes block LoadStatus::
+  Complete while rendering fine. Embedder completion criterion
+  (engine event OR quiet-2s OR first-activity-cap-15s), raw flag
+  reported separately; 8 tests (caught a raw-flag bug). MDN now
+  completes 18.6s (was never in 45s); example/bbc/wikipedia
+  unchanged (engine event). Discovered G9 teardown hang (headless
+  JSON precedes it; perf path stalls) + G10 font-context report
+  overflow (17.6 TB rows).
+- 1.3 G5 bbc: stable via headless sampler (scripts/p13_headless_mem.py):
+  376.2 MB peak, engine-load-event 807 ms.
+- phase5_sites.py: debug->release binary (env BROWS12_SERVO_BIN).
+  Wikipedia recaptured with decode cap: visually identical to Chromium.
+- Tests: workspace 124 passed + 1 ignored (was 108).
+
+Stage Summary:
+- PHASE 1 COMPLETE. Artifacts: docs/perf-artifacts/v21/*, 2 upstream
+  fixes landed, 16 new tests. Next: Phase 2 innovation (RAM < 100 MB).

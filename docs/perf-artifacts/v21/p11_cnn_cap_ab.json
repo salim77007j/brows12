@@ -1,0 +1,10 @@
+{
+ "url": "https://www.cnn.com/",
+ "cap_off_peak_kb": 482596,
+ "cap_on_peak_kb": 484824,
+ "saved_mb": -2.2,
+ "load_ms": {
+  "cap_off": 1789,
+  "cap_on": 1704
+ }
+}

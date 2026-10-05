@@ -1,0 +1,45 @@
+{
+ "url": "https://www.cnn.com/",
+ "stages": {
+  "full": {
+   "rss_kb": 488440,
+   "pss_kb": 491786,
+   "uss_kb": 490656,
+   "peak_kb": 488704,
+   "observed_peak_kb": 488440,
+   "perf": {
+    "engine": "servo 0.6.0 (stylo 0.21, webrender 0.70, spidermonkey 153, brows12 v2)",
+    "config": {
+     "tabs": 1,
+     "width": 1280,
+     "height": 800,
+     "suspend": false,
+     "idle_secs": 0,
+     "scroll_secs": 0,
+     "engine_report": false
+    },
+    "startup": {
+     "servo_build_ms": 38,
+     "first_frame_ms": 374,
+     "first_load_complete_ms": 1806
+    },
+    "tabs": [
+     {
+      "url": "https://www.cnn.com/",
+      "complete": true,
+      "load_complete_ms": 1806,
+      "rss_after_kb": 489476
+     }
+    ],
+    "memory_report": null,
+    "suspension": null,
+    "idle": null,
+    "scroll": null,
+    "rss_start_kb": 13256,
+    "rss_final_kb": 489476,
+    "peak_rss_kb": 489476
+   }
+  }
+ },
+ "attribution": {}
+}

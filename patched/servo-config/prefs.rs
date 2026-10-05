@@ -590,7 +590,12 @@ impl Preferences {
             network_http_proxy_uri: String::new(),
             network_https_proxy_uri: String::new(),
             network_http_no_proxy: String::new(),
-            network_http_cache_size: 5000,
+            // brows12 v2.1: 5000 unit-weight entries let a heavy site pin
+            // ~25 MB of response bodies in RAM (measured: cnn.com =
+            // 24.8 MB `memory-cache/public`). 256 entries bounds the
+            // memory cache to a few MB while keeping hot resources;
+            // overflow is handled by the disk cache / re-fetch.
+            network_http_cache_size: 256,
             network_local_directory_listing_enabled: true,
             network_use_webpki_roots: false,
             network_max_content_length: 5 * 1024 * 1024,

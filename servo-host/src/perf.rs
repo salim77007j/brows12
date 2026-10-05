@@ -86,6 +86,12 @@ pub struct TabMemoryReport {
     pub url: String,
     pub complete: bool,
     pub load_complete_ms: Option<u128>,
+    /// v2.1 Phase 1.2: raw engine flag (`LoadStatus::Complete` fired) —
+    /// reported separately so the embedder criterion cannot mask a hung
+    /// load event.
+    pub all_resources_complete: bool,
+    /// v2.1 Phase 1.2: which completion criterion decided `complete`.
+    pub complete_criterion: &'static str,
     /// Process RSS (KiB) right after this tab settled.
     pub rss_after_kb: u64,
 }
@@ -221,7 +227,13 @@ pub fn run_perf(config: PerfConfig) -> PerfReport {
             if first_frame_ms == 0 && state.frame_count() > 0 {
                 first_frame_ms = started.elapsed().as_millis();
             }
-            if state.is_complete() && settled(&state, config.settle_ms) {
+            if state
+                .settled_after_completion(
+                    crate::delegate::env_complete_quiet_ms(),
+                    crate::delegate::env_complete_max_wait_ms(),
+                    config.settle_ms,
+                )
+            {
                 break;
             }
             if state.crash().is_some() || Instant::now() > tab_deadline {
@@ -239,14 +251,18 @@ pub fn run_perf(config: PerfConfig) -> PerfReport {
             servo.spin_event_loop();
             waker.wait_timeout(8);
         }
+        let (embedder_complete, raw_complete, criterion) =
+            state.completion(crate::delegate::env_complete_quiet_ms(), crate::delegate::env_complete_max_wait_ms());
         tabs.push(TabMemoryReport {
             url: url.to_string(),
-            complete: state.is_complete(),
+            complete: embedder_complete,
             load_complete_ms: state
                 .complete_at
                 .lock()
                 .unwrap()
                 .map(|t| t.duration_since(started).as_millis()),
+            all_resources_complete: raw_complete,
+            complete_criterion: criterion,
             rss_after_kb: crate::metrics::rss_kb().unwrap_or(0),
         });
     }
@@ -380,13 +396,6 @@ pub fn run_perf(config: PerfConfig) -> PerfReport {
         rss_final_kb,
         peak_rss_kb,
     }
-}
-
-fn settled(state: &std::sync::Arc<HostState>, settle_ms: u64) -> bool {
-    if let Some(t) = *state.complete_at.lock().unwrap() {
-        return t.elapsed() >= Duration::from_millis(settle_ms);
-    }
-    false
 }
 
 /// Ask the constellation for its malloc-size-of report and wait (while

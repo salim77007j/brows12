@@ -93,7 +93,7 @@ def status():
 def capture(names):
     for d in (REF, OURS, COMPARE):
         d.mkdir(parents=True, exist_ok=True)
-    binary = ROOT / "target" / "debug" / "brows-servo"
+    binary = os.environ.get("BROWS12_SERVO_BIN", ROOT / "target" / "release" / "brows-servo")  # v2.1: release binary (debug was dropped for disk)
     sites = [s for s in SITES if not names or s[0] in names]
 
     from playwright.sync_api import sync_playwright

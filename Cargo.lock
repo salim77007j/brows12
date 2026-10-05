@@ -6571,6 +6571,7 @@ dependencies = [
  "servo",
  "servo-base",
  "servo-embedder-traits",
+ "servo-net",
  "servo-net-traits",
  "url",
  "winit",
@@ -6918,8 +6919,6 @@ dependencies = [
 [[package]]
 name = "servo-net"
 version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "634b5e34b672182ad183a7a7a2ea33be3071ffea00d9db88bb9482bf31c6e91b"
 dependencies = [
  "async-compression",
  "async-recursion",
@@ -6942,6 +6941,7 @@ dependencies = [
  "hyper",
  "hyper-rustls",
  "hyper-util",
+ "image",
  "imsz",
  "ipc-channel",
  "itertools 0.15.0",

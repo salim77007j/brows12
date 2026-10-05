@@ -24,9 +24,11 @@ release build.
 | G5 | bbc.com/news memory sample flaky under the displayless perf harness (load itself now completes) | Area 3 finding + phase 5 reruns | stable memory datapoint |
 | G6 | Local release built with LTO off (thin-LTO link cannot finish in any single window on a 3.9 GB box) | v2.0.0 worklog | fat-LTO release artifacts **in CI** |
 | G7 | No permanent executables (Actions artifacts expire in 90 days) | — | GitHub Release with 4 platform binaries |
-| G8 | Upstream gaps (documented, unfixed): texture-cache purge on pipeline exit (425 MB residual), `js_mem_max` snapshot-only, image-cache embedder controls, `create_memory_report` crash | `PHASE4_AREA3_REPORT.md` §3.2–3.5, `docs/upstream/` | local forks via the proven `patched/` mechanism + upstream PRs |
+| G8 | Upstream gaps (documented, unfixed): texture-cache purge on pipeline exit (425 MB residual), `js_mem_max` snapshot-only, image-cache embedder controls; note — `create_memory_report` WORKS on the release binary (v2.0.0-era crash not reproducible) | `PHASE4_AREA3_REPORT.md` §3.2–3.5, `docs/upstream/` | local forks via the proven `patched/` mechanism + upstream PRs |
 
 ## 2. Phase 1 — fix remaining gaps
+
+> **Status: COMPLETE (this cycle).** Outcomes in §2a below.
 
 ### 1.1 CNN regression diagnosis (G1)
 Staged memory measurement to attribute the 481 MB: (a) cold engine vs
@@ -58,6 +60,89 @@ document that architecturally with profile data.
 - Not fixable this cycle (documented as such): scroll-true-offset
   restoration (needs upstream getter), tab-strip group collapse UI.
 
+## 2a. Phase 1 outcomes (measured, committed)
+
+### G1 CNN — attributed; structural remainder; two fixes landed
+
+Staged attribution (`scripts/p11_cnn_diag.py`, BROWS12_DIAG_DENY,
+`docs/perf-artifacts/v21/p11_cnn_diag.json`): peak 490.5 MB full;
+**images −14.4 MB (2.9%), scripts −9.7 MB (2.0%), stylesheets −25.3 MB
+(5.2%), frames −11.5 MB (2.3%), all combined −14.4 MB** — the page-driven
+weight is NOT images/JS. Engine memory report
+(`--engine-report`; the create_memory_report hook works on 0.6.0):
+explicit 277.9 MB = webrender/images 60.8 + layout box-tree 52.2 +
+JS heap ~95 (main 41 + stripe iframe 17.7 + gc 20.6 + non-heap 13.5) +
+memory-cache/public 24.8 + DOM nodes 16.4 + image-cache 11.1; the other
+~200 MB of peak RSS is non-explicit (display-list/scratch/threads/
+allocator). jemalloc retention: freeing 60 MB of textures moved RSS by
+only ~14 MB → **peak must be avoided, not reclaimed**.
+
+Chrome floor calibration (`p11_chrome_floor.py`): Chrome tree-PSS is flat
+(161–175 MB) across example/HN/cnn — its process-set baseline dominates;
+brows12 (single process) is at par on simple pages (180 MB peak). The
+regression is exclusively CNN's page-driven part.
+
+Landed:
+- `servo-host/src/diag.rs` — BROWS12_DIAG_DENY staged-load deny
+  (measurement tool, counters clean), 4 unit tests.
+- **fork #7 `patched/servo-net`** — display-bound tiered image decode:
+  decoded rasters are rescaled to the physical display bound
+  (BROWS12_IMAGE_DECODE_MAX_W/H, default 2560×1600 = 1280×800@DPR2, 0
+  disables) before entering the caches; fork-internal tests + 4
+  integration tests (`servo-host/tests/decode_cap.rs`). Extreme-cap e2e
+  (640×480): webrender/images 62.7 → 41.0 MB, box-tree 54.5 → 37.6 MB —
+  pipeline proven. At 2560×1600 the effect on cnn is small (responsive
+  srcset already serves ≤1600w) but the cap protects giant-image pages.
+- **`network_http_cache_size` 5000 → 256** (patched/servo-config): cnn
+  pinned 24.8 MB of response bodies in RAM; 256 unit-weight entries
+  bounds the memory cache (memory-cache left the top-8 in the report).
+- CNN on product defaults, 3 reps: **473.9 / 477.2 / 476.7 MB** vs
+  v2.0.0's 481–490. Honest verdict: **G1 not closed at 1.0×** — the
+  remainder is structural (JS heap ~95 MB incl. 5 about:blank adtech
+  iframes + stripe; fat layout box-tree; ~200 MB non-explicit). The
+  Phase 2 levers (2.2 JS heap tiers, 2.3 background display-list drop,
+  2.4 texture purge) attack these; ratio goal re-anchored there.
+
+### G2 MDN — FIXED by embedder completion criterion
+
+Root cause: `LoadStatus::Complete` (document `load` event) is blocked
+indefinitely by hung third-party iframes while the page renders fine
+(MDN: 2,233–5,485 frames, title correct, raw flag never fires). Fix in
+`servo-host/src/delegate.rs` (v2.1 Phase 1.2): embedder criterion =
+engine event ∨ **quiet period** (no frames/requests for
+BROWS12_COMPLETE_QUIET_MS=2000) ∨ **hard cap** (first-activity +
+BROWS12_COMPLETE_MAX_WAIT_MS=15000); the raw flag is still reported
+separately (`all_resources_complete`, `complete_criterion`) so the
+metric cannot be fudged. 8 unit tests (`tests/completion.rs`; caught a
+raw-flag bug before it shipped). Results: MDN **complete in 18.6 s**
+(was: never in 45 s), example.com unchanged (473 ms engine event), bbc
+unchanged (807 ms engine event), wikipedia unchanged (3.98 s engine
+event).
+
+### G5 bbc memory sample — stable via headless path
+
+`scripts/p13_headless_mem.py` (tree sampler around brows-servo, whose
+JSON precedes teardown): bbc.com/news = **376.2 MB peak,
+engine-load-event at 807 ms** — the previously flaky datapoint is now
+reproducible.
+
+### New upstream gaps discovered (G9, G10)
+
+- **G9 engine teardown hang**: MDN (and any page with a hung iframe)
+  hangs the engine at shutdown; brows-servo writes its JSON before
+  teardown so the harness survives; the perf path stalls before its
+  JSON. Pre-existing (v2.0.0 phase5 captures used the same timeouts);
+  worked around in the harness, documented for an upstream report.
+- **G10 memory-report overflow**: `layout-thread/font-context` rows
+  report 17.6 TB (negative size cast) on pages whose iframes load
+  webfonts — upstream malloc-size-of/report bug; rows >1 TB are
+  filtered in the v21 artifacts.
+
+### Tests
+
+Workspace: **124 passed + 1 ignored** (was 108): privacy 46 + storage 19
++ servo-host 47 (incl. 4 new diag tests) + completion 8 + decode_cap 4.
+
 ## 3. Phase 2 — innovation: RAM < 100 MB/tab
 
 Protocol for every innovation: measure peak RSS on the heavy-page battery
@@ -65,7 +150,12 @@ Protocol for every innovation: measure peak RSS on the heavy-page battery
 is ≥ 5 % with < 5 % perf cost; record the decision here.
 
 ### 2.1 Tiered image decode (expected biggest win)
-The `patched/` mechanism is proven (6 crates already forked). Add a
+> **Status: display-bound cap LANDED in Phase 1** (fork #7,
+> `patched/servo-net`); the LRU byte budget + cross-tab dedup below
+> remain open for Phase 2, re-scoped against the measured cnn numbers
+> (responsive srcset already bounds most real images; the budget then
+> mainly targets page-weight outlier pages).
+The `patched/` mechanism is proven (7 crates forked). Add a
 **decode-to-display-size + decoded-cache LRU + cross-tab dedup** layer:
 - decode images at the size they are painted (the display list already
   knows the destination rect);
@@ -78,12 +168,16 @@ Candidates to patch: the image cache + `pixels` crates consumed by
 servo-script; feasibility confirmed during 1.1 profiling.
 
 ### 2.2 JS heap tiers — runtime re-apply (upstream candidate)
+> **Status: OPEN — now the top Phase 2 lever** (Phase 1 attribution:
+> cnn JS heap ~95 MB incl. adtech iframes).
 Small upstream-style patch: re-apply `JS_SetGCParameter(js_mem_max)` on
 `PreferencesUpdated` in servo-script (Area 3 §3.4 verified the snapshot
 gap). Effect: backgrounded/hibernate-restored tabs actually shrink their
 heaps under the existing tier ladder instead of only new tabs.
 
 ### 2.3 Background-tab display-list + cache discipline
+> **Status: OPEN — attacks the ~200 MB non-explicit peak + the
+> texture-purge residual.**
 - On hide: drop the WebRender display list + frame resources for
   background tabs (rebuild on show; embedder-side, no upstream change);
 - periodic `malloc_trim` on the governor tick under Elevated+ PSI
