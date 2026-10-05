@@ -5,8 +5,10 @@
   "title": "Breaking News, Latest News and Videos | CNN",
   "width": 1280,
   "height": 800,
-  "frames": 387,
+  "frames": 394,
   "complete": true,
+  "all_resources_complete": true,
+  "complete_criterion": "engine-load-event",
   "crashed": false,
   "crash_reason": null,
   "console_messages": [],
@@ -76,8 +78,8 @@
     "frame_log": [],
     "csp_block_log": []
   },
-  "load_complete_ms": 388,
-  "total_ms": 3730,
+  "load_complete_ms": 484,
+  "total_ms": 3554,
   "png": "/home/z/my-project/brows12-servo/validation/run/phase5/ours/rw_cnn_lite.png",
   "error": null
 }

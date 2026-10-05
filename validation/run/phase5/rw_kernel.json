@@ -5,8 +5,10 @@
   "title": "The Linux Kernel Archives",
   "width": 1280,
   "height": 800,
-  "frames": 423,
+  "frames": 436,
   "complete": true,
+  "all_resources_complete": true,
+  "complete_criterion": "engine-load-event",
   "crashed": false,
   "crash_reason": null,
   "console_messages": [],
@@ -74,8 +76,8 @@
     "frame_log": [],
     "csp_block_log": []
   },
-  "load_complete_ms": 1731,
-  "total_ms": 4902,
+  "load_complete_ms": 1776,
+  "total_ms": 4907,
   "png": "/home/z/my-project/brows12-servo/validation/run/phase5/ours/rw_kernel.png",
   "error": null
 }

@@ -90,7 +90,7 @@ def status():
     print(f"\n{n_ok}/{len(SITES)} captured")
 
 
-def capture(names):
+def capture(names, ours_only=False):
     for d in (REF, OURS, COMPARE):
         d.mkdir(parents=True, exist_ok=True)
     binary = os.environ.get("BROWS12_SERVO_BIN", ROOT / "target" / "release" / "brows-servo")  # v2.1: release binary (debug was dropped for disk)
@@ -106,19 +106,22 @@ def capture(names):
                 continue
             print(f"[{name}] {url}", flush=True)
 
-            print("  chrome…", end="", flush=True)
-            try:
-                page.goto(url, wait_until="domcontentloaded", timeout=45000)
+            if (REF / f"{name}.png").exists() and ours_only:
+                print("  chrome… cached (--ours-only)")
+            else:
+                print("  chrome…", end="", flush=True)
                 try:
-                    page.wait_for_load_state("networkidle", timeout=8000)
-                except Exception:
-                    pass
-                page.wait_for_timeout(1000)
-                page.screenshot(path=str(REF / f"{name}.png"))
-                print(" ok")
-            except Exception as e:
-                print(f" ERR {str(e)[:120]}")
-                continue
+                    page.goto(url, wait_until="domcontentloaded", timeout=45000)
+                    try:
+                        page.wait_for_load_state("networkidle", timeout=8000)
+                    except Exception:
+                        pass
+                    page.wait_for_timeout(1000)
+                    page.screenshot(path=str(REF / f"{name}.png"))
+                    print(" ok")
+                except Exception as e:
+                    print(f" ERR {str(e)[:120]}")
+                    continue
 
             print("  brows12…", end="", flush=True)
             try:
@@ -137,6 +140,10 @@ def capture(names):
 
 
 def compose_all():
+    compare_dir = pathlib.Path(os.environ.get(
+        "BROWS12_COMPARE_DIR", str(COMPARE))).resolve()
+    compare_dir.mkdir(parents=True, exist_ok=True)
+    label = os.environ.get("BROWS12_LABEL", "brows12 v2 (Servo)")
     results = []
     for name, url in SITES:
         ref, ours = REF / f"{name}.png", OURS / f"{name}.png"
@@ -154,11 +161,11 @@ def compose_all():
                                        max(a.height, b.height) + LABEL_H), (24, 26, 27))
             d = ImageDraw.Draw(canvas)
             d.text((8, 7),
-                   f"{name} — LEFT: Chromium | RIGHT: brows12 v2 (Servo)",
+                   f"{name} — LEFT: Chromium | RIGHT: {label}",
                    fill=(255, 255, 255))
             canvas.paste(a, (0, LABEL_H))
             canvas.paste(b, (a.width + 12, LABEL_H))
-            out = COMPARE / f"{name}_compare.png"
+            out = compare_dir / f"{name}_compare.png"
             canvas.save(out)
             entry["compare"] = str(out.relative_to(ROOT))
         results.append(entry)
@@ -175,5 +182,6 @@ if __name__ == "__main__":
     elif args and args[0] == "--compose":
         compose_all()
     else:
-        capture(args)
+        ours_only = "--ours-only" in args
+        capture([a for a in args if a != "--ours-only"], ours_only=ours_only)
         compose_all()

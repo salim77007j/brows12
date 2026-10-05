@@ -5,13 +5,13 @@
   "title": "Mozilla - Internet for people, not profit (US)",
   "width": 1280,
   "height": 800,
-  "frames": 493,
+  "frames": 526,
   "complete": true,
+  "all_resources_complete": true,
+  "complete_criterion": "engine-load-event",
   "crashed": false,
   "crash_reason": null,
-  "console_messages": [
-    "Error at :0:0 Script error."
-  ],
+  "console_messages": [],
   "privacy": {
     "enabled": true,
     "ads_blocked": 1,
@@ -83,8 +83,8 @@
     "frame_log": [],
     "csp_block_log": []
   },
-  "load_complete_ms": 1666,
-  "total_ms": 4834,
+  "load_complete_ms": 1743,
+  "total_ms": 4933,
   "png": "/home/z/my-project/brows12-servo/validation/run/phase5/ours/rw_mozilla.png",
   "error": null
 }

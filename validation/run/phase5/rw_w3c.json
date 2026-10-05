@@ -5,8 +5,10 @@
   "title": "W3C",
   "width": 1280,
   "height": 800,
-  "frames": 466,
+  "frames": 452,
   "complete": true,
+  "all_resources_complete": true,
+  "complete_criterion": "engine-load-event",
   "crashed": false,
   "crash_reason": null,
   "console_messages": [],
@@ -74,8 +76,8 @@
     "frame_log": [],
     "csp_block_log": []
   },
-  "load_complete_ms": 376,
-  "total_ms": 3582,
+  "load_complete_ms": 279,
+  "total_ms": 3429,
   "png": "/home/z/my-project/brows12-servo/validation/run/phase5/ours/rw_w3c.png",
   "error": null
 }

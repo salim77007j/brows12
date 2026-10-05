@@ -5,8 +5,10 @@
   "title": "V8 JavaScript engine",
   "width": 1280,
   "height": 800,
-  "frames": 424,
+  "frames": 427,
   "complete": true,
+  "all_resources_complete": true,
+  "complete_criterion": "engine-load-event",
   "crashed": false,
   "crash_reason": null,
   "console_messages": [
@@ -76,8 +78,8 @@
     "frame_log": [],
     "csp_block_log": []
   },
-  "load_complete_ms": 929,
-  "total_ms": 4084,
+  "load_complete_ms": 773,
+  "total_ms": 3894,
   "png": "/home/z/my-project/brows12-servo/validation/run/phase5/ours/rw_v8_blog.png",
   "error": null
 }

@@ -1,0 +1,11 @@
+{
+  "binary": "target/release/brows12-ui",
+  "tabs": 10,
+  "url": "https://example.com/",
+  "loaded_events": 11,
+  "idle_cpu_percent": 0.167,
+  "window_secs": 30.0,
+  "rss_after_load_kb": 398776,
+  "rss_end_kb": 407720,
+  "rss_per_tab_kb": 40772.0
+}

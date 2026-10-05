@@ -113,7 +113,7 @@ def main():
     for d in (REF, OURS, COMPARE):
         d.mkdir(parents=True, exist_ok=True)
 
-    binary = ROOT / "target" / "debug" / "brows-servo"
+    binary = pathlib.Path(os.environ.get("BROWS12_SERVO_BIN", ROOT / "target" / "release" / "brows-servo"))  # v2.1: release (debug dropped for disk)
     srv = serve()
     results = {}
     try:

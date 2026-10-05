@@ -1,0 +1,13 @@
+{
+ "url": "https://www.bbc.com/news",
+ "peak_mb": 376.2,
+ "rss_kb": 375008,
+ "peak_kb": 385272,
+ "pss_kb": 354983,
+ "complete": true,
+ "complete_criterion": "engine-load-event",
+ "all_resources_complete": true,
+ "load_complete_ms": 812,
+ "frames": 988,
+ "total_ms": 7223
+}

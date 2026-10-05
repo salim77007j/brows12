@@ -1467,3 +1467,44 @@ Stage Summary:
   margin; 2.83x lighter than Chrome per tab), heavy honest-not-met,
   gates landed, tests 124 green. Commit + push, then STOP for
   'continue' before Phase 3.
+
+---
+Task ID: v2.1-phase3
+Agent: Super Z (main)
+Task: v2.1.0 Phase 3 — forced verification on the final build (sites,
+memory, startup/idle, features, tests).
+
+Work Log:
+- Container RESET again (fresh clone, rustup 1.99, Mesa/xkb deb stack,
+  Noto CJK). Release rebuild: 5 chunks, LTO=false, jobs=1; disk peaked
+  5.3/9.9 GB. Smoke: example.com 401 ms complete.
+- Tests: cargo test --release --workspace = 124 passed 0 failed.
+  Workspace-level `-- --ignored` run (after -p feature-unification
+  rebuild taught us: always run gates with --workspace): privacy e2e +
+  gate_typical_per_tab_under_100mb + gate_heavy_page_regression_floor
+  all PASS (BROWS12_GATE_BIN must be absolute; test CWD is package dir).
+- Memory: typical 10x example.com = 27.2 MB/tab headless (idle-sampled),
+  27.3 final; brows12-ui 10 tabs = 44.5 MB/tab. cnn gate-protocol
+  482.9 MB (Phase 2b: 476-480, run variance; <200 honest NOT met, floor
+  <=600 PASS). bbc p13 sampler 376.2 MB — exact Phase 1 match.
+- area3_compare fresh both-engines: 7/8 lighter (HN 2.10x, locals
+  1.47-1.80x, github 1.42x, cnn 0.74x unchanged-structural, bbc flaky
+  as documented). 2x met 1/8 (same shape as v2.0.0).
+- Startup 118 ms median (7 reps, <150 PASS); idle 0.033% (run 2; run 1
+  0.167% network-tail variance).
+- Sites: refs restored from committed composites (crop at LABEL_H=28),
+  --ours-only flag + BROWS12_COMPARE_DIR/LABEL added to phase5_sites.py;
+  ours re-captured on v2.1 build = 31/32 (gnu.org IPv6-only DNS, no
+  container egress; Chromium also times out). Composites in
+  screenshots/v2.1-final/ (31 + summary.json).
+- Features: phase3_run.py re-run with release bin (script now honors
+  BROWS12_SERVO_BIN) = 19/19 fixtures rendered; composites copied to
+  screenshots/v2.1-final/features/. p23 tab smoke PASS (switch x5,
+  hibernate/restore/state_restore, memreport).
+
+Stage Summary:
+- PHASE 3 COMPLETE. Report: docs/V2_1_PHASE3_REPORT.md. Artifacts:
+  docs/perf-artifacts/v21/p3_*, screenshots/v2.1-final/. Honest
+  verdicts: 31/32, <100 MB/tab PASS, heavy <200 NOT met (floored),
+  2x 1/8, startup/idle PASS, features intact. Next: Phase 4 (CI
+  binaries + permanent GitHub Release).

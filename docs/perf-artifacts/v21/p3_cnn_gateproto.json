@@ -1,0 +1,34 @@
+{
+  "engine": "servo 0.6.0 (stylo 0.21, webrender 0.70, spidermonkey 153, brows12 v2)",
+  "config": {
+    "tabs": 1,
+    "width": 1280,
+    "height": 800,
+    "suspend": false,
+    "idle_secs": 0,
+    "scroll_secs": 0,
+    "engine_report": false
+  },
+  "startup": {
+    "servo_build_ms": 38,
+    "first_frame_ms": 544,
+    "first_load_complete_ms": 1422
+  },
+  "tabs": [
+    {
+      "url": "https://www.cnn.com/",
+      "complete": true,
+      "load_complete_ms": 1422,
+      "all_resources_complete": true,
+      "complete_criterion": "engine-load-event",
+      "rss_after_kb": 494516
+    }
+  ],
+  "memory_report": null,
+  "suspension": null,
+  "idle": null,
+  "scroll": null,
+  "rss_start_kb": 13148,
+  "rss_final_kb": 494516,
+  "peak_rss_kb": 494516
+}

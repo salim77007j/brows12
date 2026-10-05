@@ -5,8 +5,10 @@
   "title": "Debian -- The Universal Operating System",
   "width": 1280,
   "height": 800,
-  "frames": 715,
+  "frames": 342,
   "complete": true,
+  "all_resources_complete": true,
+  "complete_criterion": "engine-load-event",
   "crashed": false,
   "crash_reason": null,
   "console_messages": [],
@@ -74,8 +76,8 @@
     "frame_log": [],
     "csp_block_log": []
   },
-  "load_complete_ms": 4404,
-  "total_ms": 7922,
+  "load_complete_ms": 6249,
+  "total_ms": 6553,
   "png": "/home/z/my-project/brows12-servo/validation/run/phase5/ours/rw_debian.png",
   "error": null
 }

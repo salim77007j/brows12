@@ -5,8 +5,10 @@
   "title": "HTML Standard",
   "width": 1280,
   "height": 800,
-  "frames": 4945,
+  "frames": 1539,
   "complete": true,
+  "all_resources_complete": false,
+  "complete_criterion": "first-activity-cap",
   "crashed": false,
   "crash_reason": null,
   "console_messages": [],
@@ -36,7 +38,7 @@
       "params_stripped": 0,
       "csp_injections": 0,
       "scriptlets_injected": 0,
-      "cosmetic_pages_filtered": 1,
+      "cosmetic_pages_filtered": 0,
       "fingerprint_pages_protected": 1,
       "popups_blocked": 0,
       "redirect_chains_blocked": 0,
@@ -74,8 +76,8 @@
     "frame_log": [],
     "csp_block_log": []
   },
-  "load_complete_ms": 44023,
-  "total_ms": 45484,
+  "load_complete_ms": null,
+  "total_ms": 15226,
   "png": "/home/z/my-project/brows12-servo/validation/run/phase5/ours/rw_whatwg.png",
   "error": null
 }

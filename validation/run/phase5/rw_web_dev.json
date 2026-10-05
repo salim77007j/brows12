@@ -5,8 +5,10 @@
   "title": "web.dev",
   "width": 1280,
   "height": 800,
-  "frames": 674,
+  "frames": 707,
   "complete": true,
+  "all_resources_complete": true,
+  "complete_criterion": "engine-load-event",
   "crashed": false,
   "crash_reason": null,
   "console_messages": [
@@ -83,8 +85,8 @@
     "frame_log": [],
     "csp_block_log": []
   },
-  "load_complete_ms": 2422,
-  "total_ms": 6035,
+  "load_complete_ms": 2077,
+  "total_ms": 5431,
   "png": "/home/z/my-project/brows12-servo/validation/run/phase5/ours/rw_web_dev.png",
   "error": null
 }

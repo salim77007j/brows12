@@ -5,8 +5,10 @@
   "title": null,
   "width": 1280,
   "height": 800,
-  "frames": 423,
+  "frames": 422,
   "complete": true,
+  "all_resources_complete": true,
+  "complete_criterion": "engine-load-event",
   "crashed": false,
   "crash_reason": null,
   "console_messages": [],
@@ -74,8 +76,8 @@
     "frame_log": [],
     "csp_block_log": []
   },
-  "load_complete_ms": 1702,
-  "total_ms": 4794,
+  "load_complete_ms": 1808,
+  "total_ms": 4884,
   "png": "/home/z/my-project/brows12-servo/validation/run/phase5/ours/rw_http3_is.png",
   "error": null
 }

@@ -254,6 +254,15 @@ servo-script; feasibility confirmed during 1.1 profiling.
 
 ## 4. Phase 3 — verification (everything, again)
 
+> **STATUS (2026-10-05, Phase 3 complete):** 31/32 sites re-captured on the
+> v2.1 build (`screenshots/v2.1-final/`, gnu.org IPv6-unreachable container
+> network — Chromium fails identically). Memory gates re-run e2e: typical
+> 27.2 MB/tab headless / 44.5 MB/tab UI (<100 PASS), cnn 482.9 MB (<200
+> honest NOT met, ≤600 floor PASS), bbc 376.2 stable. Startup 118 ms
+> median (<150 PASS), idle 0.033% (PASS). Feature fixtures 19/19 rendered,
+> p23 tab smoke PASS, 124+3 tests green. CI + sanitizers: Phase 4 wiring.
+> Full data: `docs/V2_1_PHASE3_REPORT.md`.
+
 1. 32-site suite re-run against the final build; target 32/32 (G2 fix
    should flip MDN; lobste.rs is a network-level unreachability and will
    be retried); composites to `screenshots/v2.1-final/`.

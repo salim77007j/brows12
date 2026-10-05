@@ -1,0 +1,110 @@
+{
+  "engine": "servo 0.6.0 (stylo 0.21, webrender 0.70, spidermonkey 153, brows12 v2)",
+  "config": {
+    "tabs": 10,
+    "width": 1280,
+    "height": 800,
+    "suspend": false,
+    "idle_secs": 6,
+    "scroll_secs": 0,
+    "engine_report": false
+  },
+  "startup": {
+    "servo_build_ms": 38,
+    "first_frame_ms": 206,
+    "first_load_complete_ms": 230
+  },
+  "tabs": [
+    {
+      "url": "https://example.com/",
+      "complete": true,
+      "load_complete_ms": 230,
+      "all_resources_complete": true,
+      "complete_criterion": "engine-load-event",
+      "rss_after_kb": 180788
+    },
+    {
+      "url": "https://example.com/",
+      "complete": true,
+      "load_complete_ms": 581,
+      "all_resources_complete": true,
+      "complete_criterion": "engine-load-event",
+      "rss_after_kb": 190476
+    },
+    {
+      "url": "https://example.com/",
+      "complete": true,
+      "load_complete_ms": 940,
+      "all_resources_complete": true,
+      "complete_criterion": "engine-load-event",
+      "rss_after_kb": 200980
+    },
+    {
+      "url": "https://example.com/",
+      "complete": true,
+      "load_complete_ms": 1299,
+      "all_resources_complete": true,
+      "complete_criterion": "engine-load-event",
+      "rss_after_kb": 215540
+    },
+    {
+      "url": "https://example.com/",
+      "complete": true,
+      "load_complete_ms": 1659,
+      "all_resources_complete": true,
+      "complete_criterion": "engine-load-event",
+      "rss_after_kb": 226200
+    },
+    {
+      "url": "https://example.com/",
+      "complete": true,
+      "load_complete_ms": 2019,
+      "all_resources_complete": true,
+      "complete_criterion": "engine-load-event",
+      "rss_after_kb": 236364
+    },
+    {
+      "url": "https://example.com/",
+      "complete": true,
+      "load_complete_ms": 2373,
+      "all_resources_complete": true,
+      "complete_criterion": "engine-load-event",
+      "rss_after_kb": 245440
+    },
+    {
+      "url": "https://example.com/",
+      "complete": true,
+      "load_complete_ms": 2733,
+      "all_resources_complete": true,
+      "complete_criterion": "engine-load-event",
+      "rss_after_kb": 256808
+    },
+    {
+      "url": "https://example.com/",
+      "complete": true,
+      "load_complete_ms": 3085,
+      "all_resources_complete": true,
+      "complete_criterion": "engine-load-event",
+      "rss_after_kb": 268292
+    },
+    {
+      "url": "https://example.com/",
+      "complete": true,
+      "load_complete_ms": 3438,
+      "all_resources_complete": true,
+      "complete_criterion": "engine-load-event",
+      "rss_after_kb": 278384
+    }
+  ],
+  "memory_report": null,
+  "suspension": null,
+  "idle": {
+    "window_secs": 6.000744827,
+    "cpu_percent": 0.0,
+    "rss_kb": 278384
+  },
+  "scroll": null,
+  "rss_start_kb": 13144,
+  "rss_final_kb": 278384,
+  "peak_rss_kb": 278384
+}
