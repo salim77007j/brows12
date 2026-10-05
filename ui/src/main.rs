@@ -64,6 +64,30 @@ struct App {
     started: Instant,
 }
 
+/// Return free allocator pages to the OS (glibc `malloc_trim`).
+/// No-op on non-glibc platforms (Windows, macOS) — v2.1 Phase 4: the
+/// Windows/macOS CI builds compile the full UI shell, and these libc
+/// symbols only exist on glibc.
+#[cfg(target_os = "linux")]
+fn malloc_trim_os() {
+    unsafe {
+        libc::malloc_trim(0);
+    }
+}
+#[cfg(not(target_os = "linux"))]
+fn malloc_trim_os() {}
+
+/// glibc `malloc_stats` to stderr (BROWS12_MALLOC_STATS attribution).
+/// No-op on non-glibc platforms.
+#[cfg(target_os = "linux")]
+fn malloc_stats_os() {
+    unsafe {
+        libc::malloc_stats();
+    }
+}
+#[cfg(not(target_os = "linux"))]
+fn malloc_stats_os() {}
+
 /// Per-tab Servo runtime: the webview plus its offscreen context and state.
 struct TabRuntime {
     webview: WebView,
@@ -1068,9 +1092,7 @@ impl Gui {
         // the OS on EVERY hibernation (the governor loop used to be the
         // only trim site — command-driven hibernation left hundreds of MB
         // allocator-retained, invisible to /proc as free).
-        unsafe {
-            libc::malloc_trim(0);
-        }
+        malloc_trim_os();
         model::emit(format!(
             "hibernate tab={} index={index} rss_before_kb={rss_before} url={}",
             id,
@@ -1413,9 +1435,7 @@ impl Gui {
             // Return freed arena pages to the OS, otherwise RSS keeps the
             // hibernated tabs' memory as allocator-retained pages and the
             // governor's reclaim is invisible to /proc.
-            unsafe {
-                libc::malloc_trim(0);
-            }
+            malloc_trim_os();
         }
         reclaimed
     }
@@ -1463,9 +1483,7 @@ impl Gui {
                             rt.trimmed_at = Some(Instant::now());
                         }
                     }
-                    unsafe {
-                        libc::malloc_trim(0);
-                    }
+                    malloc_trim_os();
                     model::emit(format!("tab_trim index={i}"));
                 }
                 Degradation::Hibernate => {
@@ -1814,9 +1832,7 @@ impl Gui {
                 // then the engine report as a `memreport` event.
                 if std::env::var_os("BROWS12_MALLOC_STATS").is_some() {
                     eprintln!("brows12-ui: malloc_stats BEGIN");
-                    unsafe {
-                        libc::malloc_stats();
-                    }
+                    malloc_stats_os();
                     eprintln!("brows12-ui: malloc_stats END");
                 }
                 self.run_mem_report();
