@@ -88,6 +88,8 @@ misbehaving GPU/driver is converted into a normal `surfman::Error`:
 | `angle/device.rs` `Adapter::new` | 6 × `assert!`/`assert_eq!` on DXGI factory/adapter/desc/QI | skip-to-next-adapter or `Err(NoAdapterFound)` / `Err(Failed)` |
 | `angle/device.rs` `Device::new` | `.expect()` on `EGL_ANGLE_device_creation`, `assert_ne!` on EGL device/display/init | `Err(RequiredExtensionUnavailable)` / `Err(DeviceOpenFailed)` + `warn!` |
 | `angle/surface.rs` `present` | `assert_ne!(SwapBuffers, FALSE)` (device-lost path) | `Err(Failed)` |
+| `x11/connection.rs` `create_egl_display` | `assert_ne!(Initialize, FALSE)` (EGL-over-X11 init) | `Err(ConnectionFailed)` |
+| `base/egl/context.rs` `create_context` | `assert_ne!(eglBindAPI(..), FALSE)` (fires as EGL_BAD_ACCESS on hybrid glvnd stacks) | `Err(ContextCreationFailed(BadAccess))` |
 | `base/egl/device.rs` libEGL load | bare `panic!("Unable to load…")` | actionable message naming the DLLs and the fix |
 
 ### Layer 3: the brows12 fallback chain (`servo-host/src/gfx.rs`)

@@ -84,7 +84,7 @@ impl Connection {
                 return Err(Error::ConnectionFailed);
             }
 
-            let egl_display = create_egl_display(x11_display);
+            let egl_display = create_egl_display(x11_display)?;
 
             Ok(Connection {
                 native_connection: Arc::new(NativeConnectionWrapper {
@@ -128,7 +128,7 @@ impl Connection {
     fn from_x11_display(x11_display: *mut Display, is_owned: bool) -> Result<Connection, Error> {
         let xlib = Xlib::open().map_err(|_| Error::ConnectionFailed)?;
         unsafe {
-            let egl_display = create_egl_display(x11_display);
+            let egl_display = create_egl_display(x11_display)?;
             Ok(Connection {
                 native_connection: Arc::new(NativeConnectionWrapper {
                     xlib,
@@ -320,7 +320,7 @@ impl<'a> DisplayGuard<'a> {
     }
 }
 
-unsafe fn create_egl_display(display: *mut Display) -> EGLDisplay {
+unsafe fn create_egl_display(display: *mut Display) -> Result<EGLDisplay, Error> {
     EGL_FUNCTIONS.with(|egl| {
         let display_attributes = [egl::NONE as EGLAttrib];
         let egl_display = egl.GetPlatformDisplay(
@@ -328,12 +328,19 @@ unsafe fn create_egl_display(display: *mut Display) -> EGLDisplay {
             display as *mut c_void,
             display_attributes.as_ptr(),
         );
-
+        // brows12 patch: was `assert_ne!(ok, egl::FALSE)` — a failed
+        // EGL-over-X11 initialization (hybrid glvnd stacks, headless
+        // machines) must be a recoverable error, not a panic.
+        if egl_display == egl::NO_DISPLAY {
+            return Err(Error::ConnectionFailed);
+        }
         let (mut egl_major_version, mut egl_minor_version) = (0, 0);
         let ok = egl.Initialize(egl_display, &mut egl_major_version, &mut egl_minor_version);
-        assert_ne!(ok, egl::FALSE);
+        if ok == egl::FALSE {
+            return Err(Error::ConnectionFailed);
+        }
 
-        egl_display
+        Ok(egl_display)
     })
 }
 

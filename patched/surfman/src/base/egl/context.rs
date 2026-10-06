@@ -10,6 +10,7 @@ use crate::egl;
 use crate::egl::types::{EGLConfig, EGLContext, EGLDisplay, EGLSurface, EGLint};
 use crate::surface::Framebuffer;
 use crate::{ContextAttributeFlags, ContextAttributes, ContextID, Error, GLApi, GLVersion};
+use crate::error::WindowingApiError;
 use crate::{Gl, SurfaceInfo};
 use euclid::default::Size2D;
 use glow::HasContext;
@@ -512,13 +513,18 @@ pub(crate) unsafe fn create_context(
     share_with: EGLContext,
     gl_api: GLApi,
 ) -> Result<EGLContext, Error> {
-    EGL_FUNCTIONS.with(|egl| {
-        let ok = egl.BindAPI(match gl_api {
+    // brows12 patch: was `assert_ne!(ok, egl::FALSE)` — glvnd stacks
+    // with a mismatched EGL frontend report EGL_BAD_ACCESS here; that
+    // must fail context creation, not panic the process.
+    let bound = EGL_FUNCTIONS.with(|egl| {
+        egl.BindAPI(match gl_api {
             GLApi::GL => egl::OPENGL_API,
             GLApi::GLES => egl::OPENGL_ES_API,
-        });
-        assert_ne!(ok, egl::FALSE);
+        }) != egl::FALSE
     });
+    if !bound {
+        return Err(Error::ContextCreationFailed(WindowingApiError::BadAccess));
+    }
 
     let egl_config = egl_config_from_id(egl_display, descriptor.egl_config_id);
 

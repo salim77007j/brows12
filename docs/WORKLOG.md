@@ -1508,3 +1508,33 @@ Stage Summary:
   verdicts: 31/32, <100 MB/tab PASS, heavy <200 NOT met (floored),
   2x 1/8, startup/idle PASS, features intact. Next: Phase 4 (CI
   binaries + permanent GitHub Release).
+
+## v2.1-phase4b — GPU robustness + permanent Release v2.1.0 (2026-10-06)
+
+- ISSUE 1 (P0): root-caused the AMD-iGPU startup crash against surfman 0.13.0
+  source — wgl/device.rs:208 `assert!` after wglDXOpenDeviceNV=NULL (the
+  WGL_NV_DX_interop bridge is unreliable on iGPUs/VMs/RDP). Fix in three
+  layers: patched/surfman (asserts → Errors), Windows switched to the
+  ANGLE/D3D11 backend (servo `no-wgl`, target-deps), and servo-host/src/gfx.rs
+  (catch_unwind-guarded fallback chain: HW GPU → WARP/llvmpipe → clean exit).
+  `--software` flag + `gfx.software-rendering` pref (BROWS12_SET_PREF).
+  7 mock unit tests (incl. replaying the exact reported panic); 54/54 lib tests.
+- ISSUE 2: macOS legs disabled in release.yml (recipe kept, commented) and
+  ci.yml (macos-latest dropped).
+- Release pipeline hardened: mozangle 0.7 direct dep (transitive build_dlls
+  proved unreliable in run #22), ANGLE DLL staging via find + diagnostics,
+  Windows ANGLE/WARP smoke (relative paths — native python3 can't open MSYS
+  /tmp). Windows release zips ship libEGL.dll + libGLESv2.dll.
+- Release v2.1.0: published by run #24 from tag a8f11c8, marked Latest.
+  Linux zip 30.7 MB, Windows zip 32.4 MB (exe 29.8 MB + ANGLE DLLs) —
+  both < 50 MB. sha256-verified; both downloaded from the release page.
+- Verification: Windows smoke ran the real browser on a CI Windows runner
+  (ANGLE/WARP, example.com complete, 574 ms in run #23); Linux binary
+  executed in-container (fallback chain demonstrated live: lane panics
+  caught → clean actionable exit — never a crash); release page screenshots
+  (Latest badge + assets) in screenshots/v2.1-final/release/.
+- Honest remaining: bare-metal retest on the reporter's AMD iGPU machine
+  (checklist in docs/GPU_SUPPORT.md §6); container's glvnd EGL quirk
+  documented (product unaffected — CI Ubuntu smoke green).
+- Post-release hardening on main (for v2.1.1): panic locations in lane logs;
+  x11/connection.rs + base/egl/context.rs (eglBindAPI) asserts → Errors.

@@ -135,16 +135,36 @@ pub fn try_backends<T>(candidates: Vec<Candidate<T>>) -> Result<Selected<T>, Vec
 }
 
 /// Run one probe with panic capture. `Ok` = the probe succeeded, `Err` =
-/// probe error or caught panic (message extracted from the payload).
+/// probe error or caught panic (payload + source location captured so GPU
+/// failures are diagnosable from the log alone).
 fn run_probe<T>(probe: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
+    use std::cell::RefCell;
+    thread_local! {
+        static LAST_PANIC_LOC: RefCell<Option<String>> = const { RefCell::new(None) };
+    }
     let previous_hook = panic::take_hook();
-    panic::set_hook(Box::new(|_| {}));
+    // Keep diagnostics: record where the panic came from, but stay quiet on
+    // stderr (the factory logs one clean line per failed lane).
+    panic::set_hook(Box::new(|info| {
+        let loc = info
+            .location()
+            .map(|l| format!("{}:{}", l.file(), l.line()))
+            .unwrap_or_else(|| "<unknown>".to_string());
+        LAST_PANIC_LOC.with(|slot| *slot.borrow_mut() = Some(loc));
+    }));
     let result = panic::catch_unwind(AssertUnwindSafe(probe));
     panic::set_hook(previous_hook);
     match result {
         Ok(Ok(context)) => Ok(context),
         Ok(Err(error)) => Err(error),
-        Err(payload) => Err(panic_message(&payload)),
+        Err(payload) => {
+            let loc = LAST_PANIC_LOC.with(|slot| slot.borrow_mut().take());
+            let base = panic_message(&payload);
+            match loc {
+                Some(loc) => Err(format!("{base} [{loc}]")),
+                None => Err(base),
+            }
+        }
     }
 }
 
