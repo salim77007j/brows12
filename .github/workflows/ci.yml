@@ -66,7 +66,7 @@ jobs:
           # brows-servo emits a flat report; brows-perf wraps pages in tabs[].
           ok = d.get('complete') or (d.get('tabs') or [{}])[0].get('complete')
           assert ok, 'example.com did not complete'
-          print('smoke: PASS', d['tabs'][0].get('title'))
+          print('smoke: PASS', d.get('title'))
           PY
 
   sanitizer-asan:
