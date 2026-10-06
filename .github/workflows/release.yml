@@ -52,7 +52,7 @@ jobs:
             name: macos-x86_64
             ext: ""
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 120
+    timeout-minutes: 210
     steps:
       - uses: actions/checkout@v4
 
@@ -77,15 +77,25 @@ jobs:
           key: release-${{ matrix.target }}
 
       - name: Build (fat LTO, codegen-units=1)
-        run: cargo build --release --target ${{ matrix.target }} -p brows12-ui -p servo-host
+        # macOS fat-LTO links are the long pole (~40 min per binary): the
+        # release asset is brows12-ui only, so macOS builds just the
+        # product binary; linux keeps the full set (the smoke step runs
+        # brows-servo) and windows keeps all three (it fits easily).
+        run: |
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            cargo build --release --target ${{ matrix.target }} -p brows12-ui
+          else
+            cargo build --release --target ${{ matrix.target }} -p brows12-ui -p servo-host
+          fi
 
       - name: Strip binaries (unix)
         if: runner.os != 'Windows'
         run: |
           set -e
           for b in brows12-ui brows-servo brows-perf; do
-            strip -s "target/${{ matrix.target }}/release/$b${{ matrix.ext }}" \
-              || strip "target/${{ matrix.target }}/release/$b${{ matrix.ext }}"
+            f="target/${{ matrix.target }}/release/$b${{ matrix.ext }}"
+            [ -f "$f" ] || continue
+            strip -s "$f" || strip "$f"
           done
 
       - name: Install UPX
@@ -110,6 +120,7 @@ jobs:
           if ! command -v upx >/dev/null 2>&1; then echo "upx missing, skip"; exit 0; fi
           for b in brows12-ui brows-servo brows-perf; do
             f="target/${{ matrix.target }}/release/$b${{ matrix.ext }}"
+            [ -f "$f" ] || continue
             upx --best --lzma -q "$f" || echo "upx: could not compress $b (platform unsupported) — will be gated as-is"
           done
 
@@ -120,6 +131,7 @@ jobs:
           FAIL=0
           for b in brows12-ui brows-servo brows-perf; do
             f="target/${{ matrix.target }}/release/$b${{ matrix.ext }}"
+            [ -f "$f" ] || continue
             sz=$(stat -c%s "$f" 2>/dev/null || stat -f%z "$f")
             echo "$b: $((sz / 1024 / 1024)) MB ($sz bytes)"
             [ "$sz" -lt 52428800 ] || { echo "SIZE GATE FAILED: $b >= 50 MB"; FAIL=1; }
