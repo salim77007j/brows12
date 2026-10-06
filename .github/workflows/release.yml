@@ -101,7 +101,7 @@ jobs:
           done
           exit $OK
 
-      - name: Smoke (linux: headless engine loads example.com)
+      - name: Smoke — linux headless engine loads example.com
         if: runner.os == 'Linux'
         timeout-minutes: 6
         run: |
