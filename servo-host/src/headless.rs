@@ -8,10 +8,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
-use servo::{
-    RenderingContext, Servo, ServoBuilder, SoftwareRenderingContext, WebView, WebViewBuilder,
-    WindowRenderingContext,
-};
+use servo::{RenderingContext, Servo, ServoBuilder, WebView, WebViewBuilder};
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
 use winit::event::WindowEvent;
@@ -19,7 +16,8 @@ use winit::event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy};
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 
 use crate::capture::capture_webview;
-use crate::delegate::{HostDelegate, HostState, env_complete_max_wait_ms, env_complete_quiet_ms};
+use crate::delegate::{env_complete_max_wait_ms, env_complete_quiet_ms, HostDelegate, HostState};
+use crate::gfx::GfxPolicy;
 use crate::waker::{HostWakerEvent, ProxyWaker};
 
 #[derive(Clone, Debug)]
@@ -34,6 +32,9 @@ pub struct HeadlessConfig {
     /// How long frames must stay quiet after LoadStatus::Complete
     /// before we consider the page settled.
     pub settle_ms: u64,
+    /// v2.1 Phase 4 GPU support: force the software (CPU) rendering lane
+    /// (`--software` flag or the `gfx.software-rendering` pref).
+    pub software: bool,
 }
 
 impl Default for HeadlessConfig {
@@ -46,6 +47,7 @@ impl Default for HeadlessConfig {
             json: None,
             timeout_ms: 60_000,
             settle_ms: 1_200,
+            software: false,
         }
     }
 }
@@ -130,16 +132,42 @@ pub struct PrivacySummary {
 pub fn run_headless(config: HeadlessConfig) -> HeadlessReport {
     crate::init_crypto_provider();
     let started = Instant::now();
+    let policy = GfxPolicy::from_flags(config.software);
 
-    // Software (no-X) path first: works where surfman can create an
-    // offscreen EGL context (user-space libEGL), zero window needed.
-    match SoftwareRenderingContext::new(PhysicalSize::new(config.width, config.height)) {
-        Ok(soft) => {
-            let ctx: Rc<dyn RenderingContext> = Rc::new(soft);
-            return run_without_window(config, ctx, started);
-        }
-        Err(_) => {
-            // Fall through to the winit/Xvfb (GLX) path below.
+    // Software (no-X) lane first: works where surfman can create an
+    // offscreen EGL context (user-space libEGL), zero window needed. The
+    // attempt is panic-guarded by the gfx factory (docs/GPU_SUPPORT.md).
+    // Under ForceSoftware this is the ONLY lane — if it fails we report
+    // and return instead of trying the windowed path.
+    {
+        let size = PhysicalSize::new(config.width, config.height);
+        match crate::gfx::create_software_context(size) {
+            Ok(selected) => {
+                eprintln!("brows12 gfx: headless on the software lane `{}`", selected.backend);
+                let ctx: Rc<dyn RenderingContext> = selected.context;
+                return run_without_window(config, ctx, started);
+            }
+            Err(attempts) => {
+                // Distinguish "software lane failed" from "forced software
+                // but lane failed": in the latter case there is nothing to
+                // fall back to — report and stop.
+                if policy == GfxPolicy::ForceSoftware {
+                    eprint!(
+                        "{}",
+                        crate::gfx::fatal_report(
+                            &attempts,
+                            "Software rendering was forced (--software or \
+                             gfx.software-rendering=true) but its lane failed.",
+                        )
+                    );
+                    let mut report = HeadlessReport::error_stub(&config, started);
+                    report.error = Some("no software rendering backend available".into());
+                    return report;
+                }
+                eprintln!(
+                    "brows12 gfx: software lane unavailable — falling through to the windowed path"
+                );
+            }
         }
     }
 
@@ -160,88 +188,108 @@ pub fn run_headless(config: HeadlessConfig) -> HeadlessReport {
         result: None,
     };
     event_loop.run_app(&mut app).expect("event loop failed");
-    app.result.unwrap_or_else(|| HeadlessReport {
-        engine: engine_id(),
-        url: config.url.to_string(),
-        final_url: None,
-        title: None,
-        width: config.width,
-        height: config.height,
-        frames: 0,
-        complete: false,
-        all_resources_complete: false,
-        complete_criterion: "no-activity-yet",
-        crashed: false,
-        crash_reason: None,
-        console_messages: vec![],
-        privacy: PrivacySummary {
-            enabled: false,
-            ads_blocked: 0,
-            trackers_blocked: 0,
-            blocked_requests: vec![],
-            redirects_served: 0,
-            params_stripped: 0,
-            csp_injections: 0,
-            scriptlets_injected: 0,
-            rules_loaded: 0,
-            csp_log: vec![],
-            https_upgrades: 0,
-            hsts_hits: 0,
-            popups_blocked: 0,
-            redirect_chains_blocked: 0,
-            cname_cloaks: 0,
-            doh_queries: 0,
-            dashboard: crate::dashboard::PrivacyDashboard {
-                ads_blocked: 0,
-                trackers_blocked: 0,
-                blocked_sample: vec![],
-                rules_loaded: 0,
-                redirects_served: 0,
-                params_stripped: 0,
-                csp_injections: 0,
-                scriptlets_injected: 0,
-                cosmetic_pages_filtered: 0,
-                fingerprint_pages_protected: 0,
-                popups_blocked: 0,
-                redirect_chains_blocked: 0,
-                https_upgrades: 0,
-                hsts_hits: 0,
-                hsts_learned: 0,
-                doh_queries: 0,
-                cname_cloaks: 0,
-                cookies: Default::default(),
-                security_probes: 0,
-                frames_blocked: 0,
-                csp_blocked: 0,
-                mixed_content_blocked: 0,
-                coop_observed: 0,
-                coep_observed: 0,
-                corp_observed: 0,
-                frame_log: vec![],
-                csp_block_log: vec![],
-                popup_log: vec![],
-                cloak_log: vec![],
-            },
-            security_probes: 0,
-            frames_blocked: 0,
-            csp_blocked: 0,
-            mixed_content_blocked: 0,
-            hsts_learned: 0,
-            coop_observed: 0,
-            coep_observed: 0,
-            corp_observed: 0,
-            frame_log: vec![],
-            csp_block_log: vec![],
-        },
-        load_complete_ms: None,
-        total_ms: started.elapsed().as_millis(),
-        png: None,
-        error: Some("event loop ended without capture".into()),
+    app.result.unwrap_or_else(|| {
+        HeadlessReport::zero_report(&config, started, "event loop ended without capture")
     })
 }
 
 pub fn engine_id() -> String {
     "servo 0.6.0 (stylo 0.21, webrender 0.70, spidermonkey 153, brows12 v2)".into()
+}
+
+impl HeadlessReport {
+    /// All-zero report for early-abort paths: the event loop ended without
+    /// capture, or no rendering backend was available at all.
+    pub(crate) fn zero_report(
+        config: &HeadlessConfig,
+        started: Instant,
+        error: &'static str,
+    ) -> HeadlessReport {
+        HeadlessReport {
+            engine: engine_id(),
+            url: config.url.to_string(),
+            final_url: None,
+            title: None,
+            width: config.width,
+            height: config.height,
+            frames: 0,
+            complete: false,
+            all_resources_complete: false,
+            complete_criterion: "no-activity-yet",
+            crashed: false,
+            crash_reason: None,
+            console_messages: vec![],
+            privacy: PrivacySummary {
+                enabled: false,
+                ads_blocked: 0,
+                trackers_blocked: 0,
+                blocked_requests: vec![],
+                redirects_served: 0,
+                params_stripped: 0,
+                csp_injections: 0,
+                scriptlets_injected: 0,
+                rules_loaded: 0,
+                csp_log: vec![],
+                https_upgrades: 0,
+                hsts_hits: 0,
+                popups_blocked: 0,
+                redirect_chains_blocked: 0,
+                cname_cloaks: 0,
+                doh_queries: 0,
+                dashboard: crate::dashboard::PrivacyDashboard {
+                    ads_blocked: 0,
+                    trackers_blocked: 0,
+                    blocked_sample: vec![],
+                    rules_loaded: 0,
+                    redirects_served: 0,
+                    params_stripped: 0,
+                    csp_injections: 0,
+                    scriptlets_injected: 0,
+                    cosmetic_pages_filtered: 0,
+                    fingerprint_pages_protected: 0,
+                    popups_blocked: 0,
+                    redirect_chains_blocked: 0,
+                    https_upgrades: 0,
+                    hsts_hits: 0,
+                    hsts_learned: 0,
+                    doh_queries: 0,
+                    cname_cloaks: 0,
+                    cookies: Default::default(),
+                    security_probes: 0,
+                    frames_blocked: 0,
+                    csp_blocked: 0,
+                    mixed_content_blocked: 0,
+                    coop_observed: 0,
+                    coep_observed: 0,
+                    corp_observed: 0,
+                    frame_log: vec![],
+                    csp_block_log: vec![],
+                    popup_log: vec![],
+                    cloak_log: vec![],
+                },
+                security_probes: 0,
+                frames_blocked: 0,
+                csp_blocked: 0,
+                mixed_content_blocked: 0,
+                hsts_learned: 0,
+                coop_observed: 0,
+                coep_observed: 0,
+                corp_observed: 0,
+                frame_log: vec![],
+                csp_block_log: vec![],
+            },
+            load_complete_ms: None,
+            total_ms: started.elapsed().as_millis(),
+            png: None,
+            error: Some(error.into()),
+        }
+    }
+
+    /// Minimal all-zero report for early-abort paths (e.g. forced-software
+    /// mode with no software backend available).
+    pub(crate) fn error_stub(config: &HeadlessConfig, started: Instant) -> HeadlessReport {
+        HeadlessReport::zero_report(config, started, "rendering backend unavailable")
+    }
 }
 
 fn run_without_window(
@@ -274,13 +322,11 @@ fn run_without_window(
         for js in state.drain_pending_js() {
             webview.evaluate_javascript(js, |_| {});
         }
-        if state
-            .settled_after_completion(
-                env_complete_quiet_ms(),
-                env_complete_max_wait_ms(),
-                config.settle_ms,
-            )
-        {
+        if state.settled_after_completion(
+            env_complete_quiet_ms(),
+            env_complete_max_wait_ms(),
+            config.settle_ms,
+        ) {
             break;
         }
         if started.elapsed().as_millis() as u64 > config.timeout_ms || state.crash().is_some() {
@@ -319,13 +365,9 @@ fn finish(
         width: config.width,
         height: config.height,
         frames: state.frame_count(),
-        complete: state
-            .completion(env_complete_quiet_ms(), env_complete_max_wait_ms())
-            .0,
+        complete: state.completion(env_complete_quiet_ms(), env_complete_max_wait_ms()).0,
         all_resources_complete: state.is_complete(),
-        complete_criterion: state
-            .completion(env_complete_quiet_ms(), env_complete_max_wait_ms())
-            .2,
+        complete_criterion: state.completion(env_complete_quiet_ms(), env_complete_max_wait_ms()).2,
         crashed: state.crash().is_some(),
         crash_reason: state.crash(),
         console_messages: state.console(),
@@ -445,17 +487,39 @@ impl ApplicationHandler<HostWakerEvent> for HeadlessApp {
         if self.servo.is_some() {
             return;
         }
-        let display_handle =
-            event_loop.display_handle().expect("no display handle (run under xvfb-run)");
-        let window = event_loop
-            .create_window(winit::window::Window::default_attributes())
-            .expect("failed to create X window");
-        let window_handle = window.window_handle().expect("no window handle");
+        let window = Arc::new(
+            event_loop
+                .create_window(winit::window::Window::default_attributes())
+                .expect("failed to create X window"),
+        );
         let size = PhysicalSize::new(self.config.width, self.config.height);
         let _ = window.request_inner_size(size);
-        let wctx = WindowRenderingContext::new(display_handle, window_handle, size)
-            .expect("WindowRenderingContext (GLX) failed");
-        let ctx: Rc<dyn RenderingContext> = Rc::new(wctx);
+        // v2.1 Phase 4 GPU support: the windowed lane goes through the gfx
+        // factory (panic-guarded, logged). Reaching this point means the
+        // software lane already failed in run_headless (a successful
+        // software context returns before the event loop is built), so the
+        // hardware lane is the only remaining option. If it also fails,
+        // report cleanly and stop instead of panicking.
+        let ctx: Rc<dyn RenderingContext> =
+            match crate::gfx::create_window_parent_context(window.clone(), size) {
+                Ok(selected) => selected.context,
+                Err(attempts) => {
+                    eprint!(
+                        "{}",
+                        crate::gfx::fatal_report(
+                            &attempts,
+                            "All rendering lanes failed for this headless run.",
+                        )
+                    );
+                    self.result = Some(HeadlessReport::zero_report(
+                        &self.config,
+                        self.started,
+                        "no rendering backend available",
+                    ));
+                    event_loop.exit();
+                    return;
+                }
+            };
 
         let state = Arc::new(HostState::new());
         let privacy = crate::privacy::PrivacyHost::new();

@@ -31,3 +31,19 @@ servo-embedder-traits = "=0.6.0"
 servo-base = "=0.6.0"
 ipc-channel = "0.22"
 content-security-policy = "0.8"
+
+# v2.1 Phase 4 GPU support (docs/GPU_SUPPORT.md):
+# - Windows uses surfman's ANGLE/D3D11 backend (servo's `no-wgl`) instead of
+#   the WGL backend whose WGL_NV_DX_interop dependency panicked on integrated
+#   GPUs. Declared on both `servo` dependents (servo-host, ui) so feature
+#   unification is unambiguous.
+[target.'cfg(windows)'.dependencies]
+servo = { version = "=0.6.0", default-features = false, features = [
+    "baked-in-resources",
+    "js_jit",
+    "brotli-compression-stream",
+    "webcrypto",
+    "no-wgl",
+] }
+# gfx::libegl_available pre-check (same winapi tree surfman already uses).
+winapi = { version = "0.3", features = ["libloaderapi", "winnt"] }

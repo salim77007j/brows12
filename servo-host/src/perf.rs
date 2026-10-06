@@ -25,8 +25,8 @@ use std::time::{Duration, Instant};
 use serde::Serialize;
 use servo::profile_traits::mem::{MemoryReport, MemoryReportResult, ReportKind};
 use servo::{
-    RenderingContext, Servo, ServoBuilder, SoftwareRenderingContext, WebView, WebViewBuilder,
-    WheelDelta, WheelEvent, WheelMode,
+    RenderingContext, Servo, ServoBuilder, WebView, WebViewBuilder, WheelDelta, WheelEvent,
+    WheelMode,
 };
 use servo_base::generic_channel::GenericCallback;
 
@@ -169,11 +169,24 @@ pub fn run_perf(config: PerfConfig) -> PerfReport {
     let rss_start_kb = crate::metrics::rss_kb().unwrap_or(0);
 
     // ---- Engine boot (measured) ----------------------------------------
+    // v2.1 Phase 4 GPU support: routed through the gfx factory so a failure
+    // or panic in the software lane degrades to a clean error, not a crash.
     let build_started = Instant::now();
-    let context: Rc<dyn RenderingContext> = Rc::new(
-        SoftwareRenderingContext::new(winit::dpi::PhysicalSize::new(config.width, config.height))
-            .expect("SoftwareRenderingContext (headless perf path)"),
-    );
+    let context: Rc<dyn RenderingContext> = match crate::gfx::create_software_context(
+        winit::dpi::PhysicalSize::new(config.width, config.height),
+    ) {
+        Ok(selected) => selected.context,
+        Err(attempts) => {
+            eprint!(
+                "{}",
+                crate::gfx::fatal_report(
+                    &attempts,
+                    "brows-perf renders headless on the software lane; no alternative lane is available.",
+                )
+            );
+            std::process::exit(1);
+        }
+    };
     let waker = CondvarWaker::default();
     let servo: Servo = ServoBuilder::default()
         .event_loop_waker(Box::new(waker.clone()))
@@ -228,13 +241,11 @@ pub fn run_perf(config: PerfConfig) -> PerfReport {
             if first_frame_ms == 0 && state.frame_count() > 0 {
                 first_frame_ms = started.elapsed().as_millis();
             }
-            if state
-                .settled_after_completion(
-                    crate::delegate::env_complete_quiet_ms(),
-                    crate::delegate::env_complete_max_wait_ms(),
-                    config.settle_ms,
-                )
-            {
+            if state.settled_after_completion(
+                crate::delegate::env_complete_quiet_ms(),
+                crate::delegate::env_complete_max_wait_ms(),
+                config.settle_ms,
+            ) {
                 break;
             }
             if state.crash().is_some() || Instant::now() > tab_deadline {
@@ -252,8 +263,10 @@ pub fn run_perf(config: PerfConfig) -> PerfReport {
             servo.spin_event_loop();
             waker.wait_timeout(8);
         }
-        let (embedder_complete, raw_complete, criterion) =
-            state.completion(crate::delegate::env_complete_quiet_ms(), crate::delegate::env_complete_max_wait_ms());
+        let (embedder_complete, raw_complete, criterion) = state.completion(
+            crate::delegate::env_complete_quiet_ms(),
+            crate::delegate::env_complete_max_wait_ms(),
+        );
         tabs.push(TabMemoryReport {
             url: url.to_string(),
             complete: embedder_complete,

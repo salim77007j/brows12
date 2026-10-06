@@ -34,6 +34,9 @@ fn main() {
             "--timeout-ms" => cfg.timeout_ms = args.next().expect("value").parse().expect("u64"),
             "--suspend" => cfg.suspend = true,
             "--engine-report" => cfg.engine_report = true,
+            // v2.1 Phase 4: accepted for script compatibility; brows-perf
+            // renders headless on the software lane unconditionally.
+            "--software" => {}
             "--idle-secs" => cfg.idle_secs = args.next().expect("value").parse().expect("u64"),
             "--scroll-secs" => cfg.scroll_secs = args.next().expect("value").parse().expect("u64"),
             "--json" => json = Some(PathBuf::from(args.next().expect("value"))),

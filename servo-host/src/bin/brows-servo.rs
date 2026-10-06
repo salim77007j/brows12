@@ -3,6 +3,7 @@
 //! Usage:
 //!   brows-servo --url https://example.com --png out.png --json out.json
 //!   brows-servo --html page.html --png out.png
+//!   brows-servo --url https://example.com --software   (force CPU rendering)
 
 use servo_host::{run_headless, HeadlessConfig};
 
@@ -33,6 +34,9 @@ fn main() {
         json: arg_value(&args, "--json").map(std::path::PathBuf::from),
         timeout_ms: arg_value(&args, "--timeout-ms").and_then(|v| v.parse().ok()).unwrap_or(60_000),
         settle_ms: arg_value(&args, "--settle-ms").and_then(|v| v.parse().ok()).unwrap_or(1_200),
+        // v2.1 Phase 4 GPU support: force the CPU rendering lane; also set
+        // via the gfx.software-rendering preference (BROWS12_SET_PREF).
+        software: args.iter().any(|a| a == "--software"),
     };
 
     let report = run_headless(config);

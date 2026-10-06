@@ -9,6 +9,7 @@ pub mod capture;
 pub mod dashboard;
 pub mod delegate;
 pub mod diag;
+pub mod gfx;
 pub mod headless;
 pub mod memory;
 pub mod metrics;
@@ -30,6 +31,10 @@ pub use budget::{
 pub use dashboard::{
     dashboard_json, snapshot as dashboard_snapshot, CookieDecisionSink, CookieSection,
     PrivacyDashboard,
+};
+pub use gfx::{
+    create_headless_context, create_software_context, create_window_parent_context,
+    software_rendering_pref, try_backends, Attempt, GfxPolicy, Selected,
 };
 pub use headless::{run_headless, HeadlessConfig, HeadlessReport};
 pub use psi::{psi_level, read_psi, read_system_psi, PsiConfig, PsiSnapshot};

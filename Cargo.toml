@@ -70,3 +70,10 @@ servo-net = { path = "patched/servo-net" }
 # brows12 v2.1 (Phase 2.2): js_mem_max + GC params re-applied to live
 # runtimes on PreferencesUpdated (upstream applies them only at creation).
 servo-script = { path = "patched/servo-script" }
+# brows12 v2.1 (Phase 4, GPU support): surfman's WGL backend panicked on
+# integrated GPUs (wglDXOpenDeviceNV returning NULL hit `assert!`), and the
+# ANGLE backend had several init-path asserts. This patch converts every
+# init/present-path assert into a normal surfman Error so the brows12
+# rendering-backend fallback chain (docs/GPU_SUPPORT.md) can do its job.
+# Root cause + full rationale: docs/GPU_SUPPORT.md.
+surfman = { path = "patched/surfman" }

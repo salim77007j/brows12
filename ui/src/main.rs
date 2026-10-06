@@ -21,7 +21,7 @@ use keyboard_types::{Code, Key as KKey, KeyState, KeyboardEvent, Location, Modif
 use servo::input_events::{InputEvent, MouseButtonAction, MouseButtonEvent, MouseMoveEvent};
 use servo::{
     DeviceIntRect, DeviceIntSize, DevicePoint, KeyboardEvent as ServoKeyboardEvent,
-    OffscreenRenderingContext, RenderingContext, Servo, ServoBuilder, UserContentManager, WebView,
+    RenderingContext, Servo, ServoBuilder, SoftwareRenderingContext, UserContentManager, WebView,
     WebViewBuilder, WheelDelta, WheelEvent, WheelMode, WindowRenderingContext,
 };
 use servo_host::budget::{self, BudgetConfig, Degradation, JsHeapTier};
@@ -40,7 +40,6 @@ use winit::event::{
 };
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy};
 use winit::keyboard::{Key, NamedKey};
-use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use winit::window::{Window, WindowId};
 
 use chrome::Hit;
@@ -49,12 +48,54 @@ use text::UiText;
 
 fn main() {
     servo_host::init_crypto_provider();
+    let software_flag = parse_cli_flags();
     let started = Instant::now();
     let event_loop = EventLoop::with_user_event().build().expect("event loop");
     event_loop.set_control_flow(ControlFlow::Wait);
-    let mut app = App { proxy: Some(event_loop.create_proxy()), inner: None, started };
+    let mut app =
+        App { proxy: Some(event_loop.create_proxy()), inner: None, started, software_flag };
     init_pending_channel();
     event_loop.run_app(&mut app).expect("run loop");
+}
+
+/// CLI parsing for the shell. `--software` forces the CPU rendering lane
+/// (see docs/GPU_SUPPORT.md); unrecognized arguments are warned about and
+/// ignored so the window still opens.
+fn parse_cli_flags() -> bool {
+    let mut software = false;
+    for arg in std::env::args().skip(1) {
+        match arg.as_str() {
+            "--software" => software = true,
+            "--help" | "-h" => {
+                println!(
+                    "brows12-ui — the brows12 browser shell\n\
+                     Usage: brows12-ui [flags]\n\
+                     \n\
+                     Flags:\n\
+                     --software   Force software (CPU) rendering; skip every GPU lane.\n\
+                     --help       Show this help.\n\
+                     \n\
+                     Preferences (env):\n\
+                     BROWS12_SET_PREF=\"gfx.software-rendering=true\"  same as --software"
+                );
+                std::process::exit(0);
+            }
+            other => {
+                eprintln!("brows12-ui: ignoring unrecognized argument `{other}`");
+            }
+        }
+    }
+    software
+}
+
+/// The rendering parent context, per resolved backend lane.
+///
+/// `Window` is the hardware lane (ANGLE/D3D11 on Windows, EGL/GLX on
+/// Linux); `Software` is the CPU lane (D3D11 WARP on Windows, Mesa
+/// llvmpipe on Linux). Webviews bind to contexts derived from either.
+enum ParentCtx {
+    Window(Rc<WindowRenderingContext>),
+    Software(Rc<SoftwareRenderingContext>),
 }
 
 struct App {
@@ -62,6 +103,8 @@ struct App {
     proxy: Option<EventLoopProxy<HostWakerEvent>>,
     /// Process start, for the startup metrics report.
     started: Instant,
+    /// `--software` CLI flag (OR-ed with the gfx.software-rendering pref).
+    software_flag: bool,
 }
 
 /// Return free allocator pages to the OS (glibc `malloc_trim`).
@@ -88,12 +131,14 @@ fn malloc_stats_os() {
 #[cfg(not(target_os = "linux"))]
 fn malloc_stats_os() {}
 
-/// Per-tab Servo runtime: the webview plus its offscreen context and state.
+/// Per-tab Servo runtime: the webview plus its rendering context and state.
+/// `ctx` is the lane the webview was built on (an offscreen context derived
+/// from the hardware parent, or the shared software context on the CPU lane).
 struct TabRuntime {
     webview: WebView,
     state: Arc<HostState>,
     #[allow(dead_code)]
-    ctx: Rc<OffscreenRenderingContext>,
+    ctx: Rc<dyn RenderingContext>,
     last_painted_frame: u64,
     /// Phase 4.3.1: ladder state — the tab was trimmed (hide + throttle
     /// + malloc_trim) at this instant, and escalation to hibernate only
@@ -108,7 +153,7 @@ struct Gui {
     surface: softbuffer::Surface<Arc<Window>, Arc<Window>>,
     proxy: EventLoopProxy<HostWakerEvent>,
     servo: Option<Servo>,
-    parent_ctx: Option<Rc<WindowRenderingContext>>,
+    parent_ctx: Option<ParentCtx>,
     ucm: Rc<UserContentManager>,
     privacy: Arc<PrivacyHost>,
     tabs: Vec<UiTab>,
@@ -154,8 +199,9 @@ struct Gui {
     /// set_preference every tick).
     js_tier: JsHeapTier,
     /// v2.1 Phase 2: the one shared offscreen rendering context (see
-    /// `offscreen_ctx`) — None until the first tab is created.
-    shared_ctx: Option<Rc<OffscreenRenderingContext>>,
+    /// `offscreen_ctx`) — None until the first tab is created. On the
+    /// software lane this is the shared software context itself.
+    shared_ctx: Option<Rc<dyn RenderingContext>>,
     /// Wall time of ServoBuilder::build(), for BROWS12_UI_START_METRICS.
     servo_build_ms: u128,
     /// Wall time of the first presented frame (set once).
@@ -199,13 +245,59 @@ impl ApplicationHandler<HostWakerEvent> for App {
         let surface =
             softbuffer::Surface::new(&context, window.clone()).expect("softbuffer surface");
 
-        let display_handle = window.display_handle().expect("display handle");
-        let window_handle = window.window_handle().expect("window handle");
         let size = PhysicalSize::new(chrome::WIN_W, chrome::WIN_H);
-        let parent_ctx = Rc::new(
-            WindowRenderingContext::new(display_handle, window_handle, size)
-                .expect("GL context for window (run under Xvfb or a desktop session)"),
-        );
+        // v2.1 Phase 4 GPU support: resolve the rendering backend through
+        // the resilient chain (docs/GPU_SUPPORT.md). Hardware lane first
+        // unless --software / gfx.software-rendering forces the CPU lane;
+        // every attempt is panic-guarded and logged; total failure exits
+        // cleanly with an actionable report instead of panicking.
+        let policy = servo_host::gfx::GfxPolicy::from_flags(self.software_flag);
+        let parent_ctx = match policy {
+            servo_host::gfx::GfxPolicy::Auto => {
+                match servo_host::gfx::create_window_parent_context(window.clone(), size) {
+                    Ok(selected) => ParentCtx::Window(selected.context),
+                    Err(window_attempts) => match servo_host::gfx::create_software_context(size) {
+                        Ok(selected) => {
+                            eprintln!(
+                                "brows12 gfx: hardware lane failed ({} attempt(s)) — \
+                                     continuing on the software (CPU) lane `{}`",
+                                window_attempts.len(),
+                                selected.backend
+                            );
+                            ParentCtx::Software(selected.context)
+                        }
+                        Err(software_attempts) => {
+                            let mut all = window_attempts;
+                            all.extend(software_attempts);
+                            eprint!(
+                                "{}",
+                                servo_host::gfx::fatal_report(
+                                    &all,
+                                    "Neither a GPU lane nor the CPU lane could initialize.",
+                                )
+                            );
+                            std::process::exit(1);
+                        }
+                    },
+                }
+            }
+            servo_host::gfx::GfxPolicy::ForceSoftware => {
+                match servo_host::gfx::create_software_context(size) {
+                    Ok(selected) => ParentCtx::Software(selected.context),
+                    Err(attempts) => {
+                        eprint!(
+                            "{}",
+                            servo_host::gfx::fatal_report(
+                                &attempts,
+                                "Software rendering was forced (--software or \
+                             gfx.software-rendering=true) but its lane failed.",
+                            )
+                        );
+                        std::process::exit(1);
+                    }
+                }
+            }
+        };
 
         let proxy = self.proxy.as_ref().expect("event loop proxy").clone();
         let waker = servo_host::waker::ProxyWaker::new(proxy.clone());
@@ -597,9 +689,8 @@ impl Gui {
     /// poll from).
     fn run_mem_report(&mut self) {
         let Some(servo) = self.servo.as_ref() else { return };
-        let sink: std::sync::Arc<
-            std::sync::Mutex<Option<servo_host::perf::EngineMemoryReport>>,
-        > = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let sink: std::sync::Arc<std::sync::Mutex<Option<servo_host::perf::EngineMemoryReport>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(None));
         servo_host::perf::request_engine_memory_report_async(servo, sink.clone());
         let deadline = Instant::now() + Duration::from_secs(5);
         while Instant::now() < deadline {
@@ -910,25 +1001,33 @@ impl Gui {
         TabRuntime { webview, state, ctx, last_painted_frame: 0, trimmed_at: None }
     }
 
-    /// v2.1 Phase 2 — offscreen context for a new webview. **Shared by
-    /// default**: one offscreen context serves every tab (the headless
+    /// v2.1 Phase 2 — rendering context for a new webview. **Shared by
+    /// default**: one context serves every tab (the headless
     /// harness's arrangement, proven across the 31/32-site suite).
     /// Measured on the product shell (4× example.com): per-tab contexts
     /// carried ~115 MB/tab of live allocator heap (GL/llvmpipe
     /// per-context bookkeeping invisible to malloc-size-of) — 580 MB →
     /// 349 MB RSS with the shared context, per-tab marginal 129 → 14 MB.
     /// `BROWS12_SHARED_CTX=0` restores the per-tab arrangement for A/B.
-    fn offscreen_ctx(&mut self) -> Rc<OffscreenRenderingContext> {
-        let per_tab = std::env::var_os("BROWS12_SHARED_CTX").is_some_and(|v| v == "0");
+    ///
+    /// v2.1 Phase 4 GPU support: on the software lane (`--software` or the
+    /// automatic fallback) every webview shares the one software context —
+    /// per-tab software contexts would multiply WARP/llvmpipe state.
+    fn offscreen_ctx(&mut self) -> Rc<dyn RenderingContext> {
+        let per_tab = std::env::var_os("BROWS12_SHARED_CTX").is_some_and(|v| v == "0")
+            && self.parent_ctx.as_ref().is_some_and(|p| matches!(p, ParentCtx::Window(_)));
         if !per_tab {
             if let Some(ctx) = self.shared_ctx.as_ref() {
                 return ctx.clone();
             }
         }
-        let Some(parent) = self.parent_ctx.as_ref() else {
-            panic!("no parent rendering context");
+        let ctx: Rc<dyn RenderingContext> = match self.parent_ctx.as_ref() {
+            Some(ParentCtx::Window(parent)) => {
+                Rc::new(parent.offscreen_context(PhysicalSize::new(VIEWPORT_W, VIEWPORT_H)))
+            }
+            Some(ParentCtx::Software(soft)) => soft.clone(),
+            None => panic!("no parent rendering context"),
         };
-        let ctx = Rc::new(parent.offscreen_context(PhysicalSize::new(VIEWPORT_W, VIEWPORT_H)));
         if !per_tab {
             self.shared_ctx = Some(ctx.clone());
         }

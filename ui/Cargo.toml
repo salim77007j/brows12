@@ -25,6 +25,20 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 serde_json = "1"
 libc = "0.2"
 
+# v2.1 Phase 4 GPU support (docs/GPU_SUPPORT.md): Windows builds switch the
+# surfman backend from WGL (panicked on AMD/Intel integrated GPUs via the
+# WGL_NV_DX_interop assert) to ANGLE/D3D11, which enumerates plain DXGI
+# adapters (any vendor) and falls back to the WARP CPU rasterizer. Must be
+# declared identically on every `servo` dependent (see servo-host/Cargo.toml).
+[target.'cfg(windows)'.dependencies]
+servo = { version = "=0.6.0", default-features = false, features = [
+    "baked-in-resources",
+    "js_jit",
+    "brotli-compression-stream",
+    "webcrypto",
+    "no-wgl",
+] }
+
 [[bin]]
 name = "brows12-ui"
 path = "src/main.rs"
