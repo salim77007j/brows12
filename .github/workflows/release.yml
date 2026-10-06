@@ -47,10 +47,15 @@ jobs:
             target: aarch64-apple-darwin
             name: macos-arm64
             ext: ""
-          - os: macos-13
+          # GitHub's macos-13 (Intel) runners starve in queue for hours —
+          # build the x86_64 binary ON an arm64 runner with the x86_64
+          # toolchain under Rosetta 2 (native x86_64 codegen, no C
+          # cross-compilation).
+          - os: macos-14
             target: x86_64-apple-darwin
             name: macos-x86_64
             ext: ""
+            rosetta: "1"
     runs-on: ${{ matrix.os }}
     timeout-minutes: 210
     steps:
@@ -83,7 +88,11 @@ jobs:
         # brows-servo) and windows keeps all three (it fits easily).
         shell: bash
         run: |
-          if [ "${{ runner.os }}" = "macOS" ]; then
+          if [ "${{ matrix.rosetta }}" = "1" ]; then
+            rustup toolchain install stable-x86_64-apple-darwin --profile minimal --no-self-update --force-non-host
+            rustup default stable-x86_64-apple-darwin
+            arch -x86_64 cargo build --release --target ${{ matrix.target }} -p brows12-ui
+          elif [ "${{ runner.os }}" = "macOS" ]; then
             cargo build --release --target ${{ matrix.target }} -p brows12-ui
           else
             cargo build --release --target ${{ matrix.target }} -p brows12-ui -p servo-host
