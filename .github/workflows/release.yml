@@ -172,13 +172,16 @@ jobs:
         shell: bash
         run: |
           set -e
+          # Relative paths: a native Windows python3 cannot open the MSYS
+          # "/tmp" location, while relative paths work for both the exe and
+          # the assertion script below.
           ./target/${{ matrix.target }}/release/brows-servo.exe \
             --url https://example.com/ --width 1280 --height 800 \
             --settle-ms 1500 --timeout-ms 30000 \
-            --png /tmp/rel_smoke.png --json /tmp/rel_smoke.json
+            --png rel_smoke.png --json rel_smoke.json
           python3 - <<'PY'
           import json
-          d = json.load(open('/tmp/rel_smoke.json'))
+          d = json.load(open('rel_smoke.json'))
           ok = d.get('complete') or (d.get('tabs') or [{}])[0].get('complete')
           assert ok, 'example.com did not complete'
           print('windows release smoke: PASS (ANGLE stack loads, page completes)')
