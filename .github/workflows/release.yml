@@ -14,6 +14,10 @@ name: release
 on:
   push:
     tags: ["v*"]
+  # Manual dispatch for a given tag ref (also the fallback if the
+  # tag-push trigger is swallowed by the platform quirk that records
+  # empty ref=null runs for tags-filtered workflows on every push).
+  workflow_dispatch:
 
 permissions:
   contents: write
