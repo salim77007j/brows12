@@ -90,9 +90,10 @@ jobs:
         run: |
           if [ "${{ matrix.rosetta }}" = "1" ]; then
             rustup toolchain install stable-x86_64-apple-darwin --profile minimal --no-self-update --force-non-host
-            # `rustup default` refuses non-host toolchains — select
-            # per-invocation with the +toolchain syntax instead.
-            arch -x86_64 cargo +stable-x86_64-apple-darwin build --release --target ${{ matrix.target }} -p brows12-ui
+            # `rustup default` refuses non-host toolchains and the PATH
+            # cargo proxy is arm64-only — invoke the x86_64 toolchain's
+            # real cargo binary directly (it runs under Rosetta 2).
+            arch -x86_64 "$HOME/.rustup/toolchains/stable-x86_64-apple-darwin/bin/cargo" build --release --target ${{ matrix.target }} -p brows12-ui
           elif [ "${{ runner.os }}" = "macOS" ]; then
             cargo build --release --target ${{ matrix.target }} -p brows12-ui
           else
