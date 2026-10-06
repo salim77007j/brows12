@@ -63,12 +63,12 @@ jobs:
           UI_PID=$!
           exec 3<>"$RUNDIR/events.fifo"
           exec 4>"$RUNDIR/cmd.fifo"
-          # 1. wait for the start-page load event
-          SEEN=0
-          for i in $(seq 1 300); do
+          # 1. wait for the start-page load event (the UI emits `loaded
+          # tab=.. url=.. title=New_Tab` for the built-in start page;
+          # there is no `tab_created` event in the v2 protocol).
+          for i in $(seq 1 120); do
             IFS= read -r -t 1 line <&3 || true
-            if [[ "${line:-}" == tab_created* ]]; then SEEN=1; fi
-            if [[ "${line:-}" == loaded*title=New_Tab* && $SEEN == 1 ]]; then break; fi
+            [[ "${line:-}" == loaded*title=New_Tab* ]] && break
           done
           [[ "${line:-}" == loaded*title=New_Tab* ]] || { cat "$RUNDIR/ui.log"; exit 1; }
           echo "smoke: start page loaded: $line"
