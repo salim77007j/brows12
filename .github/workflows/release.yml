@@ -88,18 +88,43 @@ jobs:
               || strip "target/${{ matrix.target }}/release/$b${{ matrix.ext }}"
           done
 
+      - name: Install UPX
+        shell: bash
+        run: |
+          set -e
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            sudo apt-get update >/dev/null 2>&1 || true
+            sudo apt-get install -y upx-ucl >/dev/null 2>&1 || true
+          elif [ "${{ runner.os }}" = "macOS" ]; then
+            brew install upx >/dev/null 2>&1 || true
+          else
+            # windows: choco ships upx; fall back silently if absent
+            choco install upx -y --no-progress >/dev/null 2>&1 || true
+          fi
+          command -v upx && upx --version | head -1 || echo "upx: NOT AVAILABLE"
+
+      - name: UPX compress (best/lzma; best-effort per platform)
+        shell: bash
+        run: |
+          set -e
+          if ! command -v upx >/dev/null 2>&1; then echo "upx missing, skip"; exit 0; fi
+          for b in brows12-ui brows-servo brows-perf; do
+            f="target/${{ matrix.target }}/release/$b${{ matrix.ext }}"
+            upx --best --lzma -q "$f" || echo "upx: could not compress $b (platform unsupported) — will be gated as-is"
+          done
+
       - name: Size gate (< 50 MB per binary)
         shell: bash
         run: |
           set -e
-          OK=1
+          FAIL=0
           for b in brows12-ui brows-servo brows-perf; do
             f="target/${{ matrix.target }}/release/$b${{ matrix.ext }}"
             sz=$(stat -c%s "$f" 2>/dev/null || stat -f%z "$f")
             echo "$b: $((sz / 1024 / 1024)) MB ($sz bytes)"
-            [ "$sz" -lt 52428800 ] || { echo "SIZE GATE FAILED: $b >= 50 MB"; OK=0; }
+            [ "$sz" -lt 52428800 ] || { echo "SIZE GATE FAILED: $b >= 50 MB"; FAIL=1; }
           done
-          exit $OK
+          exit $FAIL
 
       - name: Smoke — linux headless engine loads example.com
         if: runner.os == 'Linux'
@@ -130,9 +155,10 @@ jobs:
           VER="${GITHUB_REF_NAME#v}"
           DIR="brows12-${VER}-${{ matrix.name }}"
           mkdir -p "$DIR"
-          for b in brows12-ui brows-servo brows-perf; do
-            cp "target/${{ matrix.target }}/release/$b${{ matrix.ext }}" "$DIR/"
-          done
+          # Ship the browser binary (the product). brows-servo/brows-perf
+          # stay buildable from source; three ~40MB binaries per zip would
+          # triple the download for no user value.
+          cp "target/${{ matrix.target }}/release/brows12-ui${{ matrix.ext }}" "$DIR/"
           cp README.md "$DIR/" 2>/dev/null || true
           if [ "${{ runner.os }}" = "Windows" ]; then
             pwsh -NoProfile -Command "Compress-Archive -Path '$DIR\\*' -DestinationPath '$DIR.zip' -Force"
