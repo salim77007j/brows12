@@ -63,14 +63,14 @@ jobs:
           UI_PID=$!
           exec 3<>"$RUNDIR/events.fifo"
           exec 4>"$RUNDIR/cmd.fifo"
-          # 1. wait for the start-page load event (the UI emits `loaded
-          # tab=.. url=.. title=New_Tab` for the built-in start page;
-          # there is no `tab_created` event in the v2 protocol).
+          # 1. wait for the start-page load event (the UI emits
+          # `loaded tab=1 url=brows12://start title=` — the title is
+          # still empty at Complete; there is no `tab_created` event).
           for i in $(seq 1 120); do
             IFS= read -r -t 1 line <&3 || true
-            [[ "${line:-}" == loaded*title=New_Tab* ]] && break
+            [[ "${line:-}" == loaded*url=brows12://start* ]] && break
           done
-          [[ "${line:-}" == loaded*title=New_Tab* ]] || { cat "$RUNDIR/ui.log"; exit 1; }
+          [[ "${line:-}" == loaded*url=brows12://start* ]] || { cat "$RUNDIR/ui.log"; exit 1; }
           echo "smoke: start page loaded: $line"
           # 2. navigate to example.com and wait for the real load
           echo '<OMNI> example.com' >&4
