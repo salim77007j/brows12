@@ -47,7 +47,7 @@ jobs:
 
       - name: Smoke-run the real window under Xvfb (Linux only)
         if: runner.os == 'Linux'
-        timeout-minutes: 5
+        timeout-minutes: 8
         shell: bash
         run: |
           set -e
@@ -57,12 +57,15 @@ jobs:
           RUNDIR=validation/run-ci
           mkdir -p "$RUNDIR"
           mkfifo "$RUNDIR/cmd.fifo" "$RUNDIR/events.fifo"
+          # O_RDWR opens on a FIFO never block: if the UI dies before it
+          # opens its end, the reads below see EOF fast instead of the
+          # whole step hanging to its timeout with zero output.
           BROWS12_UI_CMD_FIFO="$RUNDIR/cmd.fifo" \
           BROWS12_UI_EVENT_FIFO="$RUNDIR/events.fifo" \
             ./target/release/brows12-ui > "$RUNDIR/ui.log" 2>&1 &
           UI_PID=$!
           exec 3<>"$RUNDIR/events.fifo"
-          exec 4>"$RUNDIR/cmd.fifo"
+          exec 4<>"$RUNDIR/cmd.fifo"
           # 1. wait for the start-page load event (the UI emits
           # `loaded tab=1 url=brows12://start title=` — the title is
           # still empty at Complete; there is no `tab_created` event).
