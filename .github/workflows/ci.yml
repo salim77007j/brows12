@@ -20,7 +20,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # macOS leg DISABLED (user request, 2026-10): macOS runners queue
+        # for too long and starve the Linux/Windows lanes. Re-enable by
+        # adding `macos-latest` back to this list. (Sanitizer + valgrind
+        # jobs below are Linux-only and unaffected.)
+        os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 75
     steps:

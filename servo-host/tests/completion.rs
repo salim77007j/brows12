@@ -9,14 +9,11 @@
 use std::sync::atomic::Ordering;
 use std::time::{Duration, SystemTime};
 
-use servo_host::delegate::HostState;
 use servo::LoadStatus;
+use servo_host::delegate::HostState;
 
 fn unix_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap()
-        .as_millis() as u64
+    SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis() as u64
 }
 
 #[test]

@@ -2,8 +2,9 @@
 
 A memory-focused release of the brows12 Servo-0.6.0 browser: the remaining
 v2.0 gaps fixed, a per-tab memory redesign (114.5 MB → **27–45 MB/tab**),
-end-to-end re-verification, and **permanent, downloadable release binaries
-for four platforms** built with fat LTO.
+end-to-end re-verification, **permanent, downloadable release binaries for
+Linux and Windows** built with fat LTO, and a GPU-robustness rework (fixed
+the startup crash on AMD/Intel integrated GPUs).
 
 ## Highlights
 
@@ -26,6 +27,14 @@ for four platforms** built with fat LTO.
 - **CNN attribution**: page weight is NOT image/JS-driven (images 2.9%,
   scripts 2.0%); structural remainder honestly documented.
 - **Startup 118 ms median** (7 reps, release build), idle CPU **0.033%**.
+- **Works on every GPU** — the Windows rendering stack moved from WGL
+  (whose `WGL_NV_DX_interop` dependency panicked at startup on AMD/Intel
+  integrated GPUs, VMs and RDP sessions) to the ANGLE/D3D11 backend used
+  by Chrome/Firefox/Edge, with an automatic fallback chain that never
+  panics: hardware GPU → **D3D11 WARP** CPU rasterizer (Windows) /
+  Mesa llvmpipe (Linux). Force it with `--software` or the
+  `gfx.software-rendering` pref. Architecture + verification matrix:
+  `docs/GPU_SUPPORT.md`.
 - **31/32 real-world sites** re-captured side-by-side vs Chromium on this
   exact build (`screenshots/v2.1-final/`); gnu.org excluded for container
   IPv6 unreachability (Chromium fails identically).
@@ -43,16 +52,20 @@ for four platforms** built with fat LTO.
 
 ## Downloads
 
-Per-platform zips below contain `brows12-ui` (the browser), `brows-servo`
-and `brows-perf` (headless engine harness), each binary **< 50 MB**
-(fat LTO, stripped). SHA-256 checksums ship alongside.
+Per-platform zips below contain `brows12-ui` (the browser; on Windows also
+`libEGL.dll`/`libGLESv2.dll` — the ANGLE runtime the browser loads at
+startup, do not delete), each binary **< 50 MB** (fat LTO, stripped).
+SHA-256 checksums ship alongside.
 
 | Platform | Asset |
 |---|---|
 | Linux x86_64 | `brows12-2.1.0-linux-x86_64.zip` |
 | Windows x86_64 | `brows12-2.1.0-windows-x86_64.zip` |
-| macOS arm64 | `brows12-2.1.0-macos-arm64.zip` |
-| macOS x86_64 | `brows12-2.1.0-macos-x86_64.zip` |
+
+macOS builds are disabled for this release (macOS runners queued for hours
+and starved the release lane); the proven cross-compilation recipe stays in
+`.github/workflows/release.yml` and can be re-enabled by uncommenting the
+macOS matrix entries.
 
 ## Honest remaining gaps
 
@@ -65,4 +78,4 @@ and `brows-perf` (headless engine harness), each binary **< 50 MB**
   crates (engine C++ is upstream-covered).
 
 Full evidence: `docs/V2_1_PHASE3_REPORT.md`, `docs/V2_1_PLAN.md`,
-`docs/perf-artifacts/v21/`, `screenshots/v2.1-final/`.
+`docs/GPU_SUPPORT.md`, `docs/perf-artifacts/v21/`, `screenshots/v2.1-final/`.

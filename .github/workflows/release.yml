@@ -43,17 +43,19 @@ jobs:
             target: x86_64-pc-windows-msvc
             name: windows-x86_64
             ext: ".exe"
-          - os: macos-14
-            target: aarch64-apple-darwin
-            name: macos-arm64
-            ext: ""
-          # macos-13 (Intel) runners starve in queue for hours — build
-          # x86_64-apple-darwin by cross-compilation from the arm64 runner
-          # (Apple clang handles -arch x86_64 natively).
-          - os: macos-14
-            target: x86_64-apple-darwin
-            name: macos-x86_64
-            ext: ""
+          # --- macOS legs DISABLED (user request, 2026-10): macOS runners
+          # queue for too long and starve the Linux/Windows release lane.
+          # The cross-compilation recipe is kept below (it was proven green
+          # on v2.1.0-rc10: arm64 native + x86_64 via Apple -arch from the
+          # arm64 runner); re-enable by uncommenting both entries.
+          # - os: macos-14
+          #   target: aarch64-apple-darwin
+          #   name: macos-arm64
+          #   ext: ""
+          # - os: macos-14
+          #   target: x86_64-apple-darwin
+          #   name: macos-x86_64
+          #   ext: ""
     runs-on: ${{ matrix.os }}
     timeout-minutes: 210
     steps:
@@ -80,17 +82,13 @@ jobs:
           key: release-${{ matrix.target }}
 
       - name: Build (fat LTO, codegen-units=1)
-        # macOS fat-LTO links are the long pole (~40 min per binary): the
-        # release asset is brows12-ui only, so macOS builds just the
-        # product binary; linux keeps the full set (the smoke step runs
-        # brows-servo) and windows keeps all three (it fits easily).
+        # macOS legs (disabled 2026-10, kept for re-enabling): build
+        # scripts run on the arm64 host, final codegen targets the matrix
+        # triple. Linux keeps the full set (the smoke step runs
+        # brows-servo); windows keeps all three (it fits easily).
         shell: bash
         run: |
           if [ "${{ runner.os }}" = "macOS" ]; then
-            # macOS legs (arm64 native + x86_64 cross via Apple's -arch
-            # toolchain; macos-13 Intel runners starve in queue): build
-            # scripts run on the arm64 host, final codegen targets the
-            # matrix triple.
             rustup target add ${{ matrix.target }}
             cargo build --release --target ${{ matrix.target }} -p brows12-ui
           else
@@ -145,6 +143,39 @@ jobs:
             done
           fi
 
+      - name: Stage ANGLE runtime DLLs next to the exes (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          set -e
+          # mozangle builds libEGL.dll/libGLESv2.dll into its OUT_DIR; the
+          # exe implicitly imports libEGL.dll, so they must sit next to it
+          # (docs/GPU_SUPPORT.md §5).
+          OUT=$(ls -d target/*/build/mozangle-*/out | head -1)
+          echo "mozangle out: $OUT"
+          ls -la "$OUT"/*.dll
+          for f in libEGL.dll libGLESv2.dll; do
+            cp "$OUT/$f" "target/${{ matrix.target }}/release/$f"
+          done
+
+      - name: Smoke — windows headless engine loads example.com (ANGLE/WARP)
+        if: runner.os == 'Windows'
+        timeout-minutes: 8
+        shell: bash
+        run: |
+          set -e
+          ./target/${{ matrix.target }}/release/brows-servo.exe \
+            --url https://example.com/ --width 1280 --height 800 \
+            --settle-ms 1500 --timeout-ms 30000 \
+            --png /tmp/rel_smoke.png --json /tmp/rel_smoke.json
+          python3 - <<'PY'
+          import json
+          d = json.load(open('/tmp/rel_smoke.json'))
+          ok = d.get('complete') or (d.get('tabs') or [{}])[0].get('complete')
+          assert ok, 'example.com did not complete'
+          print('windows release smoke: PASS (ANGLE stack loads, page completes)')
+          PY
+
       - name: Size gate (< 50 MB per binary)
         shell: bash
         run: |
@@ -192,6 +223,13 @@ jobs:
           # stay buildable from source; three ~40MB binaries per zip would
           # triple the download for no user value.
           cp "target/${{ matrix.target }}/release/brows12-ui${{ matrix.ext }}" "$DIR/"
+          # Windows: the ANGLE runtime DLLs are load-time dependencies of
+          # the exe (docs/GPU_SUPPORT.md §5) — ship them next to it.
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            for f in libEGL.dll libGLESv2.dll; do
+              cp "target/${{ matrix.target }}/release/$f" "$DIR/"
+            done
+          fi
           cp README.md "$DIR/" 2>/dev/null || true
           if [ "${{ runner.os }}" = "Windows" ]; then
             pwsh -NoProfile -Command "Compress-Archive -Path '$DIR\\*' -DestinationPath '$DIR.zip' -Force"

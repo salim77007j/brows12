@@ -201,12 +201,8 @@ impl HostState {
     pub fn touch(&self) {
         let now = unix_now_ms();
         // v2.1 Phase 1.2: anchor the first activity of this document.
-        let _ = self.first_activity_ms.compare_exchange(
-            0,
-            now,
-            Ordering::Relaxed,
-            Ordering::Relaxed,
-        );
+        let _ =
+            self.first_activity_ms.compare_exchange(0, now, Ordering::Relaxed, Ordering::Relaxed);
         self.last_activity_ms.store(now, Ordering::Relaxed);
     }
 

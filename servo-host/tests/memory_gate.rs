@@ -61,10 +61,7 @@ fn gate_typical_per_tab_under_100mb() {
     let report = run_perf_with_idle(&["https://example.com/"; 10], 6);
     let rss_kb = report["idle"]["rss_kb"].as_u64().expect("idle rss_kb");
     let per_tab_mb = rss_kb as f64 / 10.0 / 1024.0;
-    assert!(
-        per_tab_mb < 100.0,
-        "typical per-tab RSS {per_tab_mb:.1} MB exceeded the 100 MB gate"
-    );
+    assert!(per_tab_mb < 100.0, "typical per-tab RSS {per_tab_mb:.1} MB exceeded the 100 MB gate");
 }
 
 /// Heavy-page regression floor: cnn.com peak (tree-sampled VmHWM of the
