@@ -122,8 +122,20 @@ jobs:
           for b in brows12-ui brows-servo brows-perf; do
             f="target/${{ matrix.target }}/release/$b${{ matrix.ext }}"
             [ -f "$f" ] || continue
-            upx --best --lzma -q "$f" || echo "upx: could not compress $b (platform unsupported) — will be gated as-is"
+            upx --best --lzma -q "$f" \
+              || upx --best --lzma --force-macos -q "$f" \
+              || echo "upx: could not compress $b — will be gated as-is"
           done
+          # UPX invalidates the Mach-O ad-hoc signature; arm64 macOS
+          # refuses to execute invalidly-signed binaries, so re-sign.
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            for b in brows12-ui brows-servo brows-perf; do
+              f="target/${{ matrix.target }}/release/$b${{ matrix.ext }}"
+              [ -f "$f" ] || continue
+              codesign --force --sign - "$f" || true
+              codesign --verify "$f" && echo "codesign OK: $b" || echo "codesign verify FAILED: $b"
+            done
+          fi
 
       - name: Size gate (< 50 MB per binary)
         shell: bash
