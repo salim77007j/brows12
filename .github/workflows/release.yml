@@ -148,14 +148,22 @@ jobs:
         shell: bash
         run: |
           set -e
-          # mozangle builds libEGL.dll/libGLESv2.dll into its OUT_DIR; the
-          # exe implicitly imports libEGL.dll, so they must sit next to it
-          # (docs/GPU_SUPPORT.md §5).
-          OUT=$(ls -d target/*/build/mozangle-*/out | head -1)
-          echo "mozangle out: $OUT"
-          ls -la "$OUT"/*.dll
+          # mozangle builds libEGL.dll/libGLESv2.dll into its build-script
+          # OUT_DIR; the exe imports libEGL.dll at load time, so they must
+          # sit next to it (docs/GPU_SUPPORT.md §5). Locate them anywhere
+          # under target/ (upstream servo rglobs the same tree).
+          EGL=$(find target -name "libEGL.dll" -not -path "*/deps/*" 2>/dev/null | head -1)
+          if [ -z "$EGL" ]; then
+            echo "FATAL: libEGL.dll not found anywhere under target/. Diagnostics:"
+            find target -maxdepth 4 -type d -name "mozangle*" 2>/dev/null || true
+            find target -maxdepth 3 -type d -name "build" 2>/dev/null | head || true
+            exit 1
+          fi
+          DIR=$(dirname "$EGL")
+          echo "mozangle out: $DIR"
+          ls -la "$DIR"
           for f in libEGL.dll libGLESv2.dll; do
-            cp "$OUT/$f" "target/${{ matrix.target }}/release/$f"
+            cp "$DIR/$f" "target/${{ matrix.target }}/release/$f"
           done
 
       - name: Smoke — windows headless engine loads example.com (ANGLE/WARP)

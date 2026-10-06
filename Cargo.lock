@@ -6579,6 +6579,7 @@ dependencies = [
  "http",
  "image",
  "ipc-channel",
+ "mozangle",
  "rustls",
  "serde",
  "serde_json",

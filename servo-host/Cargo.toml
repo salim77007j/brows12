@@ -47,3 +47,10 @@ servo = { version = "=0.6.0", default-features = false, features = [
 ] }
 # gfx::libegl_available pre-check (same winapi tree surfman already uses).
 winapi = { version = "0.3", features = ["libloaderapi", "winnt"] }
+# Force-build the ANGLE runtime DLLs (libEGL.dll/libGLESv2.dll). servo's
+# `no-wgl` also enables mozangle/build_dlls transitively, but a DIRECT
+# dependency guarantees the feature applies (cargo always honors direct
+# dependency features) — without the DLLs, surfman's LoadLibraryA("libEGL.dll")
+# cannot find ANGLE at runtime on Windows (docs/GPU_SUPPORT.md §5). The
+# release workflow stages the built DLLs next to the executables.
+mozangle = { version = "0.7", features = ["egl", "build_dlls"] }
