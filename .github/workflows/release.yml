@@ -113,7 +113,9 @@ jobs:
           python3 - <<'PY'
           import json
           d = json.load(open('/tmp/rel_smoke.json'))
-          assert d['tabs'][0]['complete'], 'example.com did not complete'
+          # brows-servo emits a flat report; brows-perf wraps pages in tabs[].
+          ok = d.get('complete') or (d.get('tabs') or [{}])[0].get('complete')
+          assert ok, 'example.com did not complete'
           print('release smoke: PASS')
           PY
 

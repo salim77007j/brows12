@@ -141,6 +141,9 @@ pub struct MetricsSnapshot {
 mod tests {
     use super::*;
 
+    // /proc/self/{status,stat} only exist on Linux — this suite must stay
+    // green on the windows/macos CI legs (v2.1 Phase 4).
+    #[cfg(target_os = "linux")]
     #[test]
     fn proc_files_exist_and_parse() {
         let rss = rss_kb().expect("VmRSS must parse on Linux");

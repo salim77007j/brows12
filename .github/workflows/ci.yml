@@ -63,7 +63,9 @@ jobs:
           python3 - <<'PY'
           import json
           d = json.load(open('/tmp/smoke.json'))
-          assert d['tabs'][0]['complete'], 'example.com did not complete'
+          # brows-servo emits a flat report; brows-perf wraps pages in tabs[].
+          ok = d.get('complete') or (d.get('tabs') or [{}])[0].get('complete')
+          assert ok, 'example.com did not complete'
           print('smoke: PASS', d['tabs'][0].get('title'))
           PY
 
@@ -94,7 +96,7 @@ jobs:
         # Scoped to the brows12 workspace crates; the vendored engine
         # (servo/mozjs C++) is upstream-covered. Recorded honestly in
         # docs/V2_1_PHASE4_REPORT.md.
-        run: cargo +nightly -Zbuild-std=std,panic_abort test --target x86_64-unknown-linux-gnu -p brows12-privacy -p brows12-storage
+        run: cargo +nightly -Zbuild-std=std,panic_abort test --tests --target x86_64-unknown-linux-gnu -p brows12-privacy -p brows12-storage
 
   sanitizer-tsan:
     runs-on: ubuntu-latest
@@ -117,7 +119,7 @@ jobs:
         env:
           RUSTFLAGS: -Zsanitizer=thread
           TSAN_OPTIONS: halt_on_error=0:report_bugs=1
-        run: cargo +nightly -Zbuild-std=std,panic_abort test --target x86_64-unknown-linux-gnu -p brows12-privacy -p brows12-storage
+        run: cargo +nightly -Zbuild-std=std,panic_abort test --tests --target x86_64-unknown-linux-gnu -p brows12-privacy -p brows12-storage
 
   sanitizer-valgrind:
     runs-on: ubuntu-latest
