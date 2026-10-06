@@ -81,6 +81,7 @@ jobs:
         # release asset is brows12-ui only, so macOS builds just the
         # product binary; linux keeps the full set (the smoke step runs
         # brows-servo) and windows keeps all three (it fits easily).
+        shell: bash
         run: |
           if [ "${{ runner.os }}" = "macOS" ]; then
             cargo build --release --target ${{ matrix.target }} -p brows12-ui
