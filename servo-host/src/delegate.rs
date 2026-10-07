@@ -213,6 +213,24 @@ impl HostState {
         self.last_activity_ms.store(0, Ordering::Relaxed);
         *self.embedder_complete_at.lock().unwrap() = None;
         *self.complete_at.lock().unwrap() = None;
+        *self.load_status.lock().unwrap() = None;
+    }
+
+    /// v2.1 perf fix: UI-side navigation — invalidate any completion state
+    /// SYNCHRONOUSLY, before the engine's `request_navigation` round-trip.
+    ///
+    /// `webview.load()` only queues a message; the constellation processes
+    /// it (and calls `request_navigation` → `begin_navigation`) on a later
+    /// spin. In that window the PREVIOUS document's latched
+    /// `LoadStatus::Complete` was still visible, so the shell's tab state
+    /// machine marked the tab Loaded for the *old* document and then never
+    /// processed the new document's completion (white page, no title,
+    /// snapshot races). The shell calls this whenever it itself starts a
+    /// navigation (omnibox / back / forward / reload).
+    pub fn invalidate_completion(&self) {
+        *self.embedder_complete_at.lock().unwrap() = None;
+        *self.complete_at.lock().unwrap() = None;
+        *self.load_status.lock().unwrap() = None;
     }
 
     /// v2.1 Phase 1.2: runner-loop gate — true once the page is

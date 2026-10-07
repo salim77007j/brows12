@@ -827,6 +827,9 @@ impl ImageCacheStore {
         {
             self.svg_rasterization_task_store
                 .remove_being_rasterized(pending_id, requested_size);
+            if std::env::var_os("BROWS12_SVG_TRACE").is_some() {
+                eprintln!("brows12 svgtrace: TOMBSTONE drop id={pending_id:?} size={requested_size:?}");
+            }
             return;
         }
         match self.key_cache.cache {
@@ -906,6 +909,13 @@ impl ImageCacheStore {
                 })
                 .unwrap_or_default()
         };
+        if std::env::var_os("BROWS12_SVG_TRACE").is_some() {
+            eprintln!(
+                "brows12 svgtrace: store={:p} complete_load_svg id={pending_image_id:?} size={requested_size:?} listeners={}",
+                self,
+                listeners.len()
+            );
+        }
 
         for (pipeline_id, callback) in listeners {
             callback(ImageCacheResponseMessage::VectorImageRasterizationComplete(
@@ -1285,6 +1295,21 @@ impl ImageCache for ImageCacheImpl {
             return None;
         };
 
+        // v2.1 perf diagnostics (BROWS12_SVG_TRACE=1): follow the SVG
+        // rasterization path across reloads.
+        if std::env::var_os("BROWS12_SVG_TRACE").is_some() {
+            eprintln!(
+                "brows12 svgtrace: store={:p} rasterize id={image_id:?} size={requested_size:?} cached={} vector_store_len={}",
+                self,
+                store
+                    .rasterized_vector_images
+                    .get(&(image_id, requested_size))
+                    .and_then(|t| t.result.as_ref())
+                    .is_some(),
+                store.vector_images.len()
+            );
+        }
+
         // This early return relies on the fact that the result of image rasterization cannot
         // ever be `None`. If that were the case we would need to check whether the entry
         // in the `HashMap` was `Occupied` or not.
@@ -1611,6 +1636,14 @@ impl ImageCache for ImageCacheImpl {
 impl ImageCacheStore {
     /// Clear the image cache.
     fn clear(&mut self) {
+        if std::env::var_os("BROWS12_SVG_TRACE").is_some() {
+            eprintln!(
+                "brows12 svgtrace: store={:p} clear() rasterized_len={} completed_len={}",
+                self,
+                self.rasterized_vector_images.len(),
+                self.completed_loads.len()
+            );
+        }
         let deletions: smallvec::SmallVec<_> = self
             .completed_loads
             .values()

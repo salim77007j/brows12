@@ -741,6 +741,8 @@ name = "brows12-ui"
 version = "0.2.0"
 dependencies = [
  "cosmic-text",
+ "gleam",
+ "glow",
  "image",
  "keyboard-types",
  "libc",

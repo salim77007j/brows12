@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Icon Test</title>
+<link rel="icon" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAP0lEQVR4nGP4TyJgwCWhd8aBKA1AdZgIpwasqtH0MBCjGlkPA5Gq4Xroo4FI1RA0SP1ATjyQE9PkpCU0nVjFAUWo9pFPFM83AAAAAElFTkSuQmCC">
+<style>
+  body { background: #fff; font: 14px sans-serif; margin: 10px; }
+  .row { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+  .box { width: 32px; height: 32px; border: 1px solid #ccc; display:flex; align-items:center; justify-content:center; }
+  @font-face { font-family: 'IconFont'; src: url('iconfont.woff') format('woff'); }
+  .ifont { font-family: 'IconFont'; font-size: 16px; color: #c00; }
+</style>
+</head>
+<body>
+<h3>Small icon reproduction page</h3>
+
+<div class="row"><div class="box"><svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="#e74c3c"/></svg></div> inline SVG 16px (circle)</div>
+
+<div class="row"><div class="box"><svg width="12" height="12" viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12" fill="#3498db"/></svg></div> inline SVG 12px (square)</div>
+
+<div class="row"><div class="box"><img src="img/star.svg" width="16" height="16"></div> &lt;img src=svg&gt; 16px star</div>
+
+<div class="row"><div class="box"><img src="img/dot16.png" width="16" height="16"></div> &lt;img src=png&gt; 16px dot</div>
+
+<div class="row"><div class="box"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAX0lEQVR4nGPUO+Pwn4ECwESJZgYGBgYWXBIXjfdjiOmfdSTOBdg04xLHMACXZlzyTPgkiTGECZsgKYZQHAvDyQBsiQQfgKlnwiZIrGYMA4gxBF0eaxjgMgSbOCOl2RkA4sofk0C1UioAAAAASUVORK5CYII=" width="16" height="16"></div> data-URL PNG 16px (green)</div>
+
+<div class="row"><div class="box"><span class="ifont">&#57344;</span></div> icon-font glyph 16px (red X)</div>
+
+<div class="row"><div class="box"><img src="img/big.png" width="64" height="64"></div> &lt;img&gt; 64px (control, must be visible)</div>
+
+<div class="row"><div class="box" style="background:#333"><svg width="16" height="16" viewBox="0 0 24 24" fill="#fff"><path d="M12 2l3 7h7l-5.5 4.5L18 21l-6-4-6 4 1.5-7.5L2 9h7z"/></svg></div> inline SVG 16px star on dark</div>
+
+</body>
+</html>

@@ -10,6 +10,7 @@
 
 mod chrome;
 mod model;
+mod present;
 mod text;
 
 use std::collections::HashMap;
@@ -21,8 +22,9 @@ use keyboard_types::{Code, Key as KKey, KeyState, KeyboardEvent, Location, Modif
 use servo::input_events::{InputEvent, MouseButtonAction, MouseButtonEvent, MouseMoveEvent};
 use servo::{
     DeviceIntRect, DeviceIntSize, DevicePoint, KeyboardEvent as ServoKeyboardEvent,
-    RenderingContext, Servo, ServoBuilder, SoftwareRenderingContext, UserContentManager, WebView,
-    WebViewBuilder, WheelDelta, WheelEvent, WheelMode, WindowRenderingContext,
+    OffscreenRenderingContext, RenderingContext, Servo, ServoBuilder, SoftwareRenderingContext,
+    UserContentManager, WebView, WebViewBuilder, WheelDelta, WheelEvent, WheelMode,
+    WindowRenderingContext,
 };
 use servo_host::budget::{self, BudgetConfig, Degradation, JsHeapTier};
 use servo_host::delegate::{HostDelegate, HostState};
@@ -137,13 +139,30 @@ fn malloc_stats_os() {}
 struct TabRuntime {
     webview: WebView,
     state: Arc<HostState>,
-    #[allow(dead_code)]
-    ctx: Rc<dyn RenderingContext>,
+    ctx: TabCtx,
     last_painted_frame: u64,
     /// Phase 4.3.1: ladder state — the tab was trimmed (hide + throttle
     /// + malloc_trim) at this instant, and escalation to hibernate only
     /// happens after the trim grace. Reset on restore (new runtime).
     trimmed_at: Option<Instant>,
+}
+
+/// The concrete rendering context a tab's webview was built on. The GPU
+/// fast present path (v2.1 perf) needs the concrete
+/// `OffscreenRenderingContext` to reach its parent-blit callback.
+#[derive(Clone)]
+enum TabCtx {
+    Offscreen(Rc<OffscreenRenderingContext>),
+    Software(Rc<SoftwareRenderingContext>),
+}
+
+impl TabCtx {
+    fn dyn_ctx(&self) -> Rc<dyn RenderingContext> {
+        match self {
+            TabCtx::Offscreen(ctx) => ctx.clone(),
+            TabCtx::Software(ctx) => ctx.clone(),
+        }
+    }
 }
 
 #[allow(dead_code)]
@@ -184,6 +203,11 @@ struct Gui {
     /// Bumped on every Loading→Loaded transition of the active tab; the
     /// validation snapshot hook saves one composited frame per generation.
     snapshot_gen: u64,
+    /// v2.1 perf fix: pending snapshot save — (gen, when the gen changed).
+    /// The save is delayed so the composited frame reflects the NEW
+    /// document's display list (the first draw after `loaded` can still
+    /// paint the previous document's frame).
+    snapshot_due: Option<(u64, Instant)>,
     // ---- Phase 2: memory governor + startup instrumentation --------------
     governor: GovernorConfig,
     next_governor_at: Instant,
@@ -201,12 +225,27 @@ struct Gui {
     /// v2.1 Phase 2: the one shared offscreen rendering context (see
     /// `offscreen_ctx`) — None until the first tab is created. On the
     /// software lane this is the shared software context itself.
-    shared_ctx: Option<Rc<dyn RenderingContext>>,
+    /// v2.1 perf: the shared rendering context — `TabCtx` (see `offscreen_ctx`).
+    shared_ctx: Option<TabCtx>,
     /// Wall time of ServoBuilder::build(), for BROWS12_UI_START_METRICS.
     servo_build_ms: u128,
+    /// v2.1 perf: the GPU chrome overlay (texture + quad), hardware lane only.
+    chrome_overlay: Option<present::ChromeOverlay>,
+    /// v2.1 perf: persistent chrome strip pixmap (redrawn per draw, it is
+    /// only 1280×72 — the expensive part was the full-window composite).
+    chrome_px: Option<Pixmap>,
+    /// v2.1 perf: set when the GPU chrome overlay cannot be created —
+    /// present via the CPU lane instead.
+    cpu_fallback: bool,
     /// Wall time of the first presented frame (set once).
     first_present_ms: Option<u128>,
+    /// v2.1 perf diagnostics: last BROWS12_LOOP_TRACE dump time.
+    last_loop_trace: Instant,
     started: Instant,
+    /// v2.1 perf: rolling per-stage frame samples (BROWS12_FRAME_METRICS=1).
+    frame_samples: Vec<(f32, f32, f32, f32, f32)>,
+    /// v2.1 perf: total frames drawn (for the rolling report header).
+    frames_drawn: u64,
 }
 
 /// Marker prefix so the start page shows as `brows12://start` in the omnibox.
@@ -310,6 +349,8 @@ impl ApplicationHandler<HostWakerEvent> for App {
                 prefs
             })
             .build();
+        // v2.1 perf diagnostics: honor RUST_LOG in the shell (headless does).
+        servo.setup_logging();
         let servo_build_ms = build_started.elapsed().as_millis();
 
         let privacy = PrivacyHost::new();
@@ -346,6 +387,7 @@ impl ApplicationHandler<HostWakerEvent> for App {
             quit: false,
             blink_phase: 0,
             snapshot_gen: 0,
+            snapshot_due: None,
             governor: governor_cfg.clone(),
             // Phase 4.4.1: the first tick waits out the warmup so session
             // setup (tab creation, activation history) completes before
@@ -362,7 +404,13 @@ impl ApplicationHandler<HostWakerEvent> for App {
             shared_ctx: None,
             servo_build_ms,
             first_present_ms: None,
+            last_loop_trace: Instant::now(),
             started: self.started,
+            frame_samples: Vec::new(),
+            frames_drawn: 0,
+            chrome_overlay: None,
+            chrome_px: None,
+            cpu_fallback: false,
         };
         // Phase 4.4.4: initialize the automation event fifo BEFORE the
         // session restore, so `session_restored` / `session_live_tab`
@@ -546,6 +594,30 @@ impl ApplicationHandler<HostWakerEvent> for App {
             event_loop.exit();
             return;
         }
+        // v2.1 perf fix: the WaitUntil(16ms) deadlines below fired into a
+        // no-op — this callback only *scheduled* the next wake but never
+        // pumped the engine. Every engine message round trip (script →
+        // constellation → paint → embedder and back) needs a spin; with the
+        // pump missing, rAF/animation/scroll pipelines only advanced when
+        // user input happened to wake the loop (measured: rAF ran at ~3 fps
+        // instead of 60). Pump once per callback; spin_event_loop is cheap
+        // when the engine is idle.
+        //
+        // BROWS12_NO_PUMP=1 disables this for A/B measurement only — it
+        // reproduces the pre-fix event-loop behavior (dead WaitUntil wakeups)
+        // so frame-rate numbers with/without the pump come from the same
+        // binary. Never set it in production.
+        if std::env::var_os("BROWS12_NO_PUMP").is_none() {
+            gui.tick();
+        }
+        // v2.1 perf diagnostics (BROWS12_LOOP_TRACE=1): 1 Hz status of every
+        // link in the frame-production chain, to locate stalls.
+        if std::env::var_os("BROWS12_LOOP_TRACE").is_some()
+            && gui.last_loop_trace.elapsed().as_millis() >= 500
+        {
+            gui.last_loop_trace = Instant::now();
+            gui.dump_loop_state();
+        }
         // Phase 2.3 — event-driven idle: pump the loop at 16 ms ONLY while
         // a tab is loading or the active page is animating (rAF,
         // transitions). Otherwise wait for engine events (ProxyWaker) or
@@ -553,6 +625,16 @@ impl ApplicationHandler<HostWakerEvent> for App {
         let busy = gui.any_busy();
         let mut next_wake =
             if busy { Some(Instant::now() + Duration::from_millis(16)) } else { None };
+        // v2.1 perf fix: a pending delayed snapshot needs a draw ≥ 400 ms
+        // after the generation bump even on a fully idle page (no frames,
+        // no animation) — schedule the wake deterministically.
+        if let Some((_, at)) = gui.snapshot_due {
+            let deadline = at + Duration::from_millis(420);
+            next_wake = Some(match next_wake {
+                Some(t) => t.min(deadline),
+                None => deadline,
+            });
+        }
         // Phase 4.4.4: periodic session save (crash insurance between
         // quit-time saves).
         if let Some(at) = gui.next_session_save_at {
@@ -668,17 +750,65 @@ impl Gui {
         }
         self.sync_active_tab_state();
         // Repaint when the active page produced new frames.
-        let new_frames = self
+        let (new_frames, animating) = self
             .active_id()
             .and_then(|id| self.runtimes.get(&id))
-            .map(|rt| rt.state.frame_count() != rt.last_painted_frame)
-            .unwrap_or(false);
+            .map(|rt| {
+                (
+                    rt.state.frame_count() != rt.last_painted_frame,
+                    rt.state.animating.load(std::sync::atomic::Ordering::Relaxed),
+                )
+            })
+            .unwrap_or((false, false));
         if new_frames {
+            self.dirty = true;
+        }
+        // v2.1 perf fix (the animation feedback loop): in servo 0.6 the
+        // animation/rAF timeline only advances when a composite runs, and a
+        // composite only runs inside `webview.paint()`. Painting only on
+        // "new frames" deadlocks animated pages: no paint → no composite →
+        // no animation tick → no new frames → no paint (measured: rAF
+        // freezes ~2 s into a page after load). While the engine reports
+        // the page animating, keep the paint loop running every 16 ms; it
+        // naturally stops when the animation ends (animating → false).
+        if animating {
             self.dirty = true;
         }
         if self.dirty {
             self.window.request_redraw();
         }
+    }
+
+    /// v2.1 perf diagnostics (BROWS12_LOOP_TRACE=1): one-line dump of every
+    /// link in the frame-production chain — tab status, engine animation
+    /// flag, engine frame counter vs painted counter, dirty flag.
+    fn dump_loop_state(&self) {
+        let active = self.active_id();
+        let rt = active.and_then(|id| self.runtimes.get(&id));
+        let (
+            status,
+            animating,
+            frames,
+            painted,
+        ) = rt
+            .map(|rt| {
+                (
+                    format!("{:?}", self.tabs.iter().find(|t| t.id == active).map(|t| t.status.clone())),
+                    rt.state.animating.load(std::sync::atomic::Ordering::Relaxed),
+                    rt.state.frame_count(),
+                    rt.last_painted_frame,
+                )
+            })
+            .unwrap_or(("-".into(), false, 0, 0));
+        eprintln!(
+            "brows12 looptrace: status={} animating={} engine_frames={} painted={} dirty={} drawn={}",
+            status,
+            animating,
+            frames,
+            painted,
+            self.dirty,
+            self.frames_drawn
+        );
     }
 
     /// v2.1 Phase 2 — `<MEMREPORT>` diagnostics: issue the engine memory
@@ -725,12 +855,33 @@ impl Gui {
         let url = rt.state.url().map(|u| display_url(&u));
         let title = rt.state.title();
         let t = &mut self.tabs[self.active];
+        // v2.1 perf fix: a UI-side navigation (omnibox / back / forward /
+        // reload) invalidates the engine's latched completion, but the
+        // PREVIOUS document's completion can still re-latch afterwards —
+        // the engine finishes it while the new load is starting (measured:
+        // navigating away from a slow-loading page fired `loaded` for the
+        // OLD url, marked the tab Loaded, and swallowed the new document's
+        // completion entirely; it even re-pushed the old url as the current
+        // history entry, corrupting back/forward). A completion whose url
+        // is a history entry OTHER than the current one is a straggler —
+        // ignore it. Redirects (url not in history) still pass.
+        if let (Some(u), true) = (url.as_deref(), complete) {
+            let is_current = t.history.get(t.hindex).map(|h| h.as_str()) == Some(u);
+            if !is_current && t.history.iter().any(|h| h.as_str() == u) {
+                return;
+            }
+        }
         let mut changed = false;
         // The pre-navigation about:blank document also reports Complete;
         // never let it into session history (it would corrupt hibernation
         // restore URLs and back/forward).
         let recordable = url.as_deref().map(|u| u != "about:blank").unwrap_or(false);
-        if complete && t.status == Status::Loading {
+        // v2.1 perf fix: the engine's initial `about:blank` document also
+        // fires LoadStatus::Complete (frames=0). Marking the tab Loaded for
+        // it swallowed the real document's completion below — the start
+        // page then never got a `loaded` transition of its own. Only
+        // recordable documents drive the Loading→Loaded transition.
+        if complete && recordable && t.status == Status::Loading {
             t.status = Status::Loaded;
             if let Some(title) = title.clone() {
                 t.title = title;
@@ -744,10 +895,11 @@ impl Gui {
                 }
             }
             model::emit(format!(
-                "loaded tab={} url={} title={}",
+                "loaded tab={} url={} title={} frames={}",
                 id,
                 model::ev_escape(&t.url()),
-                model::ev_escape(&t.title)
+                model::ev_escape(&t.title),
+                rt.state.frame_count()
             ));
             self.snapshot_gen += 1;
             changed = true;
@@ -854,16 +1006,24 @@ impl Gui {
         let previous_active = self.active_id();
         let id = self.next_tab_id;
         self.next_tab_id += 1;
-        let ctx_dyn: Rc<dyn RenderingContext> = ctx.clone();
         let state = Arc::new(HostState::new());
         let delegate = HostDelegate::new(state.clone(), self.privacy.clone());
-        let webview = WebViewBuilder::new(servo, ctx_dyn)
+        let webview = WebViewBuilder::new(servo, ctx.dyn_ctx())
+            // v2.1 perf fix: pass the initial URL AT BUILD TIME (same as the
+            // headless harness). Loading after `build()` without spinning
+            // the event loop races the constellation's webview registration:
+            // "LoadUrl for unknown browsing context" — the first document
+            // of the tab was silently dropped (white page, no title) until
+            // the user reloaded. The post-build `load()` is gone: issuing
+            // the URL at build time already starts the load, and a second
+            // `load()` queued a duplicate document that raced user
+            // navigations.
+            .url(start_page_url())
             .delegate(delegate)
             .user_content_manager(self.ucm.clone())
             .build();
         webview.focus();
         webview.resize(PhysicalSize::new(VIEWPORT_W, VIEWPORT_H));
-        webview.load(start_page_url());
         self.runtimes.insert(
             id,
             TabRuntime { webview, state, ctx, last_painted_frame: 0, trimmed_at: None },
@@ -988,10 +1148,9 @@ impl Gui {
         let (Some(servo), Some(_)) = (self.servo.as_ref(), self.parent_ctx.as_ref()) else {
             panic!("servo not initialized");
         };
-        let ctx_dyn: Rc<dyn RenderingContext> = ctx.clone();
         let state = Arc::new(HostState::new());
         let delegate = HostDelegate::new(state.clone(), self.privacy.clone());
-        let webview = WebViewBuilder::new(servo, ctx_dyn)
+        let webview = WebViewBuilder::new(servo, ctx.dyn_ctx())
             .delegate(delegate)
             .user_content_manager(self.ucm.clone())
             .build();
@@ -1013,7 +1172,7 @@ impl Gui {
     /// v2.1 Phase 4 GPU support: on the software lane (`--software` or the
     /// automatic fallback) every webview shares the one software context —
     /// per-tab software contexts would multiply WARP/llvmpipe state.
-    fn offscreen_ctx(&mut self) -> Rc<dyn RenderingContext> {
+    fn offscreen_ctx(&mut self) -> TabCtx {
         let per_tab = std::env::var_os("BROWS12_SHARED_CTX").is_some_and(|v| v == "0")
             && self.parent_ctx.as_ref().is_some_and(|p| matches!(p, ParentCtx::Window(_)));
         if !per_tab {
@@ -1021,11 +1180,11 @@ impl Gui {
                 return ctx.clone();
             }
         }
-        let ctx: Rc<dyn RenderingContext> = match self.parent_ctx.as_ref() {
-            Some(ParentCtx::Window(parent)) => {
-                Rc::new(parent.offscreen_context(PhysicalSize::new(VIEWPORT_W, VIEWPORT_H)))
-            }
-            Some(ParentCtx::Software(soft)) => soft.clone(),
+        let ctx: TabCtx = match self.parent_ctx.as_ref() {
+            Some(ParentCtx::Window(parent)) => TabCtx::Offscreen(Rc::new(
+                parent.offscreen_context(PhysicalSize::new(VIEWPORT_W, VIEWPORT_H)),
+            )),
+            Some(ParentCtx::Software(soft)) => TabCtx::Software(soft.clone()),
             None => panic!("no parent rendering context"),
         };
         if !per_tab {
@@ -1219,15 +1378,15 @@ impl Gui {
         } else {
             Url::parse(&url).unwrap_or_else(|_| start_page_url())
         };
-        let ctx_dyn: Rc<dyn RenderingContext> = ctx.clone();
         let state = Arc::new(HostState::new());
         let delegate = HostDelegate::new(state.clone(), self.privacy.clone());
-        let webview = WebViewBuilder::new(servo, ctx_dyn)
+        let webview = WebViewBuilder::new(servo, ctx.dyn_ctx())
+            // v2.1 perf fix: initial URL at build time (see `new_tab`).
+            .url(load_url.clone())
             .delegate(delegate)
             .user_content_manager(self.ucm.clone())
             .build();
         webview.resize(PhysicalSize::new(VIEWPORT_W, VIEWPORT_H));
-        webview.load(load_url);
         self.runtimes.insert(
             id,
             TabRuntime { webview, state, ctx, last_painted_frame: 0, trimmed_at: None },
@@ -1358,7 +1517,7 @@ impl Gui {
             .tabs
             .iter()
             .enumerate()
-            .filter(|(i, t)| {
+            .filter(|(_i, t)| {
                 let Some(id) = t.id else { return false };
                 if t.suspended {
                     return false;
@@ -1655,6 +1814,14 @@ impl Gui {
         }
         if let Some(id) = self.active_id() {
             if let Some(rt) = self.runtimes.get(&id) {
+                // v2.1 perf fix: drop the PREVIOUS document's latched
+                // completion NOW — see HostState::invalidate_completion.
+                // Without this, the same-tick `sync_active_tab_state` saw
+                // the old document's `LoadStatus::Complete` and marked the
+                // tab Loaded for the new navigation, swallowing the new
+                // document's completion (no `loaded` event, no title, no
+                // snapshot).
+                rt.state.invalidate_completion();
                 if let Ok(url) = Url::parse(&normalized) {
                     rt.webview.load(url);
                 }
@@ -1690,6 +1857,9 @@ impl Gui {
     fn reload(&mut self) {
         if let Some(id) = self.active_id() {
             if let Some(rt) = self.runtimes.get(&id) {
+                // v2.1 perf fix: drop the previous document's completion
+                // latch (see load_in_active).
+                rt.state.invalidate_completion();
                 rt.webview.reload();
             }
         }
@@ -1730,7 +1900,7 @@ impl Gui {
         }
     }
 
-    fn forward_wheel(&mut self, dx: f64, dy: f64, mode: WheelMode) {
+    fn forward_wheel(&mut self, _dx: f64, dy: f64, mode: WheelMode) {
         let (x, y) = self.viewport_point();
         // Phase 4.4.2: track the active tab's vertical scroll estimate
         // (wheel delta sign: negative dy scrolls DOWN). Clamped at 0;
@@ -1954,10 +2124,20 @@ impl Gui {
         self.window.set_title(format!("brows12 | {head}").as_str());
     }
 
+    /// v2.1 perf — the per-frame present path, two lanes:
+    ///
+    /// **GPU lane (hardware parent)**: webview paints into the offscreen
+    /// FBO → GPU blit into the window surface → chrome strip textured quad
+    /// on top → swap-chain flip. No readback, no softbuffer, no full-window
+    /// CPU composite. See `ui/src/present.rs` for the cost breakdown.
+    ///
+    /// **CPU lane (software parent)**: the historical readback + softbuffer
+    /// composite (the software context has no window surface to blit into).
     fn draw(&mut self) {
         self.dirty = false;
         let first_present = self.first_present_ms.is_none();
         let start = self.started;
+        let metrics_on = std::env::var("BROWS12_FRAME_METRICS").as_deref() == Ok("1");
 
         let size = self.window.inner_size();
         let (w, h) = (size.width.max(1), size.height.max(1));
@@ -1965,11 +2145,305 @@ impl Gui {
             .surface
             .resize(std::num::NonZeroU32::new(w).unwrap(), std::num::NonZeroU32::new(h).unwrap());
 
+        let gpu_lane = matches!(
+            self.active_id().and_then(|id| self.runtimes.get(&id)),
+            Some(TabRuntime { ctx: TabCtx::Offscreen(_), .. })
+        );
+        if gpu_lane && !self.cpu_fallback {
+            self.draw_gpu(w, h, metrics_on);
+        } else {
+            self.draw_cpu(w, h, metrics_on);
+        }
+
+        // Phase 2.2: record + report the first presented frame.
+        if first_present {
+            self.first_present_ms = Some(start.elapsed().as_millis());
+            if let Ok(path) = std::env::var("BROWS12_UI_START_METRICS") {
+                let report = serde_json::json!({
+                    "servo_build_ms": self.servo_build_ms,
+                    "first_present_ms": self.first_present_ms,
+                });
+                if let Some(parent) = std::path::Path::new(&path).parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                let _ = std::fs::write(&path, report.to_string());
+            }
+        }
+    }
+
+    /// Rasterize the chrome strip (tab bar + toolbar) into the persistent
+    /// `chrome_px` and return its premultiplied BGRA bytes. The strip is
+    /// `w × CHROME_H` — ~11x smaller than the full window.
+    fn rasterize_chrome_strip(&mut self, w: u32) -> &[u8] {
+        // Recreate the persistent strip pixmap when the width changed; the
+        // initial bind is only a size check (drawn into immediately below).
+        #[allow(unused_variables)]
+        let strip = match self.chrome_px.as_ref() {
+            Some(px) if px.width() == w && px.height() == chrome::CHROME_H as u32 => px,
+            _ => {
+                self.chrome_px =
+                    Some(Pixmap::new(w, chrome::CHROME_H as u32).expect("chrome strip"));
+                self.chrome_px.as_ref().unwrap()
+            }
+        };
+        let hover = self.hover;
+        let active = self.active;
+        let caret_on = self.caret_on;
+        let group_colors: Vec<Option<[u8; 3]>> = self
+            .tabs
+            .iter()
+            .map(|t| t.id.and_then(|id| self.groups.color_for(id)).map(|c| c.rgb()))
+            .collect();
+        let strip = self.chrome_px.as_mut().unwrap();
+        chrome::draw_chrome(
+            strip,
+            &mut self.text,
+            &self.tabs,
+            active,
+            hover,
+            caret_on,
+            &group_colors,
+        );
+        let px = self.chrome_px.as_ref().unwrap();
+        px.data()
+    }
+
+    fn draw_gpu(&mut self, w: u32, h: u32, metrics_on: bool) {
+        let chrome_h = chrome::CHROME_H as u32;
+        struct Stage {
+            t: Instant,
+            paint: f32,
+            blit: f32,
+            chrome: f32,
+            upload: f32,
+            present: f32,
+        }
+        let mut stage = Stage {
+            t: Instant::now(),
+            paint: 0.0,
+            blit: 0.0,
+            chrome: 0.0,
+            upload: 0.0,
+            present: 0.0,
+        };
+
+        // 1. Paint the active webview into its offscreen FBO (only when the
+        //    engine produced a new frame — re-painting unchanged content
+        //    re-renders the same display list for nothing).
+        if let (Some(servo), Some(id)) = (self.servo.as_ref(), self.active_id()) {
+            if let Some(rt) = self.runtimes.get_mut(&id) {
+                servo.spin_event_loop();
+                rt.webview.paint();
+                rt.last_painted_frame = rt.state.frame_count();
+            }
+        }
+        stage.paint = stage.t.elapsed().as_secs_f32() * 1000.0;
+        stage.t = Instant::now();
+        // v2.1 perf debug: read RIGHT after paint from the current fb.
+        if metrics_on && self.frames_drawn % 30 == 0 {
+            let gl = self
+                .runtimes
+                .get(&self.active_id().unwrap())
+                .map(|rt| match &rt.ctx {
+                    TabCtx::Offscreen(off) => off.gleam_gl_api(),
+                    TabCtx::Software(soft) => soft.gleam_gl_api(),
+                })
+                .expect("active rt");
+            let px = gl.read_pixels(
+                (VIEWPORT_W as i32) / 2,
+                (VIEWPORT_H as i32) * 3 / 4,
+                1,
+                1,
+                gleam::gl::RGBA,
+                gleam::gl::UNSIGNED_BYTE,
+            );
+            let err = gl.get_error();
+            eprintln!("brows12 gpu-probe: post-paint px={px:?} glerr=0x{err:x}");
+        }
+
+        // 2. GPU blit: offscreen FBO → window surface, below the chrome.
+        let (parent, offscreen) = match (self.parent_ctx.as_ref(), self.active_id()) {
+            (Some(ParentCtx::Window(parent)), Some(id)) => {
+                match self.runtimes.get(&id).map(|rt| &rt.ctx) {
+                    Some(TabCtx::Offscreen(off)) => (parent.clone(), off.clone()),
+                    _ => return,
+                }
+            }
+            _ => return,
+        };
+        let _ = parent.make_current();
+        {
+            // v2.1 perf: bind the WINDOW framebuffer before the blit — the
+            // paint() above left the offscreen FBO bound, and the blit
+            // callback's scissored clear would otherwise wipe the SOURCE
+            // (measured: page pixels turned all-zero).
+            parent.gleam_gl_api().bind_framebuffer(gleam::gl::FRAMEBUFFER, 0);
+            // v2.1 perf debug: what does surfman render the window into?
+            if std::env::var_os("BROWS12_FRAME_METRICS").is_some() && self.frames_drawn % 60 == 0 {
+                let (device, context) = parent.surfman_details();
+                match device.context_surface_info(&context) {
+                    Ok(Some(info)) => eprintln!(
+                        "brows12 gpu-probe: window surface fbo={:?} size={:?}",
+                        info.framebuffer_object,
+                        info.size
+                    ),
+                    Ok(None) => {
+                        eprintln!("brows12 gpu-probe: no surface bound to window context")
+                    }
+                    Err(e) => eprintln!("brows12 gpu-probe: surface info err {e:?}"),
+                }
+            }
+            let Some(callback) = offscreen.render_to_parent_callback() else { return };
+            let target_rect = DeviceIntRect::from_size(DeviceIntSize::new(
+                VIEWPORT_W.min(w) as i32,
+                VIEWPORT_H.min(h.saturating_sub(chrome_h)) as i32,
+            ))
+            .to_untyped()
+            .into();
+            callback(&parent.glow_gl_api(), target_rect);
+        }
+        stage.blit = stage.t.elapsed().as_secs_f32() * 1000.0;
+        stage.t = Instant::now();
+        // v2.1 perf debug: source FBO content + GL error after blit.
+        if metrics_on && self.frames_drawn % 30 == 0 {
+            let gl = parent.gleam_gl_api();
+            let err = gl.get_error();
+            if let Some(src_img) = offscreen.read_to_image(DeviceIntRect::from_size(
+                DeviceIntSize::new(VIEWPORT_W as i32, VIEWPORT_H as i32),
+            )) {
+                let (x, y) = (
+                    (VIEWPORT_W as usize) / 2,
+                    (VIEWPORT_H as usize) * 3 / 4,
+                );
+                let i = (y * src_img.width() as usize + x) * 4;
+                eprintln!(
+                    "brows12 gpu-probe: SOURCE fbo px={:?} glerr=0x{err:x}",
+                    &src_img.as_raw()[i..i + 4]
+                );
+            } else {
+                eprintln!("brows12 gpu-probe: SOURCE read_to_image None glerr=0x{err:x}");
+            }
+        }
+
+        // 3. Chrome strip: rasterize (small), upload, textured quad on top.
+        let strip_bytes = self.rasterize_chrome_strip(w).to_vec();
+        stage.chrome = stage.t.elapsed().as_secs_f32() * 1000.0;
+        stage.t = Instant::now();
+        if self.chrome_overlay.is_none() {
+            let parent_dyn: Rc<dyn RenderingContext> = parent.clone();
+        match present::ChromeOverlay::new(&parent_dyn) {
+                Ok(mut overlay) => {
+                    overlay.restore_last();
+                    self.chrome_overlay = Some(overlay);
+                }
+                Err(e) => {
+                    // A missing overlay must not kill rendering: fall back
+                    // to the CPU lane for this and future frames.
+                    eprintln!("brows12 perf: chrome overlay unavailable ({e}); CPU lane");
+                    self.cpu_fallback = true;
+                    self.draw_cpu(w, h, metrics_on);
+                    return;
+                }
+            }
+        }
+        if let Some(overlay) = self.chrome_overlay.as_mut() {
+            overlay.upload_chrome(w, chrome_h, &strip_bytes);
+        }
+        stage.upload = stage.t.elapsed().as_secs_f32() * 1000.0;
+        stage.t = Instant::now();
+
+        let Some(overlay) = self.chrome_overlay.as_ref() else { return };
+        overlay.draw(w as i32, h as i32, chrome_h as i32);
+
+        // v2.1 perf debug probe: sample the framebuffer after blit+chrome.
+        if metrics_on && self.frames_drawn % 30 == 0 {
+            let gl = parent.gleam_gl_api();
+            // read from the CURRENT framebuffer (whatever the blit callback
+            // bound — do not rebind fb0 here)
+            let px = gl.read_pixels(
+                (w as i32) / 2,
+                (h as i32) / 4,
+                1,
+                1,
+                gleam::gl::RGBA,
+                gleam::gl::UNSIGNED_BYTE,
+            );
+            eprintln!(
+                "brows12 gpu-probe: page px at ({},{}) = {:?}",
+                (w as i32) / 2,
+                (h as i32) / 4,
+                px
+            );
+            let px2 = gl.read_pixels(
+                (w as i32) / 2,
+                (h as i32) - 20,
+                1,
+                1,
+                gleam::gl::RGBA,
+                gleam::gl::UNSIGNED_BYTE,
+            );
+            eprintln!("brows12 gpu-probe: strip px = {px2:?}");
+        }
+
+        // Validation hook: capture the composited window BEFORE the flip —
+        // after present() the surface shows the *next* back buffer.
+        // Readback only when snapshots are requested. The save is delayed
+        // 400 ms past the generation bump so the compositor has swapped in
+        // the new document's frames (one-shot saves right at `loaded`
+        // captured the previous document — measured on the anim/icon
+        // regression pages).
+        if let Ok(snapshot_path) = std::env::var("BROWS12_UI_SNAPSHOT") {
+            let gen = self.snapshot_gen;
+            if gen > 0 && self.snapshot_due.map(|(g, _)| g) != Some(gen) {
+                self.snapshot_due = Some((gen, Instant::now()));
+            }
+            if let Some((g, at)) = self.snapshot_due {
+                if g == gen && at.elapsed().as_millis() >= 400 {
+                    self.snapshot_due = None;
+                    let rect = DeviceIntRect::from_size(DeviceIntSize::new(
+                        w.min(VIEWPORT_W) as i32,
+                        h as i32,
+                    ));
+                    if let Some(img) = parent.read_to_image(rect) {
+                        let _ = image::save_buffer(
+                            &snapshot_path,
+                            img.as_raw(),
+                            img.width(),
+                            img.height(),
+                            image::ColorType::Rgba8,
+                        );
+                        model::emit(format!(
+                            "snapshot path={}",
+                            model::ev_escape(&snapshot_path)
+                        ));
+                    }
+                }
+            }
+        }
+
+        // 4. GPU flip.
+        parent.present();
+        stage.present = stage.t.elapsed().as_secs_f32() * 1000.0;
+
+        if metrics_on {
+            self.frame_samples.push((
+                stage.paint,
+                stage.blit,
+                stage.chrome,
+                stage.upload,
+                stage.present,
+            ));
+            self.report_frame_metrics();
+        }
+        self.frames_drawn += 1;
+    }
+
+    fn draw_cpu(&mut self, w: u32, h: u32, metrics_on: bool) {
+        let start_stage = Instant::now();
         let mut px = Pixmap::new(w, h).expect("framebuffer");
         let hover = self.hover;
         let active = self.active;
         let caret_on = self.caret_on;
-        // Phase 4.4.3: per-tab group color for the strip's color bar.
         let group_colors: Vec<Option<[u8; 3]>> = self
             .tabs
             .iter()
@@ -1985,7 +2459,6 @@ impl Gui {
             &group_colors,
         );
 
-        // Paint + read back the active tab's webview, then blit below chrome.
         let mut captured: Option<image::RgbaImage> = None;
         if let (Some(servo), Some(id)) = (self.servo.as_ref(), self.active_id()) {
             if let Some(rt) = self.runtimes.get_mut(&id) {
@@ -1995,7 +2468,7 @@ impl Gui {
                     VIEWPORT_W as i32,
                     VIEWPORT_H as i32,
                 ));
-                captured = rt.ctx.read_to_image(rect);
+                captured = rt.ctx.dyn_ctx().read_to_image(rect);
                 rt.last_painted_frame = rt.state.frame_count();
             }
         }
@@ -2029,22 +2502,7 @@ impl Gui {
         }
         buffer.present().expect("present");
 
-        // Phase 2.2: record + report the first presented frame.
-        if first_present {
-            self.first_present_ms = Some(start.elapsed().as_millis());
-            if let Ok(path) = std::env::var("BROWS12_UI_START_METRICS") {
-                let report = serde_json::json!({
-                    "servo_build_ms": self.servo_build_ms,
-                    "first_present_ms": self.first_present_ms,
-                });
-                if let Some(parent) = std::path::Path::new(&path).parent() {
-                    let _ = std::fs::create_dir_all(parent);
-                }
-                let _ = std::fs::write(&path, report.to_string());
-            }
-        }
-
-        // Validation hook: dump the composited frame after each page load.
+        // Validation hook (CPU lane keeps the original snapshot path).
         if let Ok(snapshot_path) = std::env::var("BROWS12_UI_SNAPSHOT") {
             let gen = self.snapshot_gen;
             static LAST_SAVED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -2054,6 +2512,39 @@ impl Gui {
                 model::emit(format!("snapshot path={}", model::ev_escape(&snapshot_path)));
             }
         }
+
+        if metrics_on {
+            let total = start_stage.elapsed().as_secs_f32() * 1000.0;
+            self.frame_samples.push((total, 0.0, 0.0, 0.0, 0.0));
+            self.report_frame_metrics();
+        }
+        self.frames_drawn += 1;
+    }
+
+    fn report_frame_metrics(&mut self) {
+        if self.frame_samples.len() < 60 {
+            return;
+        }
+        let n = self.frame_samples.len() as f32;
+        let mut sums = [0f32; 5];
+        let mut maxs = [0f32; 5];
+        for s in &self.frame_samples {
+            let arr = [s.0, s.1, s.2, s.3, s.4];
+            for k in 0..5 {
+                sums[k] += arr[k];
+                maxs[k] = maxs[k].max(arr[k]);
+            }
+        }
+        let names = if self.chrome_overlay.is_some() {
+            ["paint", "blit", "chrome-raster", "upload", "present"]
+        } else {
+            ["total-cpu", "", "", "", ""]
+        };
+        let line: String = (0..5)
+            .map(|k| format!("{} avg {:.2} max {:.2} ms; ", names[k], sums[k] / n, maxs[k]))
+            .collect();
+        eprintln!("brows12 perf [frame #{}]: {}", self.frames_drawn, line);
+        self.frame_samples.clear();
     }
 }
 
