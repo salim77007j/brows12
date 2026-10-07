@@ -151,7 +151,7 @@ jobs:
           sz=$(stat -c%s upload/libGLESv2.dll)
           [ "$sz" -gt 1000000 ] || { echo "FATAL: libGLESv2.dll too small ($sz bytes) — not a real ANGLE build"; exit 1; }
           echo "artifact gate: PASS — brows12-ui.exe + ANGLE runtime (libEGL.dll, libGLESv2.dll) + README"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.artifact }}
           path: upload/

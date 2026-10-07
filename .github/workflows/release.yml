@@ -281,7 +281,7 @@ jobs:
           print("ZIP GATE: PASS — zip contains brows12-ui.exe + ANGLE runtime (libEGL.dll, libGLESv2.dll) + README.md")
           PY
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: release-${{ matrix.name }}
           path: |
