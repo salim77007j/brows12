@@ -251,6 +251,36 @@ jobs:
             || sha256sum "$DIR.zip" > "$DIR.zip.sha256"
           echo "ASSET=$DIR.zip" >> "$GITHUB_ENV"
 
+      - name: Verify ZIP contents (release gate — P0 packaging regression 2026-10)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          set -e
+          # The v2.1.0 zip incident: a Windows zip shipped without the ANGLE
+          # runtime, making the browser unlaunchable. Assert the packaged
+          # zip actually contains exe + ANGLE DLLs + README BEFORE it can be
+          # uploaded. ASSET is set by the Package step above.
+          python3 - "$ASSET" <<'PY'
+          import os, sys, zipfile
+          path = sys.argv[1]
+          z = zipfile.ZipFile(path)
+          info = {i.filename: i.file_size for i in z.infolist() if not i.is_dir()}
+          print(f"zip contents of {path}:")
+          for name, size in sorted(info.items()):
+              print(f"  {name:24s} {size:>12,} bytes")
+          required = {
+              "brows12-ui.exe": 5_000_000,
+              "libEGL.dll": 20_000,     # real ANGLE libEGL ~51 KB
+              "libGLESv2.dll": 1_000_000,  # real ANGLE libGLESv2 ~7 MB
+              "README.md": 500,
+          }
+          missing = [k for k in required if k not in info]
+          assert not missing, f"ZIP GATE FAILED: missing {missing} in {path}"
+          tiny = {k: info[k] for k in required if info[k] < required[k]}
+          assert not tiny, f"ZIP GATE FAILED: files below minimum size: {tiny}"
+          print("ZIP GATE: PASS — zip contains brows12-ui.exe + ANGLE runtime (libEGL.dll, libGLESv2.dll) + README.md")
+          PY
+
       - uses: actions/upload-artifact@v4
         with:
           name: release-${{ matrix.name }}
@@ -271,6 +301,23 @@ jobs:
           merge-multiple: true
       - name: List assets
         run: ls -la dist/
+      - name: Publish gate — verify Windows zip contains ANGLE runtime
+        run: |
+          set -e
+          # Second copy of the P0 gate: verify the DOWNLOADED artifact
+          # (not just the freshly packaged one) before anything reaches the
+          # public release page.
+          WINZIP=$(ls dist/*windows*.zip | head -1)
+          python3 - "$WINZIP" <<'PY'
+          import sys, zipfile
+          path = sys.argv[1]
+          z = zipfile.ZipFile(path)
+          names = {i.filename for i in z.infolist() if not i.is_dir()}
+          print(f"publish gate: {path} -> {sorted(names)}")
+          for req in ("brows12-ui.exe", "libEGL.dll", "libGLESv2.dll", "README.md"):
+              assert any(n.endswith(req) for n in names), f"PUBLISH GATE FAILED: {req} missing from {path}"
+          print("publish gate: PASS — ANGLE runtime present")
+          PY
       - name: Publish GitHub Release (permanent)
         env:
           GH_TOKEN: ${{ github.token }}

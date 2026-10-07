@@ -46,6 +46,32 @@ jobs:
       - name: Build release (engine + UI)
         run: cargo build --release -p brows12-ui
 
+      - name: Stage ANGLE runtime DLLs next to the exe (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          set -e
+          # mozangle (features = egl + build_dlls) builds libEGL.dll /
+          # libGLESv2.dll into its build-script OUT_DIR. surfman loads
+          # libEGL.dll at runtime via LoadLibraryA — the DLLs must sit next
+          # to the exe or the GPU lane cannot initialize and the shell
+          # exits with "libEGL.dll could not be loaded" (docs/GPU_SUPPORT.md
+          # §5). Locate them anywhere under target/ (upstream servo rglobs
+          # the same tree) and copy next to brows12-ui.
+          EGL=$(find target -name "libEGL.dll" -not -path "*/deps/*" 2>/dev/null | head -1)
+          if [ -z "$EGL" ]; then
+            echo "FATAL: libEGL.dll not found anywhere under target/ — ANGLE runtime was not built. Diagnostics:"
+            find target -maxdepth 4 -type d -name "mozangle*" 2>/dev/null || true
+            find target -maxdepth 3 -type d -name "build" 2>/dev/null | head || true
+            exit 1
+          fi
+          DIR=$(dirname "$EGL")
+          echo "mozangle out: $DIR"
+          ls -la "$DIR"
+          for f in libEGL.dll libGLESv2.dll; do
+            cp "$DIR/$f" "target/release/$f"
+          done
+
       - name: Smoke-run the real window under Xvfb (Linux only)
         if: runner.os == 'Linux'
         timeout-minutes: 8
@@ -98,10 +124,33 @@ jobs:
       - name: Package artifact
         shell: bash
         run: |
+          set -e
           mkdir -p upload
           cp "target/release/${{ matrix.bin }}" upload/
           cp README.md upload/
           cp docs/CAPABILITY_REPORT.md upload/ 2>/dev/null || true
+          # Windows: ship the ANGLE runtime next to the exe — surfman
+          # resolves libEGL.dll relative to the exe at load time. Shipping a
+          # DLL-less zip is a P0 packaging regression (it makes the browser
+          # unlaunchable), so hard-fail instead.
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            for f in libEGL.dll libGLESv2.dll; do
+              [ -f "target/release/$f" ] || { echo "FATAL: $f was not staged next to the exe — refusing to package a broken zip"; exit 1; }
+              cp "target/release/$f" upload/
+            done
+          fi
+      - name: Verify artifact contents (P0 gate)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          set -e
+          ls -la upload/
+          for f in brows12-ui.exe libEGL.dll libGLESv2.dll README.md; do
+            [ -s "upload/$f" ] || { echo "FATAL: upload/$f missing or empty"; exit 1; }
+          done
+          sz=$(stat -c%s upload/libGLESv2.dll)
+          [ "$sz" -gt 1000000 ] || { echo "FATAL: libGLESv2.dll too small ($sz bytes) — not a real ANGLE build"; exit 1; }
+          echo "artifact gate: PASS — brows12-ui.exe + ANGLE runtime (libEGL.dll, libGLESv2.dll) + README"
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}

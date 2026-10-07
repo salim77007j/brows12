@@ -158,13 +158,19 @@ clean-`Err`, empty-candidate, flag handling and pref parsing
 
 ## 5. Packaging note (Windows)
 
-`mozangle` links ANGLE's import library **implicitly**, so
-`libEGL.dll`/`libGLESv2.dll` are load-time dependencies of `brows12-ui.exe`
-and `brows-servo.exe`. They are built into the release zip next to the
-executable; deleting them prevents startup entirely (Windows loader error,
-before any brows12 code runs). The CI release workflow copies them from the
-mozangle build output and the Windows smoke test verifies a real page load
-with them present.
+`mozangle` builds ANGLE as `libEGL.dll`/`libGLESv2.dll`; surfman resolves
+`libEGL.dll` at runtime via `LoadLibraryA`, searching the executable's
+directory first. The DLLs therefore ship in the release zip next to
+`brows12-ui.exe`; if they are missing, the gfx pre-check fails cleanly with
+"libEGL.dll could not be loaded — it must sit next to the executable"
+before any EGL call is made, and neither the GPU lane nor the CPU lane can
+start. (No `d3dcompiler_47.dll` is needed: mozangle statically links
+ANGLE's shader translator into `libGLESv2.dll`/`libEGL.dll`.) The CI
+release workflow copies them from the mozangle build output and two
+verification gates (packaging + publish) assert the zip contains the exe,
+the ANGLE runtime, and the README before it can reach the release page.
+The Windows smoke test additionally verifies a real page load with them
+present.
 
 ## 6. Real-hardware verification checklist
 
