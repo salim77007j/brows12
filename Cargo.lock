@@ -742,7 +742,7 @@ version = "0.2.0"
 dependencies = [
  "cosmic-text",
  "gleam",
- "glow",
+ "glow 0.18.0",
  "image",
  "keyboard-types",
  "libc",
@@ -2509,6 +2509,18 @@ name = "glow"
 version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "29038e1c483364cc6bb3cf78feee1816002e127c331a1eec55a4d202b9e1adb5"
+dependencies = [
+ "js-sys",
+ "slotmap",
+ "wasm-bindgen",
+ "web-sys",
+]
+
+[[package]]
+name = "glow"
+version = "0.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "263218b0ba2b0715c3370fb04674f5f8aa331594b521c94ff0a8e4a8472d1386"
 dependencies = [
  "js-sys",
  "slotmap",
@@ -6233,7 +6245,7 @@ checksum = "68b3b6ae825dd804515b900bc45e5c18bdd250bf99e4747d437faa814de9e690"
 dependencies = [
  "crossbeam-channel",
  "euclid",
- "glow",
+ "glow 0.17.0",
  "kurbo",
  "log",
  "malloc_size_of_derive",
@@ -7102,7 +7114,7 @@ dependencies = [
  "dpi",
  "euclid",
  "gleam",
- "glow",
+ "glow 0.17.0",
  "image",
  "ipc-channel",
  "log",
@@ -7218,7 +7230,7 @@ dependencies = [
  "encoding_rs",
  "euclid",
  "flate2",
- "glow",
+ "glow 0.17.0",
  "headers",
  "hkdf",
  "html5ever",
@@ -8091,7 +8103,7 @@ dependencies = [
  "euclid",
  "fnv",
  "gl_generator",
- "glow",
+ "glow 0.17.0",
  "libc",
  "log",
  "objc2 0.6.4",
