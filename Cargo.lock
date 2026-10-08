@@ -741,7 +741,7 @@ name = "brows12-ui"
 version = "0.2.0"
 dependencies = [
  "cosmic-text",
- "gleam",
+ "gleam 0.16.0",
  "glow",
  "image",
  "keyboard-types",
@@ -2477,6 +2477,15 @@ name = "gleam"
 version = "0.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8647cc2e2ffde598ce5ca2809452e722dd8dc127885ab8aba2fa8b469cd3ed94"
+dependencies = [
+ "gl_generator",
+]
+
+[[package]]
+name = "gleam"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8265d389bd9817de31d5ee7e783f288ff94d5007b51474332b61015eb346c8e1"
 dependencies = [
  "gl_generator",
 ]
@@ -7065,7 +7074,7 @@ dependencies = [
  "crossbeam-channel",
  "dpi",
  "euclid",
- "gleam",
+ "gleam 0.15.1",
  "image",
  "log",
  "rayon",
@@ -7101,7 +7110,7 @@ dependencies = [
  "crossbeam-channel",
  "dpi",
  "euclid",
- "gleam",
+ "gleam 0.15.1",
  "glow",
  "image",
  "ipc-channel",
@@ -9273,7 +9282,7 @@ dependencies = [
  "derive_more",
  "etagere",
  "euclid",
- "gleam",
+ "gleam 0.15.1",
  "glslopt",
  "lazy_static",
  "log",
